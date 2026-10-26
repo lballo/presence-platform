@@ -41,7 +41,7 @@ export const messagesRouter = createRouter({
         return {
           peer: publicMember(p),
           goals,
-          lastText: last.text || (last.attachmentName ? `Pièce jointe : ${last.attachmentName}` : ""),
+          lastText: last.deletedAt ? "Message supprimé" : last.text || (last.attachmentName ? `Pièce jointe : ${last.attachmentName}` : ""),
           lastAt: last.createdAt,
           lastMine: last.fromId === me,
           unread,
@@ -65,7 +65,7 @@ export const messagesRouter = createRouter({
     // liens de téléchargement temporaires pour les pièces jointes (bucket privé)
     const urls = new Map<number, { view: string | null; download: string | null }>();
     await Promise.all(
-      list.filter((m) => m.attachmentPath).map(async (m) => {
+      list.filter((m) => m.attachmentPath && !m.deletedAt).map(async (m) => {
         const [view, download] = await Promise.all([signedDownloadUrl("message", m.attachmentPath!), signedDownloadUrl("message", m.attachmentPath!, m.attachmentName ?? "fichier")]);
         urls.set(m.id, { view, download });
       })
@@ -73,8 +73,9 @@ export const messagesRouter = createRouter({
     return {
       peer: publicMember(peer),
       messages: list.map((m) => ({
-        id: m.id, text: m.text, at: m.createdAt, mine: m.fromId === ctx.memberId, read: !!m.readAt,
-        attachment: m.attachmentPath ? { name: m.attachmentName ?? "fichier", type: m.attachmentType ?? "", size: m.attachmentSize ?? 0, url: urls.get(m.id)?.view ?? null, downloadUrl: urls.get(m.id)?.download ?? null } : null,
+        id: m.id, text: m.deletedAt ? "" : m.text, at: m.createdAt, mine: m.fromId === ctx.memberId, read: !!m.readAt,
+        edited: !!m.editedAt && !m.deletedAt, deleted: !!m.deletedAt,
+        attachment: m.attachmentPath && !m.deletedAt ? { name: m.attachmentName ?? "fichier", type: m.attachmentType ?? "", size: m.attachmentSize ?? 0, url: urls.get(m.id)?.view ?? null, downloadUrl: urls.get(m.id)?.download ?? null } : null,
       })),
     };
   }),
@@ -95,5 +96,25 @@ export const messagesRouter = createRouter({
     const a = input.attachment;
     const [row] = await db.insert(messages).values({ fromId: ctx.memberId, toId: input.toId, text: input.text, attachmentPath: a?.path, attachmentName: a?.name, attachmentType: a?.type, attachmentSize: a?.size }).returning();
     return { id: row.id };
+  }),
+
+  /** Modifier un de mes messages. */
+  update: proc.input(z.object({ id: z.number(), text: z.string().trim().min(1).max(4000) })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const m = await db.query.messages.findFirst({ where: eq(messages.id, input.id) });
+    if (!m || m.deletedAt) throw new TRPCError({ code: "NOT_FOUND" });
+    if (m.fromId !== ctx.memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez modifier que vos propres messages." });
+    await db.update(messages).set({ text: input.text, editedAt: new Date() }).where(eq(messages.id, input.id));
+    return { ok: true };
+  }),
+
+  /** Supprimer un de mes messages : il disparaît pour les deux personnes (« Message supprimé »). */
+  remove: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const m = await db.query.messages.findFirst({ where: eq(messages.id, input.id) });
+    if (!m) throw new TRPCError({ code: "NOT_FOUND" });
+    if (m.fromId !== ctx.memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez supprimer que vos propres messages." });
+    await db.update(messages).set({ text: "", attachmentPath: null, attachmentName: null, attachmentType: null, attachmentSize: null, deletedAt: new Date(), readAt: m.readAt ?? new Date() }).where(eq(messages.id, input.id));
+    return { ok: true };
   }),
 });

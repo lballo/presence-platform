@@ -93,6 +93,7 @@ export const forumPosts = pgTable("forum_posts", {
   videoUrl: text("video_url").notNull().default(""), // lien (YouTube, Drive…) ou vidéo chargée, pour les demandes de retour
   likes: integer("likes").notNull().default(0),
   replies: integer("replies").notNull().default(0),
+  editedAt: timestamp("edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -372,6 +373,8 @@ export const messages = pgTable(
     attachmentType: text("attachment_type"),
     attachmentSize: integer("attachment_size"),
     readAt: timestamp("read_at"),
+    editedAt: timestamp("edited_at"),
+    deletedAt: timestamp("deleted_at"), // message supprimé par son auteur : on garde la trace « Message supprimé »
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({

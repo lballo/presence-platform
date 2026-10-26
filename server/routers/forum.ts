@@ -12,7 +12,34 @@ export const forumRouter = createRouter({
     const list = await db.query.forumPosts.findMany({ with: { author: true }, orderBy: [desc(forumPosts.createdAt)] });
     const mine = await db.query.forumLikes.findMany({ where: eq(forumLikes.memberId, ctx.memberId) });
     const likedIds = new Set(mine.map((l) => l.postId));
-    return list.map((p) => ({ ...p, author: publicMember(p.author), liked: likedIds.has(p.id), isMine: p.authorId === ctx.memberId }));
+    return list.map((p) => ({ ...p, author: publicMember(p.author), liked: likedIds.has(p.id), isMine: p.authorId === ctx.memberId, canEdit: p.authorId === ctx.memberId, canDelete: p.authorId === ctx.memberId || ctx.isAdmin }));
+  }),
+
+  /** Modifier sa publication. */
+  updatePost: proc
+    .input(z.object({ id: z.number(), text: z.string().trim().min(1).max(2000), videoUrl: z.string().trim().max(1000).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.id) });
+      if (!post) throw new TRPCError({ code: "NOT_FOUND" });
+      if (post.authorId !== ctx.memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez modifier que vos propres publications." });
+      if (input.videoUrl !== undefined) {
+        if (input.videoUrl && !/^https?:\/\/\S+$/.test(input.videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Le lien de la vidéo doit commencer par https://" });
+        if (post.kind === "video" && !input.videoUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Gardez une vidéo pour votre demande de retour." });
+      }
+      await db.update(forumPosts).set({ text: input.text, ...(input.videoUrl !== undefined ? { videoUrl: input.videoUrl } : {}), editedAt: new Date() }).where(eq(forumPosts.id, input.id));
+      return { ok: true };
+    }),
+
+  /** Supprimer sa publication (ou modération par l'équipe). */
+  deletePost: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.id) });
+    if (!post) throw new TRPCError({ code: "NOT_FOUND" });
+    if (post.authorId !== ctx.memberId && !ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez supprimer que vos propres publications." });
+    await db.delete(forumLikes).where(eq(forumLikes.postId, post.id));
+    await db.delete(forumPosts).where(eq(forumPosts.id, post.id));
+    return { ok: true };
   }),
 
   createPost: proc

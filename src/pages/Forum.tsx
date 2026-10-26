@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Heart, MessageCircle, ShieldCheck, Briefcase, TrendingUp, Link2, Upload, X } from "lucide-react";
+import { Heart, MessageCircle, ShieldCheck, Briefcase, TrendingUp, Link2, Upload, X, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import { useUpload, fileSize } from "@/lib/upload";
 import { VideoEmbed } from "@/components/VideoEmbed";
 import { toast } from "sonner";
-import { trpc } from "@/providers/trpc";
+import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
 import { ago, plural } from "@/lib/format";
@@ -112,22 +112,7 @@ function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySen
             <button type="button" className="p-btn-primary p-btn-sm" disabled={!canSend} onClick={send}>{isOpp ? "Soumettre l’annonce" : "Publier"}</button>
           </div>
         </section>
-        {list.map((p) => (
-          <article key={p.id} className="p-card p-5 flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <Avatar m={p.author} size={44} />
-              <span className="flex flex-col"><span className="font-semibold">{p.author.name}</span><span className="text-[12.5px] p-muted">{p.author.role} · {p.author.city} · {ago(new Date(p.createdAt))}</span></span>
-              <span className="p-pill ml-auto">{KINDS[p.kind]}</span>
-            </div>
-            <p className="m-0 text-[16px] leading-relaxed">{p.text}</p>
-            {p.videoUrl && <VideoEmbed url={p.videoUrl} title={`Vidéo de ${p.author.name}`} />}
-            {p.askFeedback && <span className="text-[13px] p-muted">Demande un retour bienveillant et précis.</span>}
-            <div className="flex items-center gap-1 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
-              <button type="button" aria-pressed={p.liked} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: p.liked ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={() => like.mutate({ postId: p.id })}><Heart size={16} fill={p.liked ? "currentColor" : "none"} /> {p.likes}</button>
-              <span className="inline-flex items-center gap-2 h-10 px-3 text-[14px] p-muted"><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</span>
-            </div>
-          </article>
-        ))}
+        {list.map((p) => <PostCard key={p.id} p={p} onLike={() => like.mutate({ postId: p.id })} />)}
         {list.length === 0 && <p className="p-muted text-center py-10">Rien ici pour l’instant.</p>}
       </div>
       <aside className="flex-[1_1_300px] min-w-0">
@@ -138,6 +123,68 @@ function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySen
         </section>
       </aside>
     </div>
+  );
+}
+
+type Post = RouterOutputs["forum"]["posts"][number];
+
+/** Une publication du forum, avec modification et suppression pour son auteur (suppression aussi pour l'équipe). */
+function PostCard({ p, onLike }: { p: Post; onLike: () => void }) {
+  const utils = trpc.useUtils();
+  const [menu, setMenu] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [text, setText] = useState(p.text);
+  const [video, setVideo] = useState(p.videoUrl);
+  const update = trpc.forum.updatePost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setEditing(false); toast.success("Publication modifiée"); }, onError: (e) => toast.error(e.message) });
+  const remove = trpc.forum.deletePost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); toast.success("Publication supprimée"); }, onError: (e) => toast.error(e.message) });
+  const isLink = !p.videoUrl.includes("/storage/v1/object/");
+  return (
+    <article className="p-card p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <Avatar m={p.author} size={44} />
+        <span className="flex flex-col min-w-0"><span className="font-semibold">{p.author.name}</span><span className="text-[12.5px] p-muted">{p.author.role} · {p.author.city} · {ago(new Date(p.createdAt))}{p.editedAt ? " · modifié" : ""}</span></span>
+        <span className="p-pill ml-auto">{KINDS[p.kind]}</span>
+        {(p.canEdit || p.canDelete) && !editing && (
+          <span className="relative">
+            <button type="button" aria-label="Options de la publication" aria-expanded={menu} className="w-9 h-9 rounded-full flex items-center justify-center p-muted hover:bg-black/5 dark:hover:bg-white/5" onClick={() => setMenu(!menu)}><MoreHorizontal size={18} /></button>
+            {menu && (
+              <span className="absolute right-0 top-10 z-10 min-w-[170px] p-1.5 rounded-xl shadow-lg flex flex-col" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }} onMouseLeave={() => setMenu(false)}>
+                {p.canEdit && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { setMenu(false); setText(p.text); setVideo(p.videoUrl); setEditing(true); }}><Pencil size={14} /> Modifier</button>}
+                {p.canDelete && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" style={{ color: "var(--p-accent-text)" }} onClick={() => { setMenu(false); setConfirm(true); }}><Trash2 size={14} /> Supprimer{!p.isMine ? " (modération)" : ""}</button>}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2.5">
+          <textarea className="p-field" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
+          {p.kind === "video" && isLink && <input className="p-field" value={video} onChange={(e) => setVideo(e.target.value)} placeholder="Lien de la vidéo (https://…)" />}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="p-btn-primary p-btn-sm" disabled={!text.trim() || update.isPending} onClick={() => update.mutate({ id: p.id, text, ...(p.kind === "video" && isLink ? { videoUrl: video } : {}) })}>Enregistrer</button>
+            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setEditing(false)}>Annuler</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="m-0 text-[16px] leading-relaxed whitespace-pre-line">{p.text}</p>
+          {p.videoUrl && <VideoEmbed url={p.videoUrl} title={`Vidéo de ${p.author.name}`} />}
+          {p.askFeedback && <span className="text-[13px] p-muted">Demande un retour bienveillant et précis.</span>}
+        </>
+      )}
+      {confirm && (
+        <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-xl" style={{ background: "var(--p-accent-soft)" }}>
+          <span className="flex-1 min-w-[200px] text-[14px]">{p.isMine ? "Supprimer définitivement cette publication ?" : `Supprimer la publication de ${p.author.firstName} ?`}</span>
+          <button type="button" className="p-btn-primary p-btn-sm" disabled={remove.isPending} onClick={() => remove.mutate({ id: p.id })}>Supprimer</button>
+          <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setConfirm(false)}>Annuler</button>
+        </div>
+      )}
+      <div className="flex items-center gap-1 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
+        <button type="button" aria-pressed={p.liked} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: p.liked ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={onLike}><Heart size={16} fill={p.liked ? "currentColor" : "none"} /> {p.likes}</button>
+        <span className="inline-flex items-center gap-2 h-10 px-3 text-[14px] p-muted"><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</span>
+      </div>
+    </article>
   );
 }
 

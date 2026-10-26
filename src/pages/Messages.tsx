@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download } from "lucide-react";
+import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download, Pencil, Trash2, Ban } from "lucide-react";
 import { useUpload, fileSize } from "@/lib/upload";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
@@ -106,6 +106,15 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
     onSettled: (_d, _e, v) => setPending((p) => p.filter((x) => x.text !== (v.text ?? ""))),
   });
   const maxMb = cfg.data?.maxMb.message ?? 50;
+  // Modifier / supprimer ses propres messages
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [confirmDel, setConfirmDel] = useState<number | null>(null);
+  const refreshThread = () => { utils.messages.thread.invalidate({ withId }); utils.messages.conversations.invalidate(); };
+  const update = trpc.messages.update.useMutation({ onSuccess: () => { refreshThread(); setEditing(null); setText(""); }, onError: (e) => toast.error(e.message) });
+  const remove = trpc.messages.remove.useMutation({ onSuccess: () => { refreshThread(); setConfirmDel(null); setSelected(null); }, onError: (e) => toast.error(e.message) });
+  const startEdit = (id: number, t: string) => { setEditing({ id, text: t }); setText(t); setSelected(null); setFile(null); };
+  const cancelEdit = () => { setEditing(null); setText(""); };
   const pick = (f: File | undefined) => {
     if (!f) return;
     if (f.size > maxMb * 1024 * 1024) { toast.error(`Le fichier dépasse ${maxMb} Mo.`); return; }
@@ -118,6 +127,7 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
 
   const go = async () => {
     const t = text.trim();
+    if (editing) { if (t && t !== editing.text) update.mutate({ id: editing.id, text: t }); else cancelEdit(); return; }
     if (!t && !file) return;
     if (file) {
       try {
@@ -162,12 +172,41 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
         {groups.map((g) => (
           <div key={g.day} className="flex flex-col gap-1">
             <span className="self-center text-[11.5px] font-medium uppercase tracking-[0.18em] p-faint my-2">{g.day}</span>
-            {g.items.map((m) => <Bubble key={m.id} mine={m.mine} text={m.text} attachment={m.attachment} meta={<>{hour(new Date(m.at))}{m.mine && (m.read ? <CheckCheck size={13} /> : <Check size={13} />)}</>} />)}
+            {g.items.map((m) => (
+              <div key={m.id} className="flex flex-col">
+                <Bubble
+                  mine={m.mine} text={m.text} attachment={m.attachment} deleted={m.deleted}
+                  highlighted={editing?.id === m.id}
+                  meta={<>{m.edited ? "modifié · " : ""}{hour(new Date(m.at))}{m.mine && !m.deleted && (m.read ? <CheckCheck size={13} /> : <Check size={13} />)}</>}
+                  onSelect={m.mine && !m.deleted ? () => setSelected(selected === m.id ? null : m.id) : undefined}
+                  actions={m.mine && !m.deleted && (selected === m.id) ? (
+                    <span className="flex items-center gap-1">
+                      {m.text && <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => startEdit(m.id, m.text)}><Pencil size={12} /> Modifier</button>}
+                      <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)", color: "var(--p-accent-text)" }} onClick={() => { setConfirmDel(m.id); setSelected(null); }}><Trash2 size={12} /> Supprimer</button>
+                      <button type="button" aria-label="Fermer" className="w-8 h-8 rounded-full flex items-center justify-center p-muted" onClick={() => setSelected(null)}><X size={14} /></button>
+                    </span>
+                  ) : undefined}
+                />
+                {confirmDel === m.id && (
+                  <div className="self-end flex flex-wrap items-center justify-end gap-2 mt-1 text-[13px]">
+                    <span className="p-muted">Supprimer ce message pour vous deux ?</span>
+                    <button type="button" className="p-btn-primary p-btn-sm" disabled={remove.isPending} onClick={() => remove.mutate({ id: m.id })}>Supprimer</button>
+                    <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setConfirmDel(null)}>Annuler</button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         ))}
         {pending.map((p) => <Bubble key={p.key} mine text={p.text} meta={<>envoi…</>} faded />)}
         <div ref={bottom} />
       </div>
+      {editing && (
+        <div className="flex items-center gap-3 px-4 pt-3 flex-none">
+          <span className="flex-1 min-w-0 flex items-center gap-2 text-[13px]" style={{ color: "var(--p-accent-text)" }}><Pencil size={14} /> Modification du message <span className="p-muted truncate">· Entrée pour enregistrer</span></span>
+          <button type="button" aria-label="Annuler la modification" className="w-9 h-9 rounded-full flex items-center justify-center" onClick={cancelEdit}><X size={16} /></button>
+        </div>
+      )}
       {(file || progress !== null) && (
         <div className="flex items-center gap-3 px-4 pt-3 flex-none">
           <span className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3 rounded-xl border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface-2)" }}>
@@ -180,17 +219,17 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
       )}
       <form className="flex items-end gap-2 p-3 border-t flex-none" style={{ borderColor: "var(--p-line)" }} onSubmit={(e) => { e.preventDefault(); go(); }}>
         <input ref={fileInput} type="file" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
-        <button type="button" aria-label="Joindre un fichier" title={cfg.data?.enabled ? `Joindre un fichier (jusqu’à ${maxMb} Mo)` : "L’envoi de fichiers sera disponible une fois le stockage configuré"} disabled={!cfg.data?.enabled || progress !== null} className="w-12 h-12 rounded-full border flex items-center justify-center flex-none disabled:opacity-40" style={{ borderColor: "var(--p-line-2)" }} onClick={() => fileInput.current?.click()}><Paperclip size={18} /></button>
+        <button type="button" aria-label="Joindre un fichier" title={cfg.data?.enabled ? `Joindre un fichier (jusqu’à ${maxMb} Mo)` : "L’envoi de fichiers sera disponible une fois le stockage configuré"} disabled={!cfg.data?.enabled || progress !== null || !!editing} className="w-12 h-12 rounded-full border flex items-center justify-center flex-none disabled:opacity-40" style={{ borderColor: "var(--p-line-2)" }} onClick={() => fileInput.current?.click()}><Paperclip size={18} /></button>
         <textarea
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } }}
-          placeholder="Écrire un message…"
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } if (e.key === "Escape" && editing) cancelEdit(); }}
+          placeholder={editing ? "Modifier le message…" : "Écrire un message…"}
           className="p-field flex-1 resize-none max-h-[140px]"
           style={{ minHeight: 46 }}
         />
-        <button type="submit" className="p-btn-primary w-12 h-12 p-0 flex items-center justify-center rounded-full flex-none" disabled={(!text.trim() && !file) || progress !== null} aria-label="Envoyer"><Send size={18} /></button>
+        <button type="submit" className="p-btn-primary w-12 h-12 p-0 flex items-center justify-center rounded-full flex-none" disabled={(!text.trim() && !file) || progress !== null || update.isPending} aria-label={editing ? "Enregistrer" : "Envoyer"}>{editing ? <Check size={18} /> : <Send size={18} />}</button>
       </form>
     </>
   );
@@ -210,10 +249,24 @@ function Attachment({ a, mine }: { a: NonNullable<Att>; mine: boolean }) {
   );
 }
 
-function Bubble({ mine, text, meta, faded, attachment }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att }) {
+function Bubble({ mine, text, meta, faded, attachment, deleted, onSelect, actions, highlighted }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att; deleted?: boolean; onSelect?: () => void; actions?: React.ReactNode; highlighted?: boolean }) {
+  if (deleted)
+    return (
+      <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+        <div className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[14px] italic flex items-center gap-1.5 border border-dashed p-muted" style={{ borderColor: "var(--p-line-2)" }}><Ban size={13} /> Message supprimé <span className="not-italic text-[11px] p-faint ml-1">{meta}</span></div>
+      </div>
+    );
   return (
-    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-      <div className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[15px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...(mine ? { background: "var(--p-accent)", color: "#fff", borderBottomRightRadius: 6 } : { background: "var(--p-surface)", color: "var(--p-ink)", borderBottomLeftRadius: 6, border: "1px solid var(--p-line)" }), opacity: faded ? 0.6 : 1 }}>
+    <div className={`group flex items-center gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+      {actions}
+      {onSelect && !actions && (
+        <button type="button" aria-label="Modifier ou supprimer" className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-8 h-8 rounded-full flex items-center justify-center p-muted transition-opacity" onClick={onSelect}><Pencil size={13} /></button>
+      )}
+      <div
+        className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[15px] leading-relaxed whitespace-pre-wrap break-words"
+        onClick={onSelect && !actions ? (e) => { if (window.matchMedia("(hover: none)").matches && !(e.target as HTMLElement).closest("a,video")) onSelect(); } : undefined}
+        style={{ ...(mine ? { background: "var(--p-accent)", color: "#fff", borderBottomRightRadius: 6 } : { background: "var(--p-surface)", color: "var(--p-ink)", borderBottomLeftRadius: 6, border: "1px solid var(--p-line)" }), opacity: faded ? 0.6 : 1, boxShadow: highlighted ? "0 0 0 2px var(--p-surface), 0 0 0 4px var(--p-gold-bright)" : undefined }}
+      >
         {attachment && <Attachment a={attachment} mine={mine} />}
         {text}
         <span className={`flex items-center justify-end gap-1 text-[11px] mt-0.5 ${mine ? "text-white/70" : "p-faint"}`}>{meta}</span>
