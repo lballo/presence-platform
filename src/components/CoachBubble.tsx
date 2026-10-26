@@ -36,7 +36,7 @@ export function CoachBubble() {
   if (pathname.startsWith("/presence-ia")) return null;
 
   return (
-    <div className="fixed z-40 right-4 bottom-4 sm:right-6 sm:bottom-6 flex flex-col items-end gap-3 pointer-events-none">
+    <div className="fixed z-40 right-3 bottom-[80px] sm:right-6 lg:bottom-6 flex flex-col items-end gap-3 pointer-events-none" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
       {open && <Panel pathname={pathname} onClose={() => setOpen(false)} />}
       {!open && hint && (
         <div className="p-pop pointer-events-auto max-w-[240px] p-3.5 pr-8 rounded-2xl rounded-br-md shadow-lg text-[14px] leading-snug relative" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)", color: "var(--p-ink)" }}>
@@ -49,10 +49,10 @@ export function CoachBubble() {
         aria-label={open ? "Fermer le coach Présence" : "Ouvrir le coach Présence"}
         aria-expanded={open}
         onClick={() => { setOpen(!open); dismissHint(); }}
-        className="pointer-events-auto w-[68px] h-[68px] rounded-full flex items-center justify-center shadow-xl transition-transform hover:scale-105 active:scale-95"
+        className="pointer-events-auto w-[58px] h-[58px] lg:w-[68px] lg:h-[68px] rounded-full flex items-center justify-center shadow-xl transition-transform hover:scale-105 active:scale-95"
         style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }}
       >
-        {open ? <X size={24} style={{ color: "var(--p-accent-text)" }} /> : <span className="p-mascot-bob"><CoachMascot size={52} /></span>}
+        {open ? <X size={24} style={{ color: "var(--p-accent-text)" }} /> : <span className="p-mascot-bob"><CoachMascot size={46} /></span>}
       </button>
     </div>
   );
@@ -87,7 +87,7 @@ function Panel({ pathname, onClose }: { pathname: string; onClose: () => void })
   const empty = (history.data?.length ?? 0) === 0 && !pending;
 
   return (
-    <section role="dialog" aria-label="Coach Présence" className="p-pop pointer-events-auto w-[min(390px,calc(100vw-32px))] h-[min(600px,calc(100vh-120px))] rounded-3xl shadow-2xl flex flex-col overflow-hidden" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }}>
+    <section role="dialog" aria-label="Coach Présence" className="p-pop pointer-events-auto w-[min(390px,calc(100vw-24px))] h-[min(600px,calc(100dvh-170px))] lg:h-[min(600px,calc(100vh-120px))] rounded-3xl shadow-2xl flex flex-col overflow-hidden" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }}>
       <header className="flex items-center gap-3 px-4 py-3 border-b flex-none" style={{ borderColor: "var(--p-line)", background: "var(--p-surface-2)" }}>
         <CoachMascot size={40} mood={send.isPending ? "thinking" : "happy"} />
         <span className="flex flex-col flex-1 min-w-0"><span className="font-semibold text-[15px]">Coach Présence</span><span className="text-[12px] p-muted">{send.isPending ? "réfléchit…" : "à votre écoute, en toute confidentialité"}</span></span>

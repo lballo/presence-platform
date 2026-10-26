@@ -138,4 +138,6 @@
 .p-mascot-bob { animation: p-bob 3.2s ease-in-out infinite; }
 .p-mascot-eye { transform-box: fill-box; transform-origin: center; animation: p-blink 4.5s infinite; }
 .p-pop { animation: p-pop .22s ease-out both; }
+@keyframes p-drawer { from { transform: translateX(-100%) } to { transform: none } }
+.p-drawer { animation: p-drawer .22s ease-out both; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }

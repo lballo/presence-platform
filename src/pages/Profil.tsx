@@ -25,7 +25,7 @@ export default function Profil() {
       <button type="button" className="p-btn-outline p-btn-sm mb-5" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/membres"))}><ArrowLeft size={15} /> Retour</button>
 
       <article className="p-card overflow-hidden flex flex-wrap mb-6">
-        <div className="flex-[1_1_280px] max-w-full min-h-[340px]" style={{ background: "var(--p-surface-2)" }}>
+        <div className="flex-[1_1_280px] max-w-full h-[300px] sm:h-auto sm:min-h-[340px]" style={{ background: "var(--p-surface-2)" }}>
           {m.photoUrl ? <img src={m.photoUrl} alt="" className="w-full h-full object-cover object-[50%_20%]" /> : <div className="w-full h-full min-h-[340px] flex items-center justify-center serif italic text-[120px]" style={{ color: "var(--p-accent-text)", background: "var(--p-pill)" }}>{m.initials}</div>}
         </div>
         <div className="flex-[999_1_420px] min-w-0 p-7 sm:p-9 flex flex-col gap-4">

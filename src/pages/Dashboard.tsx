@@ -141,7 +141,7 @@ function OrganizerCard({ me }: { me: Me }) {
 function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
   return (
     <article className="p-card flex flex-wrap overflow-hidden mb-6">
-      <div className="flex-[1_1_220px] max-w-full min-h-[280px]" style={{ background: "var(--p-surface-2)" }}>
+      <div className="flex-[1_1_220px] max-w-full h-[240px] sm:h-auto sm:min-h-[280px]" style={{ background: "var(--p-surface-2)" }}>
         {me.photoUrl ? <img src={me.photoUrl} alt="" className="w-full h-full object-cover object-[50%_20%]" /> : <div className="w-full h-full flex items-center justify-center serif text-[90px] italic" style={{ color: "var(--p-accent-text)" }}>{me.initials}</div>}
       </div>
       <div className="flex-[999_1_380px] min-w-0 p-7 flex flex-col gap-3.5">
