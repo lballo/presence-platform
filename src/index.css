@@ -131,4 +131,11 @@
 
 @keyframes p-pulse { 0% { transform: scale(1); opacity: .6 } 100% { transform: scale(2.2); opacity: 0 } }
 .p-live-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: currentColor; animation: p-pulse 1.6s ease-out infinite; }
+/* Coach Présence : petit personnage flottant */
+@keyframes p-bob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+@keyframes p-blink { 0%, 92%, 100% { transform: scaleY(1) } 95% { transform: scaleY(0.1) } }
+@keyframes p-pop { from { opacity: 0; transform: translateY(12px) scale(.96) } to { opacity: 1; transform: none } }
+.p-mascot-bob { animation: p-bob 3.2s ease-in-out infinite; }
+.p-mascot-eye { transform-box: fill-box; transform-origin: center; animation: p-blink 4.5s infinite; }
+.p-pop { animation: p-pop .22s ease-out both; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }

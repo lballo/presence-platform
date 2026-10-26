@@ -4,6 +4,7 @@ import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, 
 import { Toaster } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
+import { CoachBubble } from "@/components/CoachBubble";
 
 const NAV = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard },
@@ -89,7 +90,8 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
-      <Toaster position="bottom-right" richColors />
+      <CoachBubble />
+      <Toaster position="top-center" richColors />
     </div>
   );
 }

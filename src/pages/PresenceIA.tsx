@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useDropzone } from "react-dropzone";
-import { Sparkles, Send, RotateCcw, UploadCloud, Loader2, AlertCircle, Video, Clock, ArrowRight } from "lucide-react";
+import { Send, RotateCcw, UploadCloud, Loader2, AlertCircle, Video, Clock, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
+import { CoachMascot } from "@/components/CoachMascot";
 import { ago } from "@/lib/format";
 
 export default function PresenceIA() {
@@ -47,7 +48,7 @@ function Coach() {
     <div className="flex flex-wrap gap-6 items-start">
       <section className="flex-[2_1_520px] min-w-0 p-card flex flex-col" style={{ minHeight: 560 }}>
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b" style={{ borderColor: "var(--p-line)" }}>
-          <span className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><Sparkles size={17} /></span><span className="font-semibold">Coach Présence</span></span>
+          <span className="flex items-center gap-2.5"><CoachMascot size={40} mood={send.isPending ? "thinking" : "happy"} /><span className="font-semibold">Coach Présence</span></span>
           <button type="button" className="p-btn-ghost text-[13px] p-muted" onClick={() => reset.mutate()}><RotateCcw size={14} /> Nouvelle conversation</button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-4">
@@ -84,7 +85,7 @@ function Bubble({ role, text, me }: { role: string; text: string; me?: { initial
   const user = role === "user";
   return (
     <div className={`flex gap-3 ${user ? "flex-row-reverse" : ""}`}>
-      {user ? (me ? <Avatar m={me} size={34} /> : null) : <span className="w-[34px] h-[34px] rounded-full flex items-center justify-center flex-none" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><Sparkles size={15} /></span>}
+      {user ? (me ? <Avatar m={me} size={34} /> : null) : <span className="flex-none"><CoachMascot size={34} /></span>}
       <div className="max-w-[78%] px-4 py-3 rounded-2xl text-[15px] leading-relaxed whitespace-pre-wrap" style={user ? { background: "var(--p-accent)", color: "#fff" } : { background: "var(--p-surface-2)" }}>{text}</div>
     </div>
   );
