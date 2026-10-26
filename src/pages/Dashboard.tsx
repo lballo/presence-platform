@@ -24,6 +24,8 @@ export default function Dashboard() {
 
       {me.data && (editing ? <ProfileEditor me={me.data} onDone={() => setEditing(false)} /> : <ProfileCard me={me.data} onEdit={() => setEditing(true)} />)}
 
+      {me.data && !editing && <OrganizerCard me={me.data} />}
+
       {coaching.data && <CoachingBand c={coaching.data} />}
 
       <Agenda />
@@ -93,6 +95,48 @@ function MiracleRoutine() {
 }
 
 type Me = RouterOutputs["members"]["me"];
+
+/** Statut organisateur : candidature depuis l'espace membre. */
+function OrganizerCard({ me }: { me: Me }) {
+  const utils = trpc.useUtils();
+  const [open, setOpen] = useState(false);
+  const [motivation, setMotivation] = useState("");
+  const apply = trpc.members.requestOrganizer.useMutation({ onSuccess: () => { utils.members.me.invalidate(); utils.members.organizerRequests.invalidate(); setOpen(false); toast.success("Candidature envoyée à l’équipe Présence"); }, onError: (e) => toast.error(e.message) });
+  const cancel = trpc.members.cancelOrganizerRequest.useMutation({ onSuccess: () => utils.members.me.invalidate() });
+  if (me.isAdmin) return null;
+  if (me.isOrganizer)
+    return (
+      <section className="p-soft p-4 mb-6 flex flex-wrap items-center gap-3">
+        <span className="p-pill">Organisatrice·eur</span>
+        <span className="flex-1 text-[14px] p-muted">Vous pouvez créer, modifier et supprimer vos événements dans le programme du cercle.</span>
+        <Link to="/evenements" className="p-btn-outline p-btn-sm no-underline">Créer un événement</Link>
+      </section>
+    );
+  if (me.organizerRequestedAt)
+    return (
+      <section className="p-soft p-4 mb-6 flex flex-wrap items-center gap-3">
+        <span className="flex-1 text-[14px]"><b>Candidature organisateur envoyée</b> <span className="p-muted">· l’équipe Présence vous répond prochainement.</span></span>
+        <button type="button" className="p-btn-ghost text-[13.5px]" onClick={() => cancel.mutate()}>Retirer ma candidature</button>
+      </section>
+    );
+  return (
+    <section className="p-soft p-4 mb-6 flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex-1 min-w-[240px] text-[14px]"><b>Envie d’animer des rencontres ?</b> <span className="p-muted">Les organisateurs créent et gèrent leurs propres événements dans le programme du cercle.</span></span>
+        {!open && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setOpen(true)}>Devenir organisateur</button>}
+      </div>
+      {open && (
+        <div className="flex flex-col gap-2.5">
+          <textarea className="p-field" rows={3} value={motivation} onChange={(e) => setMotivation(e.target.value)} placeholder="Quels événements aimeriez-vous organiser, et pour qui ?" />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="p-btn-primary p-btn-sm" disabled={motivation.trim().length < 10 || apply.isPending} onClick={() => apply.mutate({ motivation })}>Envoyer ma candidature</button>
+            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setOpen(false)}>Annuler</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
   return (
@@ -286,9 +330,9 @@ function CoachingBand({ c }: { c: RouterOutputs["dashboard"]["coaching"] }) {
 }
 
 const TYPES: Record<string, { label: string; bar: string }> = {
-  event: { label: "Événement", bar: "var(--p-ink)" },
+  event: { label: "Présence", bar: "var(--p-ink)" },
+  salon: { label: "Salon live · Présence", bar: "var(--p-ink)" },
   ruche: { label: "Ruche", bar: "var(--p-gold)" },
-  salon: { label: "Salon live", bar: "var(--p-gold)" },
   coaching: { label: "Coaching", bar: "var(--p-accent)" },
 };
 
@@ -300,7 +344,7 @@ function Agenda() {
   const [sel, setSel] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
 
-  const filtered = items.filter((a) => filter === "all" || a.type === filter);
+  const filtered = items.filter((a) => filter === "all" || (filter === "presence" ? a.type === "event" || a.type === "salon" : a.type === filter));
   const byDay = useMemo(() => {
     const map: Record<string, typeof filtered> = {};
     for (const a of filtered) {
@@ -323,7 +367,7 @@ function Agenda() {
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div><h2 className="text-[28px] m-0">Mon agenda</h2><span className="text-[13.5px] p-muted">{plural(filtered.filter((a) => new Date(a.startsAt) >= today).length, "rendez-vous à venir", "rendez-vous à venir")}</span></div>
         <div className="flex flex-wrap gap-1.5">
-          {[["all", "Tout"], ["event", "Événements"], ["ruche", "Ruches"], ["salon", "Salons"], ["coaching", "Coachings"]].filter(([k]) => k !== "coaching" || items.some((a) => a.type === "coaching")).map(([k, l]) => (
+          {[["all", "Tout"], ["presence", "Présence"], ["ruche", "Mes ruches"], ["coaching", "Coachings"]].filter(([k]) => k !== "coaching" || items.some((a) => a.type === "coaching")).map(([k, l]) => (
             <button key={k} type="button" className={`p-chip h-8 text-[13px] ${filter === k ? "p-chip-on" : ""}`} onClick={() => setFilter(k)}>{l}</button>
           ))}
         </div>
@@ -375,6 +419,42 @@ function Agenda() {
           </div>
         </aside>
       </div>
+      <Suggestions />
     </section>
+  );
+}
+
+/** Propositions d'événements : programme Présence et événements de mes ruches, deux canaux distincts. */
+function Suggestions() {
+  const utils = trpc.useUtils();
+  const sug = trpc.dashboard.suggestions.useQuery();
+  const join = trpc.events.toggleRegistration.useMutation({
+    onSuccess: (r) => { utils.dashboard.invalidate(); utils.events.invalidate(); utils.hives.invalidate(); toast.success(r.waitlist ? "Vous êtes sur liste d’attente" : "Inscription confirmée, c’est dans votre agenda"); },
+    onError: (e) => toast.error(e.message),
+  });
+  if (!sug.data || (!sug.data.global.length && !sug.data.hive.length)) return null;
+  type S = NonNullable<typeof sug.data>["global"][number];
+  const Col = ({ title, sub, list, more }: { title: string; sub: string; list: S[]; more: { to: string; label: string } }) => (
+    <div className="flex-[1_1_300px] min-w-0 flex flex-col gap-2">
+      <div className="flex items-baseline justify-between gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>{title}</span><Link to={more.to} className="p-link text-[13px] no-underline">{more.label} →</Link></div>
+      <span className="text-[12.5px] p-faint -mt-1">{sub}</span>
+      {list.map((e) => (
+        <div key={e.id} className="flex items-center gap-3 p-3 rounded-2xl border" style={{ borderColor: "var(--p-line)" }}>
+          <span className="w-11 flex flex-col items-center leading-none flex-none"><span className="serif text-[26px]">{new Date(e.startsAt).getDate()}</span><span className="text-[11px] p-muted">{monthAbr(new Date(e.startsAt))}</span></span>
+          <Link to={e.href} className="flex-1 min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}><span className="text-[14.5px] font-semibold leading-snug truncate">{e.title}</span><span className="text-[12.5px] p-muted truncate">{hour(new Date(e.startsAt))} · {e.hiveName ? `Ruche ${e.hiveName}` : e.where}</span></Link>
+          <button type="button" className="p-btn-outline p-btn-sm flex-none" disabled={join.isPending} onClick={() => join.mutate({ eventId: e.id })}>Je m’inscris</button>
+        </div>
+      ))}
+      {!list.length && <span className="text-[13.5px] p-muted py-2">Vous êtes déjà inscrite à tout ce qui arrive.</span>}
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-3 pt-5 border-t" style={{ borderColor: "var(--p-line)" }}>
+      <h3 className="m-0 text-[24px]">Pour compléter votre agenda</h3>
+      <div className="flex flex-wrap gap-6">
+        <Col title="Programme Présence" sub="Les événements du cercle" list={sug.data.global} more={{ to: "/evenements", label: "Tout le programme" }} />
+        <Col title="Dans mes ruches" sub="Les rendez-vous des ruches dont vous êtes membre" list={sug.data.hive} more={{ to: "/ruches", label: "Mes ruches" }} />
+      </div>
+    </div>
   );
 }

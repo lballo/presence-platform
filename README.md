@@ -90,6 +90,13 @@ Page « Messages » : conversations entre membres, badge de non-lus dans le menu
 
 À la création d’un événement (dans une ruche ou depuis la page Événements), l’adresse exacte est demandée pour le présentiel et le lien de visio pour l’en ligne et les salons. Ces informations ne sont renvoyées par l’API qu’aux personnes inscrites (hors liste d’attente), à l’organisatrice, aux leaders de la ruche et à l’administratrice ; les autres voient seulement la ville ou « En ligne ».
 
+## Statuts et événements
+
+- **Membre** : propose des événements Présence, qui attendent la validation de l’équipe (« Mes propositions » sur la page Événements). Peut postuler pour devenir organisateur depuis son tableau de bord.
+- **Organisateur** : crée des événements Présence publiés directement, et modifie ou supprime les siens.
+- **Administrateur** : valide les propositions et les candidatures, change le statut des membres (fiche membre de l’annuaire), modifie ou supprime tous les événements.
+- **Deux canaux distincts** : la page Événements ne montre que le programme Présence ; les événements de ruche vivent dans leur ruche (créés par les leaders). Le tableau de bord consolide dans « Mon agenda » tout ce à quoi on est inscrit et suggère les prochains événements des deux canaux.
+
 ## Prochaine session (feuille de route)
 
 - **Authentification des membres** : comptes (e-mail + mot de passe ou lien magique), invitation par l’équipe, mot de passe oublié. Remplace `CURRENT_MEMBER_ID` / `x-member-id`.

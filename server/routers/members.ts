@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, ne, or, inArray } from "drizzle-orm";
+import { eq, and, ne, or, inArray, isNotNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
@@ -23,7 +23,45 @@ export const membersRouter = createRouter({
       intentLabels: m.intents.map((c) => ({ code: c, label: myIntentLabel(c) })),
       intentGroups: INTENT_GROUPS,
       isAdmin: ctx.isAdmin,
+      isOrganizer: ctx.isOrganizer,
+      status: ctx.status,
+      organizerRequest: m.organizerRequest,
+      organizerRequestedAt: m.organizerRequestedAt,
     };
+  }),
+
+  /** Membre simple : postuler pour devenir organisateur. */
+  requestOrganizer: proc.input(z.object({ motivation: z.string().trim().min(10).max(1500) })).mutation(async ({ ctx, input }) => {
+    if (ctx.isOrganizer) throw new TRPCError({ code: "BAD_REQUEST", message: "Vous êtes déjà organisateur." });
+    await getDb().update(members).set({ organizerRequest: input.motivation, organizerRequestedAt: new Date() }).where(eq(members.id, ctx.memberId));
+    return { ok: true };
+  }),
+
+  cancelOrganizerRequest: proc.mutation(async ({ ctx }) => {
+    await getDb().update(members).set({ organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, ctx.memberId));
+    return { ok: true };
+  }),
+
+  /** Administratrice : candidatures organisateur en attente. */
+  organizerRequests: proc.query(async ({ ctx }) => {
+    if (!ctx.isAdmin) return [];
+    const list = await getDb().select().from(members).where(and(isNotNull(members.organizerRequestedAt), eq(members.status, "member")));
+    return list.map((m) => ({ ...publicMember(m), motivation: m.organizerRequest, requestedAt: m.organizerRequestedAt! }));
+  }),
+
+  /** Administratrice : changer le statut d'un membre (membre, organisateur, administrateur). */
+  setStatus: proc.input(z.object({ memberId: z.number(), status: z.enum(["member", "organizer", "admin"]) })).mutation(async ({ ctx, input }) => {
+    if (!ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Réservé à l’équipe Présence." });
+    if (input.memberId === ctx.memberId && input.status !== "admin") throw new TRPCError({ code: "BAD_REQUEST", message: "Vous ne pouvez pas retirer votre propre statut d’administratrice." });
+    await getDb().update(members).set({ status: input.status, organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
+    return { ok: true };
+  }),
+
+  /** Administratrice : refuser une candidature (le membre reste membre simple). */
+  declineOrganizer: proc.input(z.object({ memberId: z.number() })).mutation(async ({ ctx, input }) => {
+    if (!ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN" });
+    await getDb().update(members).set({ organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
+    return { ok: true };
   }),
 
   updateProfile: proc

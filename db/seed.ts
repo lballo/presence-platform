@@ -5,7 +5,7 @@
  */
 import { getDb } from "../server/queries/connection";
 import * as s from "./schema";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 
 const d = (iso: string) => new Date(iso);
 
@@ -53,6 +53,11 @@ async function seed() {
     { firstName: "Hugo", lastName: "Martin", gender: "m", role: "Directeur d’usine", org: "Agroalimentaire", city: "Lyon", zone: "Lyon", bio: "Pilote 300 personnes. Veut apprendre à reconnaître davantage le travail de ses équipes.", intention: "Reconnaître le travail de mes équipes.", values: ["Sécurité", "Respect"], intents: ["recrut:seek", "mentorat:seek"], pole: "Autorité", langs: "Français" },
     { firstName: "Camille", lastName: "Roux", gender: "f", role: "Directrice de l’innovation", org: "Énergéticien", city: "Paris", zone: "Paris", bio: "Porte les projets IA de son groupe. Cherche des pairs qui allient technologie et humain.", intention: "Allier technologie et humain.", values: ["Curiosité", "Liberté"], intents: ["pairs:sym", "recrut:offer", "parole:offer"], pole: "Singularité", langs: "Français, anglais", rencontreEnabled: true, rencontreBlurb: "Curieuse de tout, fan de jazz et de longues marches." },
   ]);
+
+  // Statuts : Laura administratrice, Marc organisateur, Camille candidate organisatrice
+  await db.update(s.members).set({ status: "admin" }).where(eq(s.members.id, 2));
+  await db.update(s.members).set({ status: "organizer" }).where(eq(s.members.id, 5));
+  await db.update(s.members).set({ organizerRequest: "J’aimerais animer un cycle de déjeuners « IA et leadership » à Paris, un mardi par mois.", organizerRequestedAt: new Date() }).where(eq(s.members.id, 14));
 
   console.log("Coaching…");
   await db.insert(s.coachingSessions).values([
@@ -167,12 +172,12 @@ async function seed() {
 
   console.log("Événements…");
   await db.insert(s.events).values(withAccess([
-    // Salons live (portés par une ruche)
-    { kind: "salon", hiveId: 3, hostId: 4, title: "Préparer sa semaine avec calme", startsAt: d("2026-10-25T20:00:00"), durationMin: 45, maxSeats: 10, live: true, where: "En ligne", description: "Le rendez-vous du dimanche soir : on dépose ce qui pèse, on choisit une intention pour la semaine et on repart plus léger. Un tour de parole, un exercice court, une intention partagée." },
-    { kind: "salon", hiveId: 3, hostId: 10, title: "Dire non sans avoir à se justifier", startsAt: d("2026-10-27T12:30:00"), durationMin: 45, maxSeats: 8, where: "En ligne", description: "Pourquoi est-ce si coûteux de refuser ? Nadia partage les formulations qui l’ont aidée, puis chacun s’entraîne en binôme sur une situation réelle." },
-    { kind: "salon", hiveId: 1, hostId: 5, title: "Préparer un oral à fort enjeu", startsAt: d("2026-10-29T12:30:00"), durationMin: 45, maxSeats: 10, where: "En ligne", description: "Trois questions pour clarifier son message, un temps de répétition en petit groupe et des retours précis sur la posture et la voix." },
-    { kind: "salon", hiveId: 5, hostId: 6, title: "Diriger avec l’IA sans perdre le lien", startsAt: d("2026-11-03T12:30:00"), durationMin: 45, maxSeats: 10, where: "En ligne", description: "Ce que l’on peut confier à l’IA, ce que l’on garde pour soi : un échange concret à partir des usages des participants." },
-    { kind: "salon", hiveId: 4, hostId: 12, title: "La solitude du dirigeant, parlons-en", startsAt: d("2026-11-04T08:00:00"), durationMin: 45, maxSeats: 8, where: "En ligne", description: "Un café du matin entre fondateurs : ce qui pèse quand on décide seul, et ce qui aide à tenir dans la durée." },
+    // Salons live (programme Présence)
+    { kind: "salon", hostId: 4, title: "Préparer sa semaine avec calme", startsAt: d("2026-10-25T20:00:00"), durationMin: 45, maxSeats: 10, live: true, where: "En ligne", description: "Le rendez-vous du dimanche soir : on dépose ce qui pèse, on choisit une intention pour la semaine et on repart plus léger. Un tour de parole, un exercice court, une intention partagée." },
+    { kind: "salon", hostId: 10, title: "Dire non sans avoir à se justifier", startsAt: d("2026-10-27T12:30:00"), durationMin: 45, maxSeats: 8, where: "En ligne", description: "Pourquoi est-ce si coûteux de refuser ? Nadia partage les formulations qui l’ont aidée, puis chacun s’entraîne en binôme sur une situation réelle." },
+    { kind: "salon", hostId: 5, title: "Préparer un oral à fort enjeu", startsAt: d("2026-10-29T12:30:00"), durationMin: 45, maxSeats: 10, where: "En ligne", description: "Trois questions pour clarifier son message, un temps de répétition en petit groupe et des retours précis sur la posture et la voix." },
+    { kind: "salon", hostId: 6, title: "Diriger avec l’IA sans perdre le lien", startsAt: d("2026-11-03T12:30:00"), durationMin: 45, maxSeats: 10, where: "En ligne", description: "Ce que l’on peut confier à l’IA, ce que l’on garde pour soi : un échange concret à partir des usages des participants." },
+    { kind: "salon", hostId: 12, title: "La solitude du dirigeant, parlons-en", startsAt: d("2026-11-04T08:00:00"), durationMin: 45, maxSeats: 8, where: "En ligne", description: "Un café du matin entre fondateurs : ce qui pèse quand on décide seul, et ce qui aide à tenir dans la durée." },
     // Programme du cercle
     { kind: "onsite", hostId: 2, city: "Lyon", title: "Dîner du Cercle : oser son autorité", startsAt: d("2026-11-05T19:30:00"), durationMin: 180, maxSeats: 16, featured: true, where: "Lyon", description: "Une soirée en petit comité pour parler de ce qui se joue quand on doit trancher. Un échange guidé à partir de situations vécues, puis un vrai dîner pour prolonger la conversation." },
     { kind: "online", hostId: 2, title: "Masterclass : leadership incarné", startsAt: d("2026-11-12T18:00:00"), durationMin: 120, featured: true, where: "En ligne", description: "Une immersion pour aligner votre présence intérieure et votre impact extérieur : posture, voix, silence. Des exercices à faire chez soi, caméra allumée ou non." },

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ChevronLeft, ChevronRight, Radio, Video, MapPin, Clock, Users, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Radio, Video, MapPin, Clock, Users, Plus, Pencil, Trash2, Hourglass, XCircle, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
@@ -21,6 +21,8 @@ export default function Evenements() {
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [selId, setSelId] = useState<number | null>(null);
   const [proposing, setProposing] = useState(false);
+  const [editing, setEditing] = useState<Ev | null>(null);
+  const me = trpc.members.me.useQuery();
 
   const all = program.data ?? [];
   const now = new Date();
@@ -42,10 +44,12 @@ export default function Evenements() {
 
   return (
     <>
-      <PageHeader eyebrow="Le programme" title="Événements du cercle" intro="Salons live, ateliers en ligne et rencontres en présentiel : tout ce qui est programmé dans la communauté. Cliquez sur une date pour en voir le détail et vous inscrire."
-        action={<button type="button" className={proposing ? "p-btn-outline" : "p-btn-primary"} onClick={() => setProposing(!proposing)}><Plus size={17} /> {proposing ? "Fermer" : "Proposer un événement"}</button>} />
+      <PageHeader eyebrow="Le programme" title="Événements Présence" intro="Salons live, ateliers en ligne et rencontres en présentiel organisés par Présence. Cliquez sur une date pour en voir le détail et vous inscrire. Les rendez-vous de vos ruches se trouvent dans chaque ruche et dans votre agenda."
+        action={<button type="button" className={proposing ? "p-btn-outline" : "p-btn-primary"} onClick={() => { setEditing(null); setProposing(!proposing); }}><Plus size={17} /> {proposing ? "Fermer" : me.data?.isOrganizer ? "Créer un événement" : "Proposer un événement"}</button>} />
 
-      {proposing && <ProposeEvent onDone={() => setProposing(false)} />}
+      {me.data?.isAdmin && <PendingEvents />}
+      {(proposing || editing) && <EventForm key={editing?.id ?? "new"} initial={editing} onDone={() => { setProposing(false); setEditing(null); }} />}
+      <MyProposals />
 
       {live && (
         <section className="p-band p-6 sm:p-7 flex flex-wrap items-center gap-5 mb-7">
@@ -90,7 +94,7 @@ export default function Evenements() {
         </section>
 
         <aside className="flex-[2_1_340px] min-w-0">
-          {sel ? <Detail e={sel} onToggle={() => toggle.mutate({ eventId: sel.id })} pending={toggle.isPending} /> : <div className="p-soft p-8 text-center p-muted">Sélectionnez un événement dans le calendrier.</div>}
+          {sel ? <Detail e={sel} onToggle={() => toggle.mutate({ eventId: sel.id })} pending={toggle.isPending} onEdit={() => { setProposing(false); setEditing(sel); window.scrollTo({ top: 0, behavior: "smooth" }); }} onDeleted={() => setSelId(null)} /> : <div className="p-soft p-8 text-center p-muted">Sélectionnez un événement dans le calendrier.</div>}
         </aside>
       </div>
 
@@ -120,7 +124,10 @@ export default function Evenements() {
   );
 }
 
-function Detail({ e, onToggle, pending }: { e: Ev; onToggle: () => void; pending: boolean }) {
+function Detail({ e, onToggle, pending, onEdit, onDeleted }: { e: Ev; onToggle: () => void; pending: boolean; onEdit: () => void; onDeleted: () => void }) {
+  const utils = trpc.useUtils();
+  const [confirming, setConfirming] = useState(false);
+  const remove = trpc.events.remove.useMutation({ onSuccess: (r) => { utils.events.invalidate(); utils.dashboard.invalidate(); utils.hives.invalidate(); toast.success(`« ${r.title} » a été supprimé`); setConfirming(false); onDeleted(); }, onError: (err) => toast.error(err.message) });
   const s = new Date(e.startsAt);
   const full = !!e.maxSeats && e.taken >= e.maxSeats;
   const past = s < new Date() && !e.live;
@@ -147,58 +154,121 @@ function Detail({ e, onToggle, pending }: { e: Ev; onToggle: () => void; pending
           : e.isMine ? <span className="p-chip h-11 justify-center cursor-default">Vous animez cet événement</span>
           : <button type="button" className={e.registered || e.waitlisted ? "p-btn-outline" : "p-btn-primary"} disabled={pending} onClick={onToggle}>{e.registered ? "✓ Inscrite · se désinscrire" : e.waitlisted ? "Sur liste d’attente · retirer" : full ? "Rejoindre la liste d’attente" : e.live ? "Rejoindre maintenant" : "Je m’inscris"}</button>}
         {e.hiveId && <Link to={`/ruches/${e.hiveId}`} className="p-btn-ghost self-start no-underline">Voir la ruche →</Link>}
+        {e.canEdit && (
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t" style={{ borderColor: "var(--p-line)" }}>
+            {!confirming ? (
+              <>
+                <button type="button" className="p-btn-outline p-btn-sm" onClick={onEdit}><Pencil size={14} /> Modifier</button>
+                <button type="button" className="p-btn-ghost text-[13.5px]" style={{ color: "var(--p-accent-text)" }} onClick={() => setConfirming(true)}><Trash2 size={14} /> Supprimer</button>
+              </>
+            ) : (
+              <>
+                <span className="text-[13.5px] flex-[1_1_100%]">Supprimer cet événement ? {e.taken > 1 ? `Les ${e.taken} inscriptions seront annulées.` : ""}</span>
+                <button type="button" className="p-btn-primary p-btn-sm" disabled={remove.isPending} onClick={() => remove.mutate({ id: e.id })}>Oui, supprimer</button>
+                <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setConfirming(false)}>Annuler</button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
 const KINDS = [["salon", "Salon live"], ["online", "En ligne"], ["onsite", "Présentiel"]] as const;
+const pad = (n: number) => String(n).padStart(2, "0");
 
-function ProposeEvent({ onDone }: { onDone: () => void }) {
+/** Création (ou modification) d’un événement du cercle. Membre simple : soumis à validation. */
+function EventForm({ initial, onDone }: { initial: Ev | null; onDone: () => void }) {
   const utils = trpc.useUtils();
   const me = trpc.members.me.useQuery();
-  const hives = trpc.events.myLeaderHives.useQuery();
-  const done = () => { utils.events.program.invalidate(); utils.hives.invalidate(); utils.dashboard.invalidate(); toast.success("Événement programmé"); onDone(); };
-  const createInHive = trpc.hives.createEvent.useMutation({ onSuccess: done, onError: (e) => toast.error(e.message) });
-  const createCircle = trpc.events.create.useMutation({ onSuccess: done, onError: (e) => toast.error(e.message) });
-  const [f, setF] = useState({ owner: -1, kind: "salon" as "salon" | "online" | "onsite", title: "", description: "", date: "", time: "20:00", durationMin: 45, maxSeats: 10, city: "", address: "", meetingUrl: "" });
-  const isAdmin = !!me.data?.isAdmin;
-  // -1 : pas encore choisi ; 0 : le cercle Présence (administratrice) ; sinon id de ruche
-  const owner = f.owner !== -1 ? f.owner : isAdmin ? 0 : hives.data?.[0]?.id ?? -1;
-  const pending = createInHive.isPending || createCircle.isPending;
-  const noRight = !isAdmin && hives.data && hives.data.length === 0;
+  const isOrganizer = !!me.data?.isOrganizer;
+  const refresh = () => { utils.events.invalidate(); utils.hives.invalidate(); utils.dashboard.invalidate(); };
+  const create = trpc.events.create.useMutation({ onSuccess: (r) => { refresh(); toast.success(r.status === "published" ? "Événement publié dans le programme" : "Proposition envoyée à l’équipe Présence pour validation"); onDone(); }, onError: (e) => toast.error(e.message) });
+  const update = trpc.events.update.useMutation({ onSuccess: () => { refresh(); toast.success("Événement mis à jour"); onDone(); }, onError: (e) => toast.error(e.message) });
+  const d0 = initial ? new Date(initial.startsAt) : null;
+  const [f, setF] = useState({
+    kind: (initial?.kind ?? "salon") as "salon" | "online" | "onsite",
+    title: initial?.title ?? "", description: initial?.description ?? "",
+    date: d0 ? `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())}` : "",
+    time: d0 ? `${pad(d0.getHours())}:${pad(d0.getMinutes())}` : "20:00",
+    durationMin: initial?.durationMin ?? 45, maxSeats: initial?.maxSeats ?? 10,
+    city: initial?.city ?? "", address: initial?.address ?? "", meetingUrl: initial?.meetingUrl ?? "",
+  });
+  const pending = create.isPending || update.isPending;
   const submit = () => {
-    const common = { kind: f.kind, title: f.title, description: f.description, startsAt: new Date(`${f.date}T${f.time || "20:00"}:00`), durationMin: f.durationMin, maxSeats: f.maxSeats || undefined, city: f.kind === "onsite" ? f.city : undefined, address: f.kind === "onsite" ? f.address : "", meetingUrl: f.kind === "onsite" ? "" : f.meetingUrl };
-    if (owner === 0) createCircle.mutate(common);
-    else createInHive.mutate({ ...common, id: owner, where: f.kind === "onsite" ? f.city || "Présentiel" : "En ligne", inAgenda: true });
+    const data = { kind: f.kind, title: f.title, description: f.description, startsAt: new Date(`${f.date}T${f.time || "20:00"}:00`), durationMin: f.durationMin, maxSeats: f.maxSeats || undefined, city: f.kind === "onsite" ? f.city : undefined, address: f.kind === "onsite" ? f.address : "", meetingUrl: f.kind === "onsite" ? "" : f.meetingUrl };
+    if (initial) update.mutate({ ...data, id: initial.id }); else create.mutate(data);
   };
   return (
-    <section className="p-card p-6 flex flex-col gap-4 mb-7">
-      <div><h2 className="m-0 text-[30px]">Proposer un événement</h2><p className="m-0 text-[14.5px] p-muted">Salon live, atelier en ligne ou rencontre en présentiel. L’adresse et le lien de la visio ne sont communiqués qu’aux personnes inscrites.</p></div>
-      {noRight ? (
-        <div className="p-soft p-5 flex flex-col gap-2 text-[14.5px] p-muted"><span>Pour proposer un événement, il faut être leader d’une ruche.</span><Link to="/ruches" className="p-link font-medium">Créer ou rejoindre une ruche →</Link></div>
-      ) : (
-        <>
-          <div className="flex flex-col gap-2"><span className="text-[13.5px] p-muted">Organisé par</span><div className="flex flex-wrap gap-2">
-            {isAdmin && <button type="button" className={`p-chip h-9 ${owner === 0 ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, owner: 0 })}>Le cercle Présence</button>}
-            {hives.data?.map((h) => <button key={h.id} type="button" className={`p-chip h-9 ${owner === h.id ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, owner: h.id })}>Ruche {h.name}</button>)}
-          </div></div>
-          <div className="flex flex-wrap gap-2">{KINDS.map(([k, l]) => <button key={k} type="button" className={`p-chip h-9 ${f.kind === k ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, kind: k, durationMin: k === "salon" ? 45 : f.durationMin === 45 ? 90 : f.durationMin })}>{l}</button>)}</div>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder={f.kind === "onsite" ? "Ex. Dîner du cercle à Lyon" : "Ex. Dire non sans se justifier"} /></label>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Description</span><textarea className="p-field" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="De quoi parlera-t-on, et pour qui ?" /></label>
-          <div className="flex flex-wrap gap-3">
-            <label className="flex-[1_1_160px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Date</span><input type="date" className="p-field" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
-            <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Heure</span><input type="time" className="p-field" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} /></label>
-            <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Durée (min)</span><input type="number" min={15} step={15} className="p-field" value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} /></label>
-            <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Places</span><input type="number" min={2} className="p-field" value={f.maxSeats} onChange={(e) => setF({ ...f, maxSeats: Number(e.target.value) })} /></label>
+    <section className="p-card p-6 flex flex-col gap-4 mb-7" style={{ borderColor: "var(--p-accent-line)" }}>
+      <div>
+        <h2 className="m-0 text-[30px]">{initial ? "Modifier l’événement" : isOrganizer ? "Créer un événement" : "Proposer un événement"}</h2>
+        <p className="m-0 text-[14.5px] p-muted">{initial ? "Les personnes inscrites verront les nouvelles informations." : isOrganizer ? "Il sera publié directement dans le programme du cercle." : "Votre proposition sera relue par l’équipe Présence avant d’apparaître dans le programme."} L’adresse et le lien de la visio ne sont communiqués qu’aux personnes inscrites.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">{KINDS.map(([k, l]) => <button key={k} type="button" className={`p-chip h-9 ${f.kind === k ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, kind: k, durationMin: k === "salon" ? 45 : f.durationMin === 45 ? 90 : f.durationMin })}>{l}</button>)}</div>
+      <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder={f.kind === "onsite" ? "Ex. Dîner du cercle à Lyon" : "Ex. Dire non sans se justifier"} /></label>
+      <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Description</span><textarea className="p-field" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="De quoi parlera-t-on, et pour qui ?" /></label>
+      <div className="flex flex-wrap gap-3">
+        <label className="flex-[1_1_160px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Date</span><input type="date" className="p-field" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
+        <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Heure</span><input type="time" className="p-field" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} /></label>
+        <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Durée (min)</span><input type="number" min={15} step={15} className="p-field" value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} /></label>
+        <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Places</span><input type="number" min={2} className="p-field" value={f.maxSeats} onChange={(e) => setF({ ...f, maxSeats: Number(e.target.value) })} /></label>
+      </div>
+      <AccessFields kind={f.kind} city={f.city} address={f.address} meetingUrl={f.meetingUrl} onChange={(p) => setF({ ...f, ...p })} />
+      <div className="flex flex-wrap gap-2.5">
+        <button type="button" className="p-btn-primary" disabled={!f.title.trim() || !f.date || !accessReady(f.kind, f.address, f.meetingUrl) || pending} onClick={submit}>{initial ? "Enregistrer" : isOrganizer ? "Publier l’événement" : "Envoyer ma proposition"}</button>
+        <button type="button" className="p-btn-outline" onClick={onDone}>Annuler</button>
+      </div>
+    </section>
+  );
+}
+
+/** Membre : suivi de ses propositions en attente ou refusées. */
+function MyProposals() {
+  const utils = trpc.useUtils();
+  const mine = trpc.events.myProposals.useQuery();
+  const remove = trpc.events.remove.useMutation({ onSuccess: () => { utils.events.invalidate(); toast("Proposition retirée"); } });
+  if (!mine.data?.length) return null;
+  return (
+    <section className="mb-7 flex flex-col gap-2.5">
+      <h2 className="m-0 text-[24px]">Mes propositions</h2>
+      {mine.data.map((p) => (
+        <div key={p.id} className="p-card p-4 flex flex-wrap items-center gap-3">
+          <span className="flex-[1_1_240px] min-w-0 flex flex-col"><span className="font-semibold truncate">{p.title}</span><span className="text-[13px] p-muted">{longDate(new Date(p.startsAt))} · {hour(new Date(p.startsAt))} · {p.where}</span></span>
+          {p.status === "pending" ? <span className="flex items-center gap-1.5 text-[13.5px] font-medium" style={{ color: "var(--p-gold)" }}><Hourglass size={15} /> En attente de validation</span> : <span className="flex items-center gap-1.5 text-[13.5px] p-muted"><XCircle size={15} /> Non retenue</span>}
+          <button type="button" className="p-btn-ghost text-[13.5px]" onClick={() => remove.mutate({ id: p.id })}>{p.status === "pending" ? "Retirer" : "Effacer"}</button>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** Administratrice : propositions des membres à valider. */
+function PendingEvents() {
+  const utils = trpc.useUtils();
+  const pending = trpc.events.pending.useQuery();
+  const decide = trpc.events.decide.useMutation({ onSuccess: (_r, v) => { utils.events.invalidate(); utils.dashboard.invalidate(); toast.success(v.accept ? "Événement publié" : "Proposition refusée"); }, onError: (e) => toast.error(e.message) });
+  if (!pending.data?.length) return null;
+  return (
+    <section className="mb-7 p-5 sm:p-6 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
+      <div><span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}><ShieldCheck size={14} /> Équipe Présence · à valider</span><h2 className="m-0 text-[26px] leading-tight">{plural(pending.data.length, "événement proposé", "événements proposés")}</h2></div>
+      {pending.data.map((e) => (
+        <article key={e.id} className="p-card p-4 flex flex-wrap gap-4 items-start">
+          <Avatar m={e.host} size={44} />
+          <div className="flex-[1_1_300px] min-w-0 flex flex-col gap-1">
+            <span className="text-[13px] p-muted">Proposé par {e.host.name} · {KIND[e.kind]}</span>
+            <span className="serif text-[22px] leading-tight">{e.title}</span>
+            <span className="text-[13.5px]">{longDate(new Date(e.startsAt))} · {hour(new Date(e.startsAt))} · {duration(e.durationMin)}{e.maxSeats ? ` · ${e.maxSeats} places` : ""}</span>
+            <span className="text-[13px] p-muted">{e.kind === "onsite" ? e.address : e.meetingUrl}</span>
+            {e.description && <p className="m-0 text-[14.5px] leading-relaxed">{e.description}</p>}
           </div>
-          <AccessFields kind={f.kind} city={f.city} address={f.address} meetingUrl={f.meetingUrl} onChange={(p) => setF({ ...f, ...p })} />
-          <div className="flex flex-wrap gap-2.5">
-            <button type="button" className="p-btn-primary" disabled={owner < 0 || !f.title.trim() || !f.date || !accessReady(f.kind, f.address, f.meetingUrl) || pending} onClick={submit}>Programmer l’événement</button>
-            <button type="button" className="p-btn-outline" onClick={onDone}>Annuler</button>
+          <div className="flex gap-2 self-center">
+            <button type="button" className="p-btn-primary p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: e.id, accept: true })}>Publier</button>
+            <button type="button" className="p-btn-outline p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: e.id, accept: false })}>Refuser</button>
           </div>
-        </>
-      )}
+        </article>
+      ))}
     </section>
   );
 }

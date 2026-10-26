@@ -33,7 +33,7 @@ export const hivesRouter = createRouter({
     return all.map((h) => {
       const active = h.memberships.filter((m) => m.role !== "pending");
       const mine = h.memberships.find((m) => m.memberId === ctx.memberId);
-      const next = h.events.filter((e) => e.startsAt >= new Date()).sort((a, b) => +a.startsAt - +b.startsAt)[0];
+      const next = h.events.filter((e) => e.status === "published" && e.startsAt >= new Date()).sort((a, b) => +a.startsAt - +b.startsAt)[0];
       return {
         id: h.id, type: h.type, parentId: h.parentId, parentName: h.parent?.name ?? null,
         name: h.name, theme: h.theme, cover: h.cover, access: h.access, phase: h.phase, endMonth: h.endMonth,
@@ -56,7 +56,7 @@ export const hivesRouter = createRouter({
         memberships: { with: { member: true }, orderBy: [asc(hiveMembers.createdAt)] },
         posts: { with: { author: true }, orderBy: [desc(hivePosts.createdAt)] },
         resources: { with: { author: true }, orderBy: [desc(hiveResources.pinned), desc(hiveResources.createdAt)] },
-        events: { with: { host: true, registrations: true }, orderBy: [asc(events.startsAt)] },
+        events: { where: eq(events.status, "published"), with: { host: true, registrations: true }, orderBy: [asc(events.startsAt)] },
         parent: true,
         children: { with: { memberships: true } },
       },
@@ -209,7 +209,8 @@ export const hivesRouter = createRouter({
       if (input.kind === "onsite" && !input.address.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez l’adresse de l’événement." });
       if (input.kind !== "onsite" && !/^https?:\/\/\S+$/.test(input.meetingUrl.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez le lien de la visio (https://…)." });
       const { id, ...rest } = input;
-      const [ev] = await db.insert(events).values({ ...rest, hiveId: id, hostId: ctx.memberId, where: rest.where || (rest.kind === "onsite" ? rest.city ?? "" : "En ligne") }).returning();
+      // Les événements de ruche restent dans la ruche : ils ne rejoignent pas le programme de Présence.
+      const [ev] = await db.insert(events).values({ ...rest, inAgenda: false, hiveId: id, hostId: ctx.memberId, where: rest.where || (rest.kind === "onsite" ? rest.city ?? "" : "En ligne") }).returning();
       await db.insert(eventRegistrations).values({ eventId: ev.id, memberId: ctx.memberId });
       return ev;
     }),

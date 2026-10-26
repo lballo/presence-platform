@@ -25,6 +25,9 @@ const pgEnum: typeof pgEnumRoot = dbSchema ? (dbSchema.enum.bind(dbSchema) as un
 // Membres
 // ─────────────────────────────────────────────────────────────
 
+// Statut dans la plateforme : membre simple, organisateur (gère des événements) ou administrateur
+export const memberStatusEnum = pgEnum("member_status", ["member", "organizer", "admin"]);
+
 export const members = pgTable("members", {
   id: serial("id").primaryKey(),
   firstName: varchar("first_name", { length: 80 }).notNull(),
@@ -48,6 +51,9 @@ export const members = pgTable("members", {
   rencontrePref: varchar("rencontre_pref", { length: 3 }).notNull().default("all"), // f | m | all
   rencontreBlurb: text("rencontre_blurb").notNull().default(""),
   isCoached: boolean("is_coached").notNull().default(false),
+  status: memberStatusEnum("status").notNull().default("member"),
+  organizerRequest: text("organizer_request").notNull().default(""), // motivation de la candidature organisateur
+  organizerRequestedAt: timestamp("organizer_requested_at"), // non nul = candidature en attente
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -189,6 +195,8 @@ export const hiveResources = pgTable("hive_resources", {
 // ─────────────────────────────────────────────────────────────
 
 export const eventKindEnum = pgEnum("event_kind", ["onsite", "online", "salon"]);
+// Les événements proposés par un membre simple attendent la validation de l'équipe
+export const eventStatusEnum = pgEnum("event_status", ["pending", "published", "rejected"]);
 
 export const events = pgTable(
   "events",
@@ -213,6 +221,7 @@ export const events = pgTable(
     withLine: text("with_line").notNull().default(""),
     inAgenda: boolean("in_agenda").notNull().default(true), // aussi dans l'agenda du cercle
     live: boolean("live").notNull().default(false),
+    status: eventStatusEnum("status").notNull().default("published"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({ startsIdx: index("events_starts_idx").on(t.startsAt) })

@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Search, MapPin, MessageCircle, Heart, Users, Sparkles } from "lucide-react";
+import { Search, MapPin, MessageCircle, Heart, Users, Sparkles, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
+import { Avatar } from "@/components/Avatar";
 import { plural, ago } from "@/lib/format";
 
 const ZONES = [["Toutes", "Toutes"], ["Paris", "Paris"], ["Lyon", "Lyon"], ["Genève", "Genève"], ["France", "Ailleurs en France"], ["International", "International"]];
@@ -33,6 +35,7 @@ export default function Membres() {
     <>
       <PageHeader eyebrow="Le cercle" title="Annuaire des membres" intro="Retrouvez les leaders du réseau, leur ville et ce qu’ils cherchent : mentorat, pairs, association, investissement, recrutement, amitié ou prise de parole."
         action={<Link to="/matching" className="p-btn-outline no-underline"><Heart size={16} /> Mes affinités de la semaine</Link>} />
+      {me.data?.isAdmin && <OrganizerRequests />}
       <div className="flex flex-wrap gap-2 mb-5">
         <button type="button" className={`p-chip h-11 px-5 ${view === "all" ? "p-chip-on" : ""}`} onClick={() => { setView("all"); setSelId(null); }}><Users size={16} /> Tout l’annuaire</button>
         <button type="button" className={`p-chip h-11 px-5 ${view === "relations" ? "p-chip-on" : ""}`} onClick={() => { setView("relations"); setSelId(null); }}><Sparkles size={16} /> Mes relations{rels.data?.length ? ` · ${rels.data.length}` : ""}</button>
@@ -97,11 +100,52 @@ export default function Membres() {
                   <span className="text-[13px] p-muted">{sel.since ? `En relation depuis ${ago(new Date(sel.since)).replace("il y a ", "")}` : ""}{sel.lastMessageAt ? ` · dernier message ${ago(new Date(sel.lastMessageAt))}` : ""}</span>
                 </div>
               )}
+              {sel.status !== "member" && <span className="p-pill self-start">{sel.status === "admin" ? "Équipe Présence" : "Organisateur"}</span>}
+              {me.data?.isAdmin && me.data.id !== sel.id && <StatusPicker memberId={sel.id} status={sel.status} />}
               {me.data?.id !== sel.id && <div className="flex gap-2.5 pt-1"><Link to={`/messages?to=${sel.id}`} className="p-btn-primary flex-1 no-underline"><MessageCircle size={16} /> Écrire à {sel.firstName}</Link></div>}
             </div>
           </aside>
         )}
       </div>
     </>
+  );
+}
+
+const STATUSES = [["member", "Membre"], ["organizer", "Organisateur"], ["admin", "Administrateur"]] as const;
+
+/** Administratrice : changer le statut d’un membre. */
+function StatusPicker({ memberId, status }: { memberId: number; status: string }) {
+  const utils = trpc.useUtils();
+  const set = trpc.members.setStatus.useMutation({ onSuccess: () => { utils.members.invalidate(); toast.success("Statut mis à jour"); }, onError: (e) => toast.error(e.message) });
+  return (
+    <div className="flex flex-col gap-2 p-3.5 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
+      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}><ShieldCheck size={13} /> Statut · administration</span>
+      <div className="flex flex-wrap gap-1.5">{STATUSES.map(([k, l]) => <button key={k} type="button" disabled={set.isPending} className={`p-chip h-8 text-[13px] ${status === k ? "p-chip-on" : ""}`} onClick={() => status !== k && set.mutate({ memberId, status: k })}>{l}</button>)}</div>
+    </div>
+  );
+}
+
+/** Administratrice : candidatures pour devenir organisateur. */
+function OrganizerRequests() {
+  const utils = trpc.useUtils();
+  const reqs = trpc.members.organizerRequests.useQuery();
+  const done = (msg: string) => { utils.members.invalidate(); toast.success(msg); };
+  const accept = trpc.members.setStatus.useMutation({ onSuccess: () => done("Le membre est désormais organisateur") });
+  const decline = trpc.members.declineOrganizer.useMutation({ onSuccess: () => done("Candidature refusée") });
+  if (!reqs.data?.length) return null;
+  return (
+    <section className="mb-6 p-5 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
+      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}><ShieldCheck size={14} /> Équipe Présence · candidatures organisateur</span>
+      {reqs.data.map((r) => (
+        <div key={r.id} className="p-card p-4 flex flex-wrap items-start gap-3">
+          <Avatar m={r} size={44} />
+          <span className="flex-[1_1_280px] min-w-0 flex flex-col gap-1"><span className="font-semibold">{r.name} <span className="font-normal text-[13px] p-muted">· {r.role} · {ago(new Date(r.requestedAt))}</span></span><span className="text-[14.5px] leading-relaxed">{r.motivation}</span></span>
+          <span className="flex gap-2 self-center">
+            <button type="button" className="p-btn-primary p-btn-sm" onClick={() => accept.mutate({ memberId: r.id, status: "organizer" })}>Accepter</button>
+            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => decline.mutate({ memberId: r.id })}>Refuser</button>
+          </span>
+        </div>
+      ))}
+    </section>
   );
 }
