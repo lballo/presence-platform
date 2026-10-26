@@ -14,6 +14,7 @@ import {
   speechScores,
   advice,
   coachingSessions,
+  messages,
 } from "./schema";
 
 export const membersRelations = relations(members, ({ many }) => ({
@@ -84,4 +85,9 @@ export const speechScoresRelations = relations(speechScores, ({ one }) => ({
 
 export const adviceRelations = relations(advice, ({ one }) => ({
   speech: one(speeches, { fields: [advice.speechId], references: [speeches.id] }),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  from: one(members, { fields: [messages.fromId], references: [members.id], relationName: "sent" }),
+  to: one(members, { fields: [messages.toId], references: [members.id], relationName: "received" }),
 }));

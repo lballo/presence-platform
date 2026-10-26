@@ -82,10 +82,21 @@ Chaque membre règle dans son profil (tableau de bord → Modifier mon profil) j
 
 Chaque membre peut proposer un talk (titre, description/motivation, vidéo chargée ou lien). La proposition passe en « attente de validation » ; le membre `ADMIN_MEMBER_ID` voit un panneau « à valider » en haut du Talk Show et publie ou refuse. Les vidéos chargées partent directement du navigateur vers Supabase Storage (URL signée créée par le serveur), ce qui contourne la limite de 4,5 Mo de Vercel.
 
-## À faire ensuite
+## Messagerie
 
-- Authentification (comptes, invitations, rôle admin pour relire les opportunités)
-- Onglet « Mon parcours »
-- Messagerie (les boutons « Écrire » sont en place mais inactifs)
-- Réponses aux publications du forum et des ruches
-- Stockage des vidéos (aujourd'hui envoyées directement à Gemini, comme dans PresenceAI)
+Page « Messages » : conversations entre membres, badge de non-lus dans le menu. Les fils se rafraîchissent toutes les 2 secondes (et la liste toutes les 4 s), ce qui suffit pour une conversation fluide sans serveur temps réel. Les boutons « Écrire » de l’annuaire et des matchs ouvrent directement le fil.
+
+## Événements : adresse et lien visio
+
+À la création d’un événement (dans une ruche ou depuis la page Événements), l’adresse exacte est demandée pour le présentiel et le lien de visio pour l’en ligne et les salons. Ces informations ne sont renvoyées par l’API qu’aux personnes inscrites (hors liste d’attente), à l’organisatrice, aux leaders de la ruche et à l’administratrice ; les autres voient seulement la ville ou « En ligne ».
+
+## Prochaine session (feuille de route)
+
+- **Authentification des membres** : comptes (e-mail + mot de passe ou lien magique), invitation par l’équipe, mot de passe oublié. Remplace `CURRENT_MEMBER_ID` / `x-member-id`.
+- **Rôle administrateur** : statut `admin` en base (remplace `ADMIN_MEMBER_ID`) et **panneau d’administration** dédié dans l’app :
+  - ajouter, suspendre ou supprimer des membres ;
+  - créer, modifier ou supprimer n’importe quel événement ;
+  - modérer les contenus (forum, ruches, opportunités, talks) : masquer, supprimer, valider ;
+  - files d’attente : opportunités et talks à relire.
+- **Analyse vidéo des longues vidéos** : aujourd’hui la vidéo est envoyée au serveur en un seul bloc (héritage PresenceAI), ce qui limite la taille. Prévu : envoi direct du navigateur vers Supabase Storage (comme pour le Talk Show), puis traitement asynchrone côté serveur avec l’API Files de Gemini (statut « en cours » → « terminé »).
+- Ensuite : onglet « Mon parcours », réponses aux publications du forum et des ruches, notifications (e-mail / push) pour les nouveaux messages.

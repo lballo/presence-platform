@@ -9,14 +9,30 @@ import { sql } from "drizzle-orm";
 
 const d = (iso: string) => new Date(iso);
 
+
+// Adresse précise (présentiel) et lien visio (en ligne, salon) — visibles des seules personnes inscrites.
+const ADDRESSES: Record<string, string> = {
+  "Dîner du Cercle : oser son autorité": "Salon privatisé, 34 rue Chevreul, 69007 Lyon",
+  "Matinale des leaders sensibles": "Salle de réunion, 12 rue de Richelieu, 75001 Paris",
+  "Retraite : silence & leadership": "Domaine du lac, 74290 Talloires-Montmin",
+  "Café de ruche avant le Dîner du Cercle": "Place Bellecour, statue de Louis XIV, 69002 Lyon",
+  "Marche au parc de la Tête d’Or": "Entrée des Enfants du Rhône, boulevard des Belges, 69006 Lyon",
+  "Déjeuner des dirigeantes": "Paris 8e · adresse précisée par l’organisatrice",
+  "Tournée de repérage à la Croix-Rousse": "Place de la Croix-Rousse, 69004 Lyon",
+};
+const slug = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+function withAccess<T extends { kind: "onsite" | "online" | "salon"; title: string }>(list: T[]) {
+  return list.map((e) => (e.kind === "onsite" ? { ...e, address: ADDRESSES[e.title] ?? "" } : { ...e, meetingUrl: `https://meet.jit.si/presence-${slug(e.title)}` }));
+}
+
 async function seed() {
   const db = getDb();
   console.log("Nettoyage…");
-  await db.execute(sql`
-    TRUNCATE TABLE members, coaching_sessions, forum_posts, forum_likes, opportunities, opportunity_interests,
-      hives, hive_members, hive_posts, hive_resources, events, event_registrations, swipes, talks,
-      coach_messages, speeches, speech_scores, advice RESTART IDENTITY CASCADE
-  `);
+  const schemaName = (process.env.DB_SCHEMA ?? "").replace(/[^a-z0-9_]/gi, "");
+  const tables = ["members", "coaching_sessions", "forum_posts", "forum_likes", "opportunities", "opportunity_interests",
+    "hives", "hive_members", "hive_posts", "hive_resources", "events", "event_registrations", "swipes", "talks",
+    "coach_messages", "messages", "speeches", "speech_scores", "advice"].map((t) => (schemaName && schemaName !== "public" ? `"${schemaName}"."${t}"` : `"${t}"`));
+  await db.execute(sql.raw(`TRUNCATE TABLE ${tables.join(", ")} RESTART IDENTITY CASCADE`));
 
   console.log("Membres…");
   // Ids : 1 Hélène (membre courant), 2 Laura, 3 Sofia, 4 Léa, 5 Marc, 6 Thomas, 7 Claire, 8 Amina,
@@ -150,7 +166,7 @@ async function seed() {
   ]);
 
   console.log("Événements…");
-  await db.insert(s.events).values([
+  await db.insert(s.events).values(withAccess([
     // Salons live (portés par une ruche)
     { kind: "salon", hiveId: 3, hostId: 4, title: "Préparer sa semaine avec calme", startsAt: d("2026-10-25T20:00:00"), durationMin: 45, maxSeats: 10, live: true, where: "En ligne", description: "Le rendez-vous du dimanche soir : on dépose ce qui pèse, on choisit une intention pour la semaine et on repart plus léger. Un tour de parole, un exercice court, une intention partagée." },
     { kind: "salon", hiveId: 3, hostId: 10, title: "Dire non sans avoir à se justifier", startsAt: d("2026-10-27T12:30:00"), durationMin: 45, maxSeats: 8, where: "En ligne", description: "Pourquoi est-ce si coûteux de refuser ? Nadia partage les formulations qui l’ont aidée, puis chacun s’entraîne en binôme sur une situation réelle." },
@@ -158,12 +174,12 @@ async function seed() {
     { kind: "salon", hiveId: 5, hostId: 6, title: "Diriger avec l’IA sans perdre le lien", startsAt: d("2026-11-03T12:30:00"), durationMin: 45, maxSeats: 10, where: "En ligne", description: "Ce que l’on peut confier à l’IA, ce que l’on garde pour soi : un échange concret à partir des usages des participants." },
     { kind: "salon", hiveId: 4, hostId: 12, title: "La solitude du dirigeant, parlons-en", startsAt: d("2026-11-04T08:00:00"), durationMin: 45, maxSeats: 8, where: "En ligne", description: "Un café du matin entre fondateurs : ce qui pèse quand on décide seul, et ce qui aide à tenir dans la durée." },
     // Programme du cercle
-    { kind: "onsite", hostId: 2, city: "Lyon", title: "Dîner du Cercle : oser son autorité", startsAt: d("2026-11-05T19:30:00"), durationMin: 180, maxSeats: 16, featured: true, where: "Lyon · adresse communiquée après inscription", description: "Une soirée en petit comité pour parler de ce qui se joue quand on doit trancher. Un échange guidé à partir de situations vécues, puis un vrai dîner pour prolonger la conversation." },
-    { kind: "online", hostId: 2, title: "Masterclass : leadership incarné", startsAt: d("2026-11-12T18:00:00"), durationMin: 120, featured: true, where: "En ligne · Zoom", description: "Une immersion pour aligner votre présence intérieure et votre impact extérieur : posture, voix, silence. Des exercices à faire chez soi, caméra allumée ou non." },
-    { kind: "onsite", hostId: 2, city: "Paris", title: "Matinale des leaders sensibles", startsAt: d("2026-11-18T08:30:00"), durationMin: 90, maxSeats: 14, where: "Paris · adresse communiquée après inscription", description: "Un petit-déjeuner pour celles et ceux qui ressentent fort et dirigent quand même. Un thème, un tour de table et des pistes concrètes pour la journée." },
+    { kind: "onsite", hostId: 2, city: "Lyon", title: "Dîner du Cercle : oser son autorité", startsAt: d("2026-11-05T19:30:00"), durationMin: 180, maxSeats: 16, featured: true, where: "Lyon", description: "Une soirée en petit comité pour parler de ce qui se joue quand on doit trancher. Un échange guidé à partir de situations vécues, puis un vrai dîner pour prolonger la conversation." },
+    { kind: "online", hostId: 2, title: "Masterclass : leadership incarné", startsAt: d("2026-11-12T18:00:00"), durationMin: 120, featured: true, where: "En ligne", description: "Une immersion pour aligner votre présence intérieure et votre impact extérieur : posture, voix, silence. Des exercices à faire chez soi, caméra allumée ou non." },
+    { kind: "onsite", hostId: 2, city: "Paris", title: "Matinale des leaders sensibles", startsAt: d("2026-11-18T08:30:00"), durationMin: 90, maxSeats: 14, where: "Paris", description: "Un petit-déjeuner pour celles et ceux qui ressentent fort et dirigent quand même. Un thème, un tour de table et des pistes concrètes pour la journée." },
     { kind: "online", hostId: 2, title: "Talk Show live : trois idées qui transforment", startsAt: d("2026-11-19T19:00:00"), durationMin: 75, where: "En ligne · diffusion en direct", withLine: "Avec Marc Delorme, Claire Dubois et Sofia Marín.", description: "Le live du mois : le silence comme argument, dire non à son associé, diriger dans une autre langue. Trois membres racontent l’idée qui a changé leur façon de diriger, puis répondent à vos questions." },
     { kind: "online", hostId: 8, lang: "EN", title: "International Circle : leading with presence", startsAt: d("2026-11-26T18:00:00"), durationMin: 60, where: "En ligne · en anglais", description: "Le cercle des membres installés hors de France, en anglais. Cette fois : garder sa présence quand on dirige des équipes à distance." },
-    { kind: "onsite", hostId: 2, city: "Annecy", title: "Retraite : silence & leadership", startsAt: d("2026-12-04T10:00:00"), durationMin: 60, days: 3, maxSeats: 8, featured: true, where: "Annecy · lieu communiqué après inscription", description: "Trois jours en pleine nature pour retrouver clarté et profondeur : marches, temps de silence, ateliers en petit groupe et accompagnement individuel." },
+    { kind: "onsite", hostId: 2, city: "Annecy", title: "Retraite : silence & leadership", startsAt: d("2026-12-04T10:00:00"), durationMin: 60, days: 3, maxSeats: 8, featured: true, where: "Annecy", description: "Trois jours en pleine nature pour retrouver clarté et profondeur : marches, temps de silence, ateliers en petit groupe et accompagnement individuel." },
     // Événements de ruche
     { kind: "online", hiveId: 1, hostId: 5, title: "Atelier impro : parler sans notes", startsAt: d("2026-11-10T12:30:00"), durationMin: 60, where: "En ligne", inAgenda: false },
     { kind: "online", hiveId: 1, hostId: 2, title: "Club vidéo : on se regarde, on progresse", startsAt: d("2026-11-24T12:30:00"), durationMin: 60, where: "En ligne", inAgenda: false },
@@ -176,7 +192,7 @@ async function seed() {
     { kind: "online", hiveId: 7, hostId: 3, title: "Atelier d’écriture des témoignages", startsAt: d("2026-11-17T12:30:00"), durationMin: 60, where: "En ligne", inAgenda: false },
     { kind: "onsite", hiveId: 10, hostId: 7, city: "Lyon", title: "Tournée de repérage à la Croix-Rousse", startsAt: d("2026-11-14T10:00:00"), durationMin: 120, where: "Lyon · Croix-Rousse", inAgenda: false },
     { kind: "online", hiveId: 13, hostId: 14, title: "Relecture collective de la version 2", startsAt: d("2026-11-26T12:30:00"), durationMin: 60, where: "En ligne", inAgenda: false },
-  ]);
+  ]));
 
   // inscriptions de démo (nb de participants) : on remplit avec d'autres membres
   const regs: { eventId: number; memberId: number }[] = [];

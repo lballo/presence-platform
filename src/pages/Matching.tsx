@@ -103,7 +103,7 @@ export default function Matching() {
               <div key={`${m.id}-${m.goal}`} className="p-card p-3 flex items-center gap-3">
                 <Avatar m={m} size={52} />
                 <span className="flex flex-col flex-1 min-w-0"><span className="font-medium">{m.name}</span><span className="text-[13px] p-muted">{m.goalLabel} · {m.city}</span></span>
-                <button type="button" className="p-btn-primary p-btn-sm">Écrire</button>
+                <Link to={`/messages?to=${m.id}`} className="p-btn-primary p-btn-sm no-underline">Écrire</Link>
               </div>
             ))}
           </section>
@@ -131,7 +131,7 @@ export default function Matching() {
             <span className="serif italic text-[64px] leading-none">C’est un match</span>
             <Avatar m={match} size={130} className="border-4 border-[#141211]" />
             <p className="m-0 text-[16.5px] text-white/85 leading-relaxed">{match.name.split(" ")[0]} a, {match.name.endsWith("e") ? "elle" : "lui"} aussi, envie {isAmour ? "de faire connaissance. Proposez-lui un premier café, sans pression." : "d’échanger avec vous. Proposez-lui un premier rendez-vous de 30 minutes."}</p>
-            <button type="button" className="p-btn-primary w-full max-w-[320px]" onClick={() => setMatch(null)}>Proposer un café virtuel</button>
+            <Link to={`/messages?to=${match.id}`} className="p-btn-primary w-full max-w-[320px] no-underline" onClick={() => setMatch(null)}>Lui écrire</Link>
             <button type="button" className="p-btn border border-white/35 text-white w-full max-w-[320px]" onClick={() => setMatch(null)}>Continuer à découvrir</button>
           </div>
         </div>

@@ -6,6 +6,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar, Faces } from "@/components/Avatar";
 import { longDate, hour, addMin, duration, monthTitle, plural, iso } from "@/lib/format";
+import { AccessInfo, AccessFields, accessReady } from "@/components/EventAccess";
 
 type Ev = RouterOutputs["events"]["program"][number];
 const FILTERS = [["all", "Tous"], ["salon", "Salons live"], ["online", "En ligne"], ["onsite", "Présentiel"]] as const;
@@ -42,9 +43,9 @@ export default function Evenements() {
   return (
     <>
       <PageHeader eyebrow="Le programme" title="Événements du cercle" intro="Salons live, ateliers en ligne et rencontres en présentiel : tout ce qui est programmé dans la communauté. Cliquez sur une date pour en voir le détail et vous inscrire."
-        action={<button type="button" className={proposing ? "p-btn-outline" : "p-btn-primary"} onClick={() => setProposing(!proposing)}><Plus size={17} /> {proposing ? "Fermer" : "Proposer un salon"}</button>} />
+        action={<button type="button" className={proposing ? "p-btn-outline" : "p-btn-primary"} onClick={() => setProposing(!proposing)}><Plus size={17} /> {proposing ? "Fermer" : "Proposer un événement"}</button>} />
 
-      {proposing && <ProposeSalon onDone={() => setProposing(false)} />}
+      {proposing && <ProposeEvent onDone={() => setProposing(false)} />}
 
       {live && (
         <section className="p-band p-6 sm:p-7 flex flex-wrap items-center gap-5 mb-7">
@@ -135,6 +136,7 @@ function Detail({ e, onToggle, pending }: { e: Ev; onToggle: () => void; pending
           <dt className="p-muted pt-0.5"><MapPin size={15} /></dt><dd className="m-0">{e.where || (e.kind === "onsite" ? e.city : "En ligne")}{e.lang ? ` · ${e.lang}` : ""}</dd>
           <dt className="p-muted pt-0.5"><Users size={15} /></dt><dd className="m-0">{plural(e.taken, "inscrit", "inscrits")}{e.maxSeats ? ` sur ${e.maxSeats} places` : ""}{full ? " · complet" : ""}</dd>
         </dl>
+        <AccessInfo e={e} />
         {e.description && <p className="m-0 text-[15.5px] leading-relaxed">{e.description}</p>}
         <div className="p-soft p-4 flex gap-3.5">
           <Avatar m={e.host} size={56} />
@@ -150,21 +152,39 @@ function Detail({ e, onToggle, pending }: { e: Ev; onToggle: () => void; pending
   );
 }
 
-function ProposeSalon({ onDone }: { onDone: () => void }) {
+const KINDS = [["salon", "Salon live"], ["online", "En ligne"], ["onsite", "Présentiel"]] as const;
+
+function ProposeEvent({ onDone }: { onDone: () => void }) {
   const utils = trpc.useUtils();
+  const me = trpc.members.me.useQuery();
   const hives = trpc.events.myLeaderHives.useQuery();
-  const create = trpc.hives.createEvent.useMutation({ onSuccess: () => { utils.events.program.invalidate(); utils.hives.invalidate(); toast.success("Salon programmé"); onDone(); }, onError: (e) => toast.error(e.message) });
-  const [f, setF] = useState({ hiveId: 0, title: "", description: "", date: "", time: "20:00", durationMin: 45, maxSeats: 10 });
-  const hiveId = f.hiveId || hives.data?.[0]?.id || 0;
+  const done = () => { utils.events.program.invalidate(); utils.hives.invalidate(); utils.dashboard.invalidate(); toast.success("Événement programmé"); onDone(); };
+  const createInHive = trpc.hives.createEvent.useMutation({ onSuccess: done, onError: (e) => toast.error(e.message) });
+  const createCircle = trpc.events.create.useMutation({ onSuccess: done, onError: (e) => toast.error(e.message) });
+  const [f, setF] = useState({ owner: -1, kind: "salon" as "salon" | "online" | "onsite", title: "", description: "", date: "", time: "20:00", durationMin: 45, maxSeats: 10, city: "", address: "", meetingUrl: "" });
+  const isAdmin = !!me.data?.isAdmin;
+  // -1 : pas encore choisi ; 0 : le cercle Présence (administratrice) ; sinon id de ruche
+  const owner = f.owner !== -1 ? f.owner : isAdmin ? 0 : hives.data?.[0]?.id ?? -1;
+  const pending = createInHive.isPending || createCircle.isPending;
+  const noRight = !isAdmin && hives.data && hives.data.length === 0;
+  const submit = () => {
+    const common = { kind: f.kind, title: f.title, description: f.description, startsAt: new Date(`${f.date}T${f.time || "20:00"}:00`), durationMin: f.durationMin, maxSeats: f.maxSeats || undefined, city: f.kind === "onsite" ? f.city : undefined, address: f.kind === "onsite" ? f.address : "", meetingUrl: f.kind === "onsite" ? "" : f.meetingUrl };
+    if (owner === 0) createCircle.mutate(common);
+    else createInHive.mutate({ ...common, id: owner, where: f.kind === "onsite" ? f.city || "Présentiel" : "En ligne", inAgenda: true });
+  };
   return (
     <section className="p-card p-6 flex flex-col gap-4 mb-7">
-      <div><h2 className="m-0 text-[30px]">Proposer un salon live</h2><p className="m-0 text-[14.5px] p-muted">Une conversation en direct, en petit comité, autour d’un thème. Les salons sont portés par une ruche dont vous êtes leader.</p></div>
-      {hives.data && hives.data.length === 0 ? (
-        <div className="p-soft p-5 flex flex-col gap-2 text-[14.5px] p-muted"><span>Pour proposer un salon, il faut être leader d’une ruche.</span><Link to="/ruches" className="p-link font-medium">Créer ou rejoindre une ruche →</Link></div>
+      <div><h2 className="m-0 text-[30px]">Proposer un événement</h2><p className="m-0 text-[14.5px] p-muted">Salon live, atelier en ligne ou rencontre en présentiel. L’adresse et le lien de la visio ne sont communiqués qu’aux personnes inscrites.</p></div>
+      {noRight ? (
+        <div className="p-soft p-5 flex flex-col gap-2 text-[14.5px] p-muted"><span>Pour proposer un événement, il faut être leader d’une ruche.</span><Link to="/ruches" className="p-link font-medium">Créer ou rejoindre une ruche →</Link></div>
       ) : (
         <>
-          <div className="flex flex-col gap-2"><span className="text-[13.5px] p-muted">Au nom de la ruche</span><div className="flex flex-wrap gap-2">{hives.data?.map((h) => <button key={h.id} type="button" className={`p-chip h-9 ${hiveId === h.id ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, hiveId: h.id })}>{h.name}</button>)}</div></div>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Thème du salon</span><input className="p-field" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Ex. Dire non sans se justifier" /></label>
+          <div className="flex flex-col gap-2"><span className="text-[13.5px] p-muted">Organisé par</span><div className="flex flex-wrap gap-2">
+            {isAdmin && <button type="button" className={`p-chip h-9 ${owner === 0 ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, owner: 0 })}>Le cercle Présence</button>}
+            {hives.data?.map((h) => <button key={h.id} type="button" className={`p-chip h-9 ${owner === h.id ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, owner: h.id })}>Ruche {h.name}</button>)}
+          </div></div>
+          <div className="flex flex-wrap gap-2">{KINDS.map(([k, l]) => <button key={k} type="button" className={`p-chip h-9 ${f.kind === k ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, kind: k, durationMin: k === "salon" ? 45 : f.durationMin === 45 ? 90 : f.durationMin })}>{l}</button>)}</div>
+          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder={f.kind === "onsite" ? "Ex. Dîner du cercle à Lyon" : "Ex. Dire non sans se justifier"} /></label>
           <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Description</span><textarea className="p-field" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="De quoi parlera-t-on, et pour qui ?" /></label>
           <div className="flex flex-wrap gap-3">
             <label className="flex-[1_1_160px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Date</span><input type="date" className="p-field" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
@@ -172,8 +192,9 @@ function ProposeSalon({ onDone }: { onDone: () => void }) {
             <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Durée (min)</span><input type="number" min={15} step={15} className="p-field" value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} /></label>
             <label className="flex-[1_1_120px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Places</span><input type="number" min={2} className="p-field" value={f.maxSeats} onChange={(e) => setF({ ...f, maxSeats: Number(e.target.value) })} /></label>
           </div>
+          <AccessFields kind={f.kind} city={f.city} address={f.address} meetingUrl={f.meetingUrl} onChange={(p) => setF({ ...f, ...p })} />
           <div className="flex flex-wrap gap-2.5">
-            <button type="button" className="p-btn-primary" disabled={!hiveId || !f.title.trim() || !f.date || create.isPending} onClick={() => create.mutate({ id: hiveId, kind: "salon", title: f.title, description: f.description, startsAt: new Date(`${f.date}T${f.time || "20:00"}:00`), durationMin: f.durationMin, where: "En ligne", maxSeats: f.maxSeats, inAgenda: true })}>Programmer le salon</button>
+            <button type="button" className="p-btn-primary" disabled={owner < 0 || !f.title.trim() || !f.date || !accessReady(f.kind, f.address, f.meetingUrl) || pending} onClick={submit}>Programmer l’événement</button>
             <button type="button" className="p-btn-outline" onClick={onDone}>Annuler</button>
           </div>
         </>

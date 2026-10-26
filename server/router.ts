@@ -8,6 +8,7 @@ import { coachRouter } from "./routers/coach";
 import { speechRouter } from "./routers/speech";
 import { dashboardRouter } from "./routers/dashboard";
 import { talksRouter } from "./routers/talks";
+import { messagesRouter } from "./routers/messages";
 
 export const appRouter = createRouter({
   ping: proc.query(() => ({ ok: true, ts: Date.now() })),
@@ -20,6 +21,7 @@ export const appRouter = createRouter({
   speech: speechRouter,
   dashboard: dashboardRouter,
   talks: talksRouter,
+  messages: messagesRouter,
 });
 
 export type AppRouter = typeof appRouter;

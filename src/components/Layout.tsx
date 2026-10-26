@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet } from "react-router";
-import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon } from "lucide-react";
+import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon, Mail } from "lucide-react";
 import { Toaster } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
@@ -14,6 +14,7 @@ const NAV = [
   { to: "/forum", label: "Forum", icon: MessagesSquare },
   { to: "/matching", label: "Matching", icon: Heart },
   { to: "/membres", label: "Membres", icon: Users },
+  { to: "/messages", label: "Messages", icon: Mail },
   { to: "/ruches", label: "Ruches", icon: Hexagon },
 ];
 
@@ -31,6 +32,7 @@ function useTheme() {
 export default function Layout() {
   const { dark, setDark } = useTheme();
   const me = trpc.members.me.useQuery();
+  const unread = trpc.messages.unreadCount.useQuery(undefined, { refetchInterval: 8000 });
 
   return (
     <div className="min-h-screen flex flex-wrap">
@@ -54,7 +56,8 @@ export default function Layout() {
               style={({ isActive }) => (isActive ? { background: "var(--p-accent)" } : { color: "var(--p-menu-ink)" })}
             >
               <Icon size={19} strokeWidth={1.6} />
-              <span>{label}</span>
+              <span className="flex-1">{label}</span>
+              {to === "/messages" && !!unread.data && <span className="min-w-[22px] h-[22px] px-1.5 rounded-full text-[12px] font-semibold flex items-center justify-center" style={{ background: "var(--p-ink)", color: "var(--p-surface)" }}>{unread.data > 99 ? "99+" : unread.data}</span>}
             </NavLink>
           ))}
         </nav>

@@ -203,7 +203,9 @@ export const events = pgTable(
     durationMin: integer("duration_min").notNull().default(60),
     days: integer("days").notNull().default(1),
     city: varchar("city", { length: 80 }),
-    where: varchar("where", { length: 200 }).notNull().default(""),
+    where: varchar("where", { length: 200 }).notNull().default(""), // lieu public (ville, « En ligne »)
+    address: text("address").notNull().default(""), // adresse précise (présentiel) — visible des inscrits uniquement
+    meetingUrl: text("meeting_url").notNull().default(""), // lien visio (en ligne, salon) — visible des inscrits uniquement
     lang: varchar("lang", { length: 5 }).notNull().default("FR"),
     maxSeats: integer("max_seats"),
     featured: boolean("featured").notNull().default(false),
@@ -338,5 +340,24 @@ export const advice = pgTable(
   },
   (table) => ({
     speechIdIdx: index("advice_speech_id_idx").on(table.speechId),
+  })
+);
+
+// ─────────────────────────────────────────────────────────────
+// Messagerie entre membres
+// ─────────────────────────────────────────────────────────────
+export const messages = pgTable(
+  "messages",
+  {
+    id: serial("id").primaryKey(),
+    fromId: integer("from_id").notNull(),
+    toId: integer("to_id").notNull(),
+    text: text("text").notNull(),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pairIdx: index("messages_pair_idx").on(t.fromId, t.toId, t.createdAt),
+    toIdx: index("messages_to_idx").on(t.toId, t.readAt),
   })
 );

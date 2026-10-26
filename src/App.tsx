@@ -11,6 +11,7 @@ import Membres from "@/pages/Membres";
 import Ruches from "@/pages/Ruches";
 import Ruche from "@/pages/Ruche";
 import Evenements from "@/pages/Evenements";
+import Messages from "@/pages/Messages";
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/ruches" element={<Ruches />} />
         <Route path="/ruches/:id" element={<Ruche />} />
         <Route path="/evenements" element={<Evenements />} />
+        <Route path="/messages" element={<Messages />} />
         <Route path="*" element={<div className="py-20 text-center p-muted">Cette page n’existe pas.</div>} />
       </Route>
     </Routes>

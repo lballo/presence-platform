@@ -5,6 +5,7 @@ import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
 import { events, eventRegistrations, hiveMembers } from "../../db/schema";
 import { publicMember } from "../lib/format";
+import { eventAccess } from "../lib/eventAccess";
 
 export const eventsRouter = createRouter({
   /** Programme de la communauté : événements du cercle + salons live (+ événements de ruche où je suis inscrite). */
@@ -26,6 +27,7 @@ export const eventsRouter = createRouter({
           faces: regs.slice(0, 3).map((r) => publicMember(r.member)),
           registered: !!mine && !mine.waitlist,
           waitlisted: !!mine && mine.waitlist,
+          ...eventAccess(e, (!!mine && !mine.waitlist) || e.hostId === ctx.memberId || ctx.isAdmin),
         };
       });
   }),
@@ -56,4 +58,29 @@ export const eventsRouter = createRouter({
     const rows = await db.query.hiveMembers.findMany({ where: eq(hiveMembers.memberId, ctx.memberId), with: { hive: true } });
     return rows.filter((r) => r.role === "founder" || r.role === "leader").map((r) => ({ id: r.hive.id, name: r.hive.name }));
   }),
+
+  /** Administratrice : créer un événement du cercle (sans ruche). */
+  create: proc
+    .input(
+      z.object({
+        kind: z.enum(["onsite", "online", "salon"]),
+        title: z.string().min(1).max(200),
+        description: z.string().max(2000).default(""),
+        startsAt: z.coerce.date(),
+        durationMin: z.number().int().min(15).max(600).default(60),
+        city: z.string().max(80).optional(),
+        address: z.string().max(400).default(""),
+        meetingUrl: z.string().max(500).default(""),
+        maxSeats: z.number().int().min(2).max(500).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Réservé à l’équipe Présence." });
+      if (input.kind === "onsite" && !input.address.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez l’adresse de l’événement." });
+      if (input.kind !== "onsite" && !/^https?:\/\/\S+$/.test(input.meetingUrl.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez le lien de la visio (https://…)." });
+      const db = getDb();
+      const [ev] = await db.insert(events).values({ ...input, hostId: ctx.memberId, where: input.kind === "onsite" ? input.city || "Présentiel" : "En ligne", inAgenda: true }).returning();
+      await db.insert(eventRegistrations).values({ eventId: ev.id, memberId: ctx.memberId });
+      return ev;
+    }),
 });

@@ -3,7 +3,6 @@ import { Link } from "react-router";
 import { Search, MapPin, MessageCircle, Heart } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
-import { Avatar } from "@/components/Avatar";
 import { plural } from "@/lib/format";
 
 const ZONES = [["Toutes", "Toutes"], ["Paris", "Paris"], ["Lyon", "Lyon"], ["Genève", "Genève"], ["France", "Ailleurs en France"], ["International", "International"]];
@@ -75,7 +74,7 @@ export default function Membres() {
               </dl>
               <div className="flex flex-wrap gap-1.5">{sel.values.map((v) => <span key={v} className="p-chip h-[30px] text-[13px] cursor-default">{v}</span>)}</div>
               {me.data && sel.values.some((v) => me.data!.values.includes(v)) && <div className="p-soft p-3.5 text-[14px]"><b>Ce qui vous rapproche : </b>{sel.values.filter((v) => me.data!.values.includes(v)).join(", ").toLowerCase()}.</div>}
-              <div className="flex gap-2.5 pt-1"><Avatar m={sel} size={0} className="hidden" /><button type="button" className="p-btn-outline flex-1"><MessageCircle size={16} /> Écrire</button></div>
+              {me.data?.id !== sel.id && <div className="flex gap-2.5 pt-1"><Link to={`/messages?to=${sel.id}`} className="p-btn-primary flex-1 no-underline"><MessageCircle size={16} /> Écrire à {sel.firstName}</Link></div>}
             </div>
           </aside>
         )}

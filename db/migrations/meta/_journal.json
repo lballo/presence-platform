@@ -8,6 +8,13 @@
       "when": 1793041494172,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793048431648,
+      "tag": "0001_messages_event_access",
+      "breakpoints": true
     }
   ]
 }
