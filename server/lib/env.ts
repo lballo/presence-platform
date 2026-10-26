@@ -1,11 +1,9 @@
 import "dotenv/config";
 
+// Ne jette pas au chargement : une variable absente est signalée par /api/health
+// et au moment de la première requête, plutôt que de faire planter toute l'API.
 function required(name: string): string {
-  const value = process.env[name];
-  if (!value && process.env.NODE_ENV === "production") {
-    throw new Error(`Variable d’environnement manquante : ${name}`);
-  }
-  return value ?? "";
+  return process.env[name] ?? "";
 }
 
 export const env = {
