@@ -1,8 +1,4 @@
-import { desc } from "drizzle-orm";
 import { createRouter, proc } from "./middleware";
-import { getDb } from "./queries/connection";
-import { talks } from "../db/schema";
-import { publicMember } from "./lib/format";
 import { membersRouter } from "./routers/members";
 import { forumRouter } from "./routers/forum";
 import { hivesRouter } from "./routers/hives";
@@ -11,6 +7,7 @@ import { matchingRouter } from "./routers/matching";
 import { coachRouter } from "./routers/coach";
 import { speechRouter } from "./routers/speech";
 import { dashboardRouter } from "./routers/dashboard";
+import { talksRouter } from "./routers/talks";
 
 export const appRouter = createRouter({
   ping: proc.query(() => ({ ok: true, ts: Date.now() })),
@@ -22,12 +19,7 @@ export const appRouter = createRouter({
   coach: coachRouter,
   speech: speechRouter,
   dashboard: dashboardRouter,
-  talks: createRouter({
-    list: proc.query(async () => {
-      const list = await getDb().query.talks.findMany({ with: { speaker: true }, orderBy: [desc(talks.publishedAt)] });
-      return list.map((t) => ({ ...t, speaker: publicMember(t.speaker) }));
-    }),
-  }),
+  talks: talksRouter,
 });
 
 export type AppRouter = typeof appRouter;

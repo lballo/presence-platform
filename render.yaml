@@ -19,6 +19,14 @@ services:
         sync: false
       - key: CURRENT_MEMBER_ID
         value: "2"
+      - key: ADMIN_MEMBER_ID
+        value: "2"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
       - key: CALENDLY_URL
         sync: false
       - key: CALENDLY_EXPLO_URL

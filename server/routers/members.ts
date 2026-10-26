@@ -22,6 +22,7 @@ export const membersRouter = createRouter({
       ...publicMember(m),
       intentLabels: m.intents.map((c) => ({ code: c, label: myIntentLabel(c) })),
       intentGroups: INTENT_GROUPS,
+      isAdmin: ctx.isAdmin,
     };
   }),
 

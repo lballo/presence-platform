@@ -248,14 +248,19 @@ export const swipes = pgTable(
 // Talk Show
 // ─────────────────────────────────────────────────────────────
 
+export const talkStatusEnum = pgEnum("talk_status", ["pending", "published", "rejected"]);
+
 export const talks = pgTable("talks", {
   id: serial("id").primaryKey(),
   speakerId: integer("speaker_id").notNull(),
   title: varchar("title", { length: 200 }).notNull(),
-  summary: text("summary").notNull().default(""),
+  summary: text("summary").notNull().default(""), // accroche affichée (reprise de la description à la publication)
+  description: text("description").notNull().default(""), // description / motivation envoyée par le membre
+  status: talkStatusEnum("status").notNull().default("published"),
   durationMin: integer("duration_min").notNull().default(12),
   views: integer("views").notNull().default(0),
   videoUrl: text("video_url"),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
   publishedAt: timestamp("published_at").defaultNow().notNull(),
 });
 

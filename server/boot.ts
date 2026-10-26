@@ -17,6 +17,8 @@ app.get("/api/health", async (c) => {
     DATABASE_URL: !!env.databaseUrl,
     DB_SCHEMA: process.env.DB_SCHEMA ?? "(public)",
     GEMINI_API_KEY: !!env.geminiApiKey,
+    SUPABASE_STORAGE: !!(env.supabaseUrl && env.supabaseServiceKey),
+    ADMIN_MEMBER_ID: env.adminMemberId,
     CURRENT_MEMBER_ID: env.currentMemberId,
     runtime: process.env.VERCEL ? "vercel" : process.env.RENDER ? "render" : "node",
   };

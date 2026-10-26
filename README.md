@@ -29,6 +29,8 @@ npm run dev                 # http://localhost:3000
 | `DB_SCHEMA` | Schéma Postgres à utiliser (vide = `public`). Sur Supabase : `presence` (tables créées par `db/migrations/0000_init.sql` dans ce schéma ; `db:push` le respecte aussi). |
 | `CURRENT_MEMBER_ID` | Membre « connecté » tant qu'il n'y a pas d'auth (1 = Hélène, 2 = Laura…). Peut aussi être passé par l'en-tête HTTP `x-member-id`. |
 | `GEMINI_API_KEY` | Clé Google AI Studio pour l'analyse vidéo et le Coach IA. Sans clé : coach en mode réponses fixes, analyse vidéo indisponible. |
+| `ADMIN_MEMBER_ID` | Membre qui valide les talks soumis (2 = Laura). |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Envoi des vidéos du Talk Show dans le bucket Supabase Storage `talks` (public en lecture). Sans elles, le formulaire propose un lien vidéo à la place du fichier. |
 | `CALENDLY_URL` | Lien de réservation des séances de coaching (bandeau du tableau de bord) |
 | `CALENDLY_EXPLO_URL` | Lien « Réserver votre session exploratoire » (membres non accompagnés) |
 
@@ -75,6 +77,10 @@ src/
 ## Fonctionnement des intentions
 
 Chaque membre règle dans son profil (tableau de bord → Modifier mon profil) jusqu'à 3 intentions parmi : Mentorat (cherche / propose), Pairs, Associé, Investissement (cherche / propose), Recrutement (cherche / propose), Amitié, Prise de parole (cherche un intervenant / est intervenant). L'Espace Rencontre (amour) est un opt-in séparé, jamais visible dans l'annuaire. Le Matching lit ces intentions et présente les profils complémentaires.
+
+## Talk Show
+
+Chaque membre peut proposer un talk (titre, description/motivation, vidéo chargée ou lien). La proposition passe en « attente de validation » ; le membre `ADMIN_MEMBER_ID` voit un panneau « à valider » en haut du Talk Show et publie ou refuse. Les vidéos chargées partent directement du navigateur vers Supabase Storage (URL signée créée par le serveur), ce qui contourne la limite de 4,5 Mo de Vercel.
 
 ## À faire ensuite
 
