@@ -84,11 +84,19 @@ Chaque membre peut proposer un talk (titre, description/motivation, vidéo charg
 
 ## Messagerie
 
-Page « Messages » : conversations entre membres, badge de non-lus dans le menu. Les fils se rafraîchissent toutes les 2 secondes (et la liste toutes les 4 s), ce qui suffit pour une conversation fluide sans serveur temps réel. Les boutons « Écrire » de l’annuaire et des matchs ouvrent directement le fil.
+Page « Messages » : ouverte à tous les membres (pas seulement aux relations), pièces jointes jusqu’à 50 Mo (bucket privé `messages`, liens de téléchargement temporaires). Conversations entre membres, badge de non-lus dans le menu. Les fils se rafraîchissent toutes les 2 secondes (et la liste toutes les 4 s), ce qui suffit pour une conversation fluide sans serveur temps réel. Les boutons « Écrire » de l’annuaire et des matchs ouvrent directement le fil.
 
 ## Événements : adresse et lien visio
 
 À la création d’un événement (dans une ruche ou depuis la page Événements), l’adresse exacte est demandée pour le présentiel et le lien de visio pour l’en ligne et les salons. Ces informations ne sont renvoyées par l’API qu’aux personnes inscrites (hors liste d’attente), à l’organisatrice, aux leaders de la ruche et à l’administratrice ; les autres voient seulement la ville ou « En ligne ».
+
+## Profils
+
+Chaque membre renseigne son intention, son ambition, ses valeurs, ses passions et son lien LinkedIn. L’annuaire ouvre une fiche résumée et une page de profil complet (`/membres/:id`) : présentation, ruches, talks publiés, événements animés et lien avec la personne (matchs, messages échangés).
+
+## Fichiers
+
+Les vidéos (Talk Show, demandes de retour du forum) et les pièces jointes des messages sont envoyées directement du navigateur vers Supabase Storage grâce à une URL signée créée par le serveur. Il faut `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` ; sans elles, le forum et le Talk Show proposent un lien vidéo et le trombone des messages reste désactivé.
 
 ## Statuts et événements
 

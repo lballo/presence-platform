@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { eq, and, desc, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
 import { forumPosts, forumLikes, opportunities, opportunityInterests } from "../../db/schema";
@@ -15,8 +16,10 @@ export const forumRouter = createRouter({
   }),
 
   createPost: proc
-    .input(z.object({ kind: z.enum(["victoire", "video", "question"]), text: z.string().min(1).max(2000), askFeedback: z.boolean().default(false) }))
+    .input(z.object({ kind: z.enum(["victoire", "video", "question"]), text: z.string().min(1).max(2000), askFeedback: z.boolean().default(false), videoUrl: z.string().trim().max(1000).default("") }))
     .mutation(async ({ ctx, input }) => {
+      if (input.videoUrl && !/^https?:\/\/\S+$/.test(input.videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Le lien de la vidéo doit commencer par https://" });
+      if (input.kind === "video" && !input.videoUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Ajoutez votre vidéo (lien ou fichier) pour demander un retour." });
       const db = getDb();
       const [row] = await db.insert(forumPosts).values({ ...input, authorId: ctx.memberId }).returning();
       return row;

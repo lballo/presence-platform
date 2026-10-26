@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { eq, and, ne, or, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, ne, or, inArray, isNotNull, isNull, desc, asc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
-import { members, swipes, messages } from "../../db/schema";
+import { members, swipes, messages, hiveMembers, talks, events } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { INTENT_CODES, INTENT_GROUPS, intentLabel, myIntentLabel } from "../lib/intents";
 
@@ -72,6 +72,9 @@ export const membersRouter = createRouter({
         role: z.string().max(160).default(""),
         city: z.string().max(80).default(""),
         intention: z.string().max(400).default(""),
+        ambition: z.string().max(600).default(""),
+        passions: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
+        linkedinUrl: z.string().trim().max(300).default("").refine((u) => !u || /^https?:\/\/([\w-]+\.)?linkedin\.com\/\S+$/i.test(u), "Le lien LinkedIn doit ressembler à https://www.linkedin.com/in/votre-nom"),
         values: z.array(z.string().min(1).max(40)).max(5),
         intents: z.array(z.enum(INTENT_CODES)).max(3),
         langs: z.string().max(160).default(""),
@@ -164,6 +167,33 @@ export const membersRouter = createRouter({
 
   byId: proc.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const m = await requireMember(input.id);
-    return { ...publicMember(m), tags: m.intents.map((code) => ({ code, label: intentLabel(code, m.gender) })) };
+    return { ...publicMember(m), rencontreEnabled: undefined, rencontrePref: undefined, rencontreBlurb: undefined, tags: m.intents.map((code) => ({ code, label: intentLabel(code, m.gender) })) };
+  }),
+
+  /** Profil complet d'un membre : présentation, ruches, talks, événements animés, et notre lien éventuel. */
+  profile: proc.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    const db = getDb();
+    const m = await requireMember(input.id);
+    const [memberships, myTalks, hosted, liked, msgs] = await Promise.all([
+      db.query.hiveMembers.findMany({ where: eq(hiveMembers.memberId, m.id), with: { hive: true } }),
+      db.query.talks.findMany({ where: and(eq(talks.speakerId, m.id), eq(talks.status, "published")), orderBy: [desc(talks.publishedAt)] }),
+      db.query.events.findMany({ where: and(eq(events.hostId, m.id), eq(events.status, "published"), isNull(events.hiveId), gte(events.startsAt, new Date())), orderBy: [asc(events.startsAt)], limit: 4 }),
+      db.select().from(swipes).where(and(eq(swipes.liked, true), or(and(eq(swipes.fromId, ctx.memberId), eq(swipes.toId, m.id)), and(eq(swipes.fromId, m.id), eq(swipes.toId, ctx.memberId))))),
+      db.select({ id: messages.id, at: messages.createdAt }).from(messages).where(or(and(eq(messages.fromId, ctx.memberId), eq(messages.toId, m.id)), and(eq(messages.fromId, m.id), eq(messages.toId, ctx.memberId)))).orderBy(desc(messages.createdAt)),
+    ]);
+    const GOALS: Record<string, string> = { mentorat: "Mentorat", pairs: "Pairs", associe: "Associé", invest: "Investissement", recrut: "Recrutement", amitie: "Amitié", parole: "Prise de parole" };
+    const matchGoals = liked
+      .filter((s) => s.fromId === ctx.memberId && s.goal !== "amour" && liked.some((t) => t.fromId === m.id && t.goal === s.goal))
+      .map((s) => GOALS[s.goal] ?? s.goal);
+    return {
+      ...publicMember(m),
+      rencontreEnabled: undefined, rencontrePref: undefined, rencontreBlurb: undefined,
+      isMe: m.id === ctx.memberId,
+      tags: m.intents.map((code) => ({ code, offer: code.endsWith(":offer"), label: intentLabel(code, m.gender) })),
+      hives: memberships.filter((h) => h.role !== "pending").map((h) => ({ id: h.hive.id, name: h.hive.name, type: h.hive.type, cover: h.hive.cover, role: h.role })),
+      talks: myTalks.map((t) => ({ id: t.id, title: t.title, summary: t.summary, durationMin: t.durationMin, views: t.views })),
+      hosting: hosted.map((e) => ({ id: e.id, title: e.title, kind: e.kind, startsAt: e.startsAt, where: e.where })),
+      relation: { matchGoals, messageCount: msgs.length, lastMessageAt: msgs[0]?.at ?? null },
+    };
   }),
 });

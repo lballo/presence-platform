@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck } from "lucide-react";
+import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download } from "lucide-react";
+import { useUpload, fileSize } from "@/lib/upload";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
@@ -25,7 +26,7 @@ export default function Messages() {
 
   return (
     <>
-      <PageHeader eyebrow="Le cercle" title="Messages" intro="Échangez directement avec les membres du réseau. Les messages arrivent en quelques secondes." />
+      <PageHeader eyebrow="Le cercle" title="Messages" intro="Écrivez à n’importe quel membre du cercle, pas seulement à vos relations. Les messages arrivent en quelques secondes, et vous pouvez joindre des fichiers." />
       <div className="p-card overflow-hidden flex" style={{ height: "min(72vh, 760px)", minHeight: 460 }}>
         {/* Liste des conversations */}
         <section className={`${withId ? "hidden md:flex" : "flex"} w-full md:w-[340px] md:flex-none flex-col border-r min-w-0`} style={{ borderColor: "var(--p-line)" }}>
@@ -94,20 +95,41 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
   // Rafraîchissement toutes les 2 s : les nouveaux messages apparaissent quasi instantanément.
   const thread = trpc.messages.thread.useQuery({ withId }, { refetchInterval: 2000, refetchIntervalInBackground: false });
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState<{ key: number; text: string }[]>([]);
+  const cfg = trpc.uploads.config.useQuery();
+  const { upload, progress } = useUpload("message");
+  const fileInput = useRef<HTMLInputElement>(null);
   const send = trpc.messages.send.useMutation({
     onSuccess: () => { utils.messages.thread.invalidate({ withId }); utils.messages.conversations.invalidate(); },
-    onError: (e, v) => { toast.error(e.message); setText(v.text); },
-    onSettled: (_d, _e, v) => setPending((p) => p.filter((x) => x.text !== v.text)),
+    onError: (e, v) => { toast.error(e.message); setText(v.text ?? ""); },
+    onSettled: (_d, _e, v) => setPending((p) => p.filter((x) => x.text !== (v.text ?? ""))),
   });
+  const maxMb = cfg.data?.maxMb.message ?? 50;
+  const pick = (f: File | undefined) => {
+    if (!f) return;
+    if (f.size > maxMb * 1024 * 1024) { toast.error(`Le fichier dépasse ${maxMb} Mo.`); return; }
+    setFile(f);
+  };
   const bottom = useRef<HTMLDivElement>(null);
   const count = (thread.data?.messages.length ?? 0) + pending.length;
   useEffect(() => { bottom.current?.scrollIntoView({ block: "end" }); }, [count, withId]);
   useEffect(() => { utils.messages.unreadCount.invalidate(); utils.messages.conversations.invalidate(); }, [thread.data?.messages.length, utils]);
 
-  const go = () => {
+  const go = async () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t && !file) return;
+    if (file) {
+      try {
+        const up = await upload(file);
+        setPending((p) => [...p, { key: Date.now(), text: t || `Pièce jointe : ${file.name}` }]);
+        setText(""); setFile(null);
+        send.mutate({ toId: withId, text: t, attachment: { path: up.path, name: up.name, type: up.type, size: up.size } });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Envoi impossible");
+      }
+      return;
+    }
     setPending((p) => [...p, { key: Date.now(), text: t }]);
     setText("");
     send.mutate({ toId: withId, text: t });
@@ -131,7 +153,7 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
       <div className="flex items-center gap-3 px-4 h-[62px] border-b flex-none" style={{ borderColor: "var(--p-line)" }}>
         <button type="button" className="md:hidden w-9 h-9 rounded-full flex items-center justify-center" onClick={onBack} aria-label="Retour"><ArrowLeft size={18} /></button>
         {peer && <><Avatar m={peer} size={38} /><span className="flex flex-col min-w-0"><span className="font-semibold text-[15px] truncate">{peer.name}</span><span className="text-[12.5px] p-muted truncate">{peer.role} · {peer.city}</span></span></>}
-        {peer && <Link to="/membres" className="ml-auto p-btn-ghost text-[13px] no-underline">Profil</Link>}
+        {peer && <Link to={`/membres/${peer.id}`} className="ml-auto p-btn-ghost text-[13px] no-underline">Voir le profil</Link>}
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1" style={{ background: "var(--p-surface-2)" }}>
         {thread.data && thread.data.messages.length === 0 && pending.length === 0 && (
@@ -140,13 +162,25 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
         {groups.map((g) => (
           <div key={g.day} className="flex flex-col gap-1">
             <span className="self-center text-[11.5px] font-medium uppercase tracking-[0.18em] p-faint my-2">{g.day}</span>
-            {g.items.map((m) => <Bubble key={m.id} mine={m.mine} text={m.text} meta={<>{hour(new Date(m.at))}{m.mine && (m.read ? <CheckCheck size={13} /> : <Check size={13} />)}</>} />)}
+            {g.items.map((m) => <Bubble key={m.id} mine={m.mine} text={m.text} attachment={m.attachment} meta={<>{hour(new Date(m.at))}{m.mine && (m.read ? <CheckCheck size={13} /> : <Check size={13} />)}</>} />)}
           </div>
         ))}
         {pending.map((p) => <Bubble key={p.key} mine text={p.text} meta={<>envoi…</>} faded />)}
         <div ref={bottom} />
       </div>
+      {(file || progress !== null) && (
+        <div className="flex items-center gap-3 px-4 pt-3 flex-none">
+          <span className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3 rounded-xl border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface-2)" }}>
+            <FileText size={16} className="flex-none" style={{ color: "var(--p-accent-text)" }} />
+            <span className="truncate text-[13.5px]">{file?.name}</span>
+            <span className="text-[12px] p-faint flex-none">{file ? fileSize(file.size) : ""}{progress !== null ? ` · envoi ${progress}%` : ""}</span>
+          </span>
+          {progress === null && <button type="button" aria-label="Retirer le fichier" className="w-9 h-9 rounded-full flex items-center justify-center" onClick={() => setFile(null)}><X size={16} /></button>}
+        </div>
+      )}
       <form className="flex items-end gap-2 p-3 border-t flex-none" style={{ borderColor: "var(--p-line)" }} onSubmit={(e) => { e.preventDefault(); go(); }}>
+        <input ref={fileInput} type="file" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+        <button type="button" aria-label="Joindre un fichier" title={cfg.data?.enabled ? `Joindre un fichier (jusqu’à ${maxMb} Mo)` : "L’envoi de fichiers sera disponible une fois le stockage configuré"} disabled={!cfg.data?.enabled || progress !== null} className="w-12 h-12 rounded-full border flex items-center justify-center flex-none disabled:opacity-40" style={{ borderColor: "var(--p-line-2)" }} onClick={() => fileInput.current?.click()}><Paperclip size={18} /></button>
         <textarea
           rows={1}
           value={text}
@@ -156,16 +190,31 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
           className="p-field flex-1 resize-none max-h-[140px]"
           style={{ minHeight: 46 }}
         />
-        <button type="submit" className="p-btn-primary w-12 h-12 p-0 flex items-center justify-center rounded-full flex-none" disabled={!text.trim()} aria-label="Envoyer"><Send size={18} /></button>
+        <button type="submit" className="p-btn-primary w-12 h-12 p-0 flex items-center justify-center rounded-full flex-none" disabled={(!text.trim() && !file) || progress !== null} aria-label="Envoyer"><Send size={18} /></button>
       </form>
     </>
   );
 }
 
-function Bubble({ mine, text, meta, faded }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean }) {
+type Att = { name: string; type: string; size: number; url: string | null; downloadUrl: string | null } | null | undefined;
+
+function Attachment({ a, mine }: { a: NonNullable<Att>; mine: boolean }) {
+  if (a.url && a.type.startsWith("image/")) return <a href={a.url} target="_blank" rel="noopener" className="block -mx-1.5 -mt-0.5 mb-1"><img src={a.url} alt={a.name} className="max-h-[280px] w-auto rounded-xl" /></a>;
+  if (a.url && a.type.startsWith("video/")) return <video src={a.url} controls playsInline className="max-h-[300px] w-full rounded-xl mb-1 bg-black" />;
+  return (
+    <a href={a.downloadUrl ?? a.url ?? "#"} target="_blank" rel="noopener" className="flex items-center gap-2.5 p-2.5 rounded-xl no-underline mb-1" style={mine ? { background: "rgba(255,255,255,0.15)", color: "#fff" } : { background: "var(--p-surface-2)", color: "var(--p-ink)" }}>
+      <FileText size={20} className="flex-none" />
+      <span className="flex flex-col min-w-0"><span className="text-[14px] font-medium truncate">{a.name}</span><span className={`text-[12px] ${mine ? "text-white/70" : "p-muted"}`}>{fileSize(a.size)}{a.url ? "" : " · lien indisponible"}</span></span>
+      <Download size={16} className="flex-none ml-auto" />
+    </a>
+  );
+}
+
+function Bubble({ mine, text, meta, faded, attachment }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att }) {
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[15px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...(mine ? { background: "var(--p-accent)", color: "#fff", borderBottomRightRadius: 6 } : { background: "var(--p-surface)", color: "var(--p-ink)", borderBottomLeftRadius: 6, border: "1px solid var(--p-line)" }), opacity: faded ? 0.6 : 1 }}>
+        {attachment && <Attachment a={attachment} mine={mine} />}
         {text}
         <span className={`flex items-center justify-end gap-1 text-[11px] mt-0.5 ${mine ? "text-white/70" : "p-faint"}`}>{meta}</span>
       </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Search, MapPin, MessageCircle, Heart, Users, Sparkles, ShieldCheck } from "lucide-react";
+import { Search, MapPin, MessageCircle, Heart, Users, Sparkles, ShieldCheck, Linkedin } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
@@ -86,6 +86,9 @@ export default function Membres() {
             <div className="p-6 flex flex-col gap-3.5">
               <div><span className="p-eyebrow">{sel.city}</span><h2 className="m-0 text-[36px] leading-tight">{sel.name}</h2><span className="text-[14.5px] p-muted">{sel.role} · {sel.org}</span></div>
               <p className="m-0 text-[15px] leading-relaxed">{sel.bio}</p>
+              {sel.ambition && <p className="m-0 text-[14.5px] leading-relaxed"><span className="text-[12px] font-semibold uppercase tracking-[0.22em] mr-1.5" style={{ color: "var(--p-gold)" }}>Ambition</span>{sel.ambition}</p>}
+              {sel.passions?.length > 0 && <div className="flex flex-col gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>Passions</span><div className="flex flex-wrap gap-1.5">{sel.passions.map((v) => <span key={v} className="p-chip h-[30px] text-[13px] cursor-default border-dashed">{v}</span>)}</div></div>}
+              {sel.linkedinUrl && <a href={sel.linkedinUrl} target="_blank" rel="noopener" className="p-btn-outline p-btn-sm no-underline self-start"><Linkedin size={15} /> Profil LinkedIn</a>}
               <div className="flex flex-col gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>Ouvert à</span><div className="flex flex-wrap gap-1.5">{sel.tags.map((t) => <span key={t.code} className="h-8 px-3 rounded-full text-[13px] font-medium flex items-center" style={t.offer ? { background: "var(--p-surface-2)", color: "var(--p-gold)" } : { background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{t.label}</span>)}</div></div>
               <dl className="m-0 grid gap-2 text-[14px] py-3 border-y" style={{ gridTemplateColumns: "auto 1fr", borderColor: "var(--p-line)" }}>
                 <dt className="p-muted">Pôle dominant</dt><dd className="m-0">{sel.pole}</dd>
@@ -102,7 +105,10 @@ export default function Membres() {
               )}
               {sel.status !== "member" && <span className="p-pill self-start">{sel.status === "admin" ? "Équipe Présence" : "Organisateur"}</span>}
               {me.data?.isAdmin && me.data.id !== sel.id && <StatusPicker memberId={sel.id} status={sel.status} />}
-              {me.data?.id !== sel.id && <div className="flex gap-2.5 pt-1"><Link to={`/messages?to=${sel.id}`} className="p-btn-primary flex-1 no-underline"><MessageCircle size={16} /> Écrire à {sel.firstName}</Link></div>}
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                {me.data?.id !== sel.id && <Link to={`/messages?to=${sel.id}`} className="p-btn-primary flex-1 no-underline"><MessageCircle size={16} /> Écrire</Link>}
+                <Link to={`/membres/${sel.id}`} className="p-btn-outline flex-1 no-underline">Voir le profil complet</Link>
+              </div>
             </div>
           </aside>
         )}
@@ -114,7 +120,7 @@ export default function Membres() {
 const STATUSES = [["member", "Membre"], ["organizer", "Organisateur"], ["admin", "Administrateur"]] as const;
 
 /** Administratrice : changer le statut d’un membre. */
-function StatusPicker({ memberId, status }: { memberId: number; status: string }) {
+export function StatusPicker({ memberId, status }: { memberId: number; status: string }) {
   const utils = trpc.useUtils();
   const set = trpc.members.setStatus.useMutation({ onSuccess: () => { utils.members.invalidate(); toast.success("Statut mis à jour"); }, onError: (e) => toast.error(e.message) });
   return (

@@ -5,10 +5,8 @@ import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
 import { talks } from "../../db/schema";
 import { publicMember } from "../lib/format";
-import { env } from "../lib/env";
+import { BUCKETS, createSignedUpload, storageReady } from "../lib/storage";
 
-const BUCKET = "talks";
-const storageReady = () => !!(env.supabaseUrl && env.supabaseServiceKey);
 
 export const talksRouter = createRouter({
   /** Talks publiés, du plus récent au plus ancien. */
@@ -23,32 +21,12 @@ export const talksRouter = createRouter({
   }),
 
   /** Ce que le navigateur doit savoir pour envoyer une vidéo. */
-  uploadConfig: proc.query(() => ({ enabled: storageReady(), maxMb: 500 })),
+  uploadConfig: proc.query(() => ({ enabled: storageReady(), maxMb: BUCKETS.talk.maxMb })),
 
-  /**
-   * URL d'envoi signée : la vidéo part directement du navigateur vers le bucket Supabase,
-   * sans transiter par le serveur (indispensable sur Vercel, limité à 4,5 Mo par requête).
-   */
+  /** URL d'envoi signée : la vidéo part directement du navigateur vers Supabase Storage. */
   createUploadUrl: proc
-    .input(z.object({ filename: z.string().min(1).max(200), contentType: z.string().max(100) }))
-    .mutation(async ({ ctx, input }) => {
-      if (!storageReady()) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Le stockage des vidéos n’est pas configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)." });
-      const ext = (input.filename.split(".").pop() ?? "mp4").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
-      const path = `membre-${ctx.memberId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const res = await fetch(`${env.supabaseUrl}/storage/v1/object/upload/sign/${BUCKET}/${path}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${env.supabaseServiceKey}`, apikey: env.supabaseServiceKey, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Supabase Storage : ${res.status} ${await res.text()}` });
-      const data = (await res.json()) as { url: string; token?: string };
-      return {
-        uploadUrl: `${env.supabaseUrl}/storage/v1${data.url}`,
-        apikey: env.supabaseAnonKey || env.supabaseServiceKey,
-        contentType: input.contentType || "video/mp4",
-        publicUrl: `${env.supabaseUrl}/storage/v1/object/public/${BUCKET}/${path}`,
-      };
-    }),
+    .input(z.object({ filename: z.string().min(1).max(200), contentType: z.string().max(100), size: z.number().int().min(0).default(0) }))
+    .mutation(({ ctx, input }) => createSignedUpload("talk", ctx.memberId, input.filename, input.contentType || "video/mp4", input.size)),
 
   /** Soumettre un talk : il attend la validation de l'équipe. */
   submit: proc

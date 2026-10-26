@@ -40,6 +40,9 @@ export const members = pgTable("members", {
   photoUrl: text("photo_url"),
   bio: text("bio").notNull().default(""),
   intention: text("intention").notNull().default(""),
+  ambition: text("ambition").notNull().default(""), // mon ambition (texte libre)
+  passions: jsonb("passions").$type<string[]>().notNull().default([]),
+  linkedinUrl: text("linkedin_url").notNull().default(""),
   values: jsonb("values").$type<string[]>().notNull().default([]),
   // codes : "mentorat:seek" | "mentorat:offer" | "pairs:sym" | "associe:sym" | "invest:seek" | "invest:offer"
   //         "recrut:seek" | "recrut:offer" | "amitie:sym" | "parole:seek" | "parole:offer"
@@ -87,6 +90,7 @@ export const forumPosts = pgTable("forum_posts", {
   kind: forumKindEnum("kind").notNull(),
   text: text("text").notNull(),
   askFeedback: boolean("ask_feedback").notNull().default(false),
+  videoUrl: text("video_url").notNull().default(""), // lien (YouTube, Drive…) ou vidéo chargée, pour les demandes de retour
   likes: integer("likes").notNull().default(0),
   replies: integer("replies").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -362,6 +366,11 @@ export const messages = pgTable(
     fromId: integer("from_id").notNull(),
     toId: integer("to_id").notNull(),
     text: text("text").notNull(),
+    // pièce jointe (bucket privé « messages ») : chemin, nom d'origine, type et taille
+    attachmentPath: text("attachment_path"),
+    attachmentName: text("attachment_name"),
+    attachmentType: text("attachment_type"),
+    attachmentSize: integer("attachment_size"),
     readAt: timestamp("read_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

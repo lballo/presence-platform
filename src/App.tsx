@@ -12,6 +12,7 @@ import Ruches from "@/pages/Ruches";
 import Ruche from "@/pages/Ruche";
 import Evenements from "@/pages/Evenements";
 import Messages from "@/pages/Messages";
+import Profil from "@/pages/Profil";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/forum" element={<Forum />} />
         <Route path="/matching" element={<Matching />} />
         <Route path="/membres" element={<Membres />} />
+        <Route path="/membres/:id" element={<Profil />} />
         <Route path="/ruches" element={<Ruches />} />
         <Route path="/ruches/:id" element={<Ruche />} />
         <Route path="/evenements" element={<Evenements />} />

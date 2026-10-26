@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Pencil, CalendarPlus, ExternalLink, ChevronLeft, ChevronRight, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
+import { Linkedin, Pencil, CalendarPlus, ExternalLink, ChevronLeft, ChevronRight, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, iso, monthTitle, plural, monthAbr, dayNum } from "@/lib/format";
@@ -150,10 +150,18 @@ function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
           <button type="button" onClick={onEdit} className="p-btn-outline p-btn-sm"><Pencil size={15} /> Modifier mon profil</button>
         </div>
         <p className="m-0 serif italic text-[clamp(26px,3vw,34px)] leading-tight">« {me.intention} »</p>
+        {me.ambition && <p className="m-0 text-[15px] leading-relaxed"><span className="p-muted">Mon ambition · </span>{me.ambition}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[13.5px] p-muted mr-1">Mes valeurs</span>
           {me.values.map((v) => <span key={v} className="p-chip h-[30px] cursor-default">{v}</span>)}
         </div>
+        {me.passions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[13.5px] p-muted mr-1">Mes passions</span>
+            {me.passions.map((v) => <span key={v} className="p-chip h-[30px] cursor-default border-dashed">{v}</span>)}
+          </div>
+        )}
+        {me.linkedinUrl && <a href={me.linkedinUrl} target="_blank" rel="noopener" className="p-link text-[14px] flex items-center gap-1.5 self-start"><Linkedin size={15} /> Mon profil LinkedIn</a>}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[13.5px] p-muted mr-1">Je cherche ou propose</span>
           {me.intentLabels.length === 0 && <span className="text-[13px] p-faint">Rien d’indiqué pour l’instant</span>}
@@ -178,10 +186,17 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
   });
   const [f, setF] = useState({
     firstName: me.firstName, lastName: me.lastName, role: me.role, city: me.city, intention: me.intention,
+    ambition: me.ambition, passions: me.passions, linkedinUrl: me.linkedinUrl,
     values: me.values, intents: me.intents, langs: me.langs, visibleInDirectory: me.visibleInDirectory,
     rencontreEnabled: me.rencontreEnabled, rencontrePref: me.rencontrePref as "f" | "m" | "all",
   });
   const [newValue, setNewValue] = useState("");
+  const [newPassion, setNewPassion] = useState("");
+  const addPassion = () => {
+    const v = newPassion.trim();
+    if (!v || f.passions.length >= 8 || f.passions.some((x) => x.toLowerCase() === v.toLowerCase())) return;
+    set({ passions: [...f.passions, v[0].toUpperCase() + v.slice(1)] }); setNewPassion("");
+  };
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }));
   const addValue = () => {
     const v = newValue.trim();
@@ -189,6 +204,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
     set({ values: [...f.values, v[0].toUpperCase() + v.slice(1)] }); setNewValue("");
   };
   const full = f.intents.length >= 3;
+  const linkedinOk = !f.linkedinUrl.trim() || /^https?:\/\/([\w-]+\.)?linkedin\.com\/\S+$/i.test(f.linkedinUrl.trim());
 
   return (
     <article className="p-card p-6 sm:p-8 flex flex-col gap-5 mb-6" style={{ borderColor: "var(--p-accent-line)" }}>
@@ -203,6 +219,22 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Ville</span><input className="p-field" value={f.city} onChange={(e) => set({ city: e.target.value })} /></label>
       </div>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon intention</span><textarea className="p-field" rows={2} value={f.intention} onChange={(e) => set({ intention: e.target.value })} /></label>
+      <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon ambition <span className="p-faint">· ce que vous voulez accomplir, pour vous ou votre organisation</span></span><textarea className="p-field" rows={2} value={f.ambition} onChange={(e) => set({ ambition: e.target.value })} placeholder="Ex. Prendre la direction générale d’ici trois ans, en gardant une équipe soudée." /></label>
+      <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon profil LinkedIn</span><input className="p-field" type="url" value={f.linkedinUrl} onChange={(e) => set({ linkedinUrl: e.target.value })} placeholder="https://www.linkedin.com/in/votre-nom" />{!linkedinOk && <span className="text-[12.5px]" style={{ color: "var(--p-accent-text)" }}>Collez l’adresse de votre profil, par exemple https://www.linkedin.com/in/votre-nom</span>}</label>
+      <div className="flex flex-col gap-2">
+        <span className="text-[13.5px] p-muted">Mes passions <span className="p-faint">· huit au maximum</span></span>
+        <div className="flex flex-wrap items-center gap-2">
+          {f.passions.map((v) => (
+            <button key={v} type="button" className="p-chip h-[34px] border-dashed" onClick={() => set({ passions: f.passions.filter((x) => x !== v) })} title="Retirer">{v} ×</button>
+          ))}
+          {f.passions.length < 8 && (
+            <span className="flex items-center gap-1.5">
+              <input className="p-field h-[34px] w-[180px] py-0" value={newPassion} onChange={(e) => setNewPassion(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addPassion(); } }} placeholder="Ex. Randonnée, jazz…" />
+              <button type="button" className="p-btn-ghost text-[13px]" onClick={addPassion}>Ajouter</button>
+            </span>
+          )}
+        </div>
+      </div>
 
       <div className="flex flex-col gap-2">
         <span className="text-[13.5px] p-muted">Mes valeurs <span className="p-faint">· cinq au maximum</span></span>
@@ -269,7 +301,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
 
       <div className="flex flex-wrap justify-end gap-2.5 pt-4 border-t" style={{ borderColor: "var(--p-line)" }}>
         <button type="button" className="p-btn-outline" onClick={onDone}>Annuler</button>
-        <button type="button" className="p-btn-primary" disabled={save.isPending || !f.firstName.trim()} onClick={() => save.mutate({ ...f, intents: f.intents as Parameters<typeof save.mutate>[0]["intents"] })}>Enregistrer</button>
+        <button type="button" className="p-btn-primary" disabled={save.isPending || !f.firstName.trim() || !linkedinOk} onClick={() => save.mutate({ ...f, intents: f.intents as Parameters<typeof save.mutate>[0]["intents"] })}>Enregistrer</button>
       </div>
     </article>
   );

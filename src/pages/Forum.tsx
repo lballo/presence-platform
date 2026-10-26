@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Heart, MessageCircle, ShieldCheck, Briefcase, TrendingUp, Link2 } from "lucide-react";
+import { Heart, MessageCircle, ShieldCheck, Briefcase, TrendingUp, Link2, Upload, X } from "lucide-react";
+import { useUpload, fileSize } from "@/lib/upload";
+import { VideoEmbed } from "@/components/VideoEmbed";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
@@ -32,18 +34,32 @@ function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySen
   const utils = trpc.useUtils();
   const me = trpc.members.me.useQuery();
   const posts = trpc.forum.posts.useQuery();
-  const create = trpc.forum.createPost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setText(""); toast.success("Publié dans le cercle"); } });
+  const create = trpc.forum.createPost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setText(""); setVideoLink(""); setVideoFile(null); toast.success("Publié dans le cercle"); }, onError: (e) => toast.error(e.message) });
+  const cfg = trpc.uploads.config.useQuery();
+  const { upload, progress } = useUpload("forum");
+  const [videoMode, setVideoMode] = useState<"link" | "file">("link");
+  const [videoLink, setVideoLink] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const canUpload = !!cfg.data?.enabled;
+  const vMode = canUpload ? videoMode : "link";
   const createOpp = trpc.forum.createOpportunity.useMutation({ onSuccess: () => { utils.forum.opportunities.invalidate(); setText(""); setOpp({ type: "recrut", title: "", facts: "" }); setKind("victoire"); toast.success("Annonce envoyée à l’équipe pour relecture"); onOpportunitySent(); }, onError: (e) => toast.error(e.message) });
   const like = trpc.forum.toggleLike.useMutation({ onSuccess: () => utils.forum.posts.invalidate() });
   const [text, setText] = useState("");
   const [kind, setKind] = useState<ComposerKind>("victoire");
   const [opp, setOpp] = useState({ type: "recrut" as keyof typeof OPP, title: "", facts: "" });
   const isOpp = kind === "opportunite";
-  const send = () => {
-    if (isOpp) createOpp.mutate({ type: opp.type, title: opp.title, text, facts: opp.facts.split(",").map((x) => x.trim()).filter(Boolean) });
-    else create.mutate({ kind, text, askFeedback: kind === "video" });
+  const send = async () => {
+    if (isOpp) return createOpp.mutate({ type: opp.type, title: opp.title, text, facts: opp.facts.split(",").map((x) => x.trim()).filter(Boolean) });
+    let videoUrl = "";
+    if (kind === "video") {
+      if (vMode === "file" && videoFile) {
+        try { videoUrl = (await upload(videoFile)).publicUrl ?? ""; } catch (e) { toast.error(e instanceof Error ? e.message : "Envoi impossible"); return; }
+      } else videoUrl = videoLink.trim();
+    }
+    create.mutate({ kind, text, askFeedback: kind === "video", videoUrl });
   };
-  const canSend = !!text.trim() && (!isOpp || !!opp.title.trim()) && !create.isPending && !createOpp.isPending;
+  const videoReady = kind !== "video" || (vMode === "file" ? !!videoFile : /^https?:\/\/\S+$/.test(videoLink.trim()));
+  const canSend = !!text.trim() && (!isOpp || !!opp.title.trim()) && videoReady && !create.isPending && !createOpp.isPending && progress === null;
   const list = (posts.data ?? []).filter((p) => filter === "all" || p.kind === filter);
 
   return (
@@ -54,6 +70,32 @@ function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySen
             {me.data && <Avatar m={me.data} size={44} />}
             <textarea className="p-field" rows={3} placeholder={isOpp ? "Le contexte, ce que vous cherchez, ce que vous proposez en retour." : "Racontez une victoire, sollicitez l’entraide du cercle, demandez un retour…"} value={text} onChange={(e) => setText(e.target.value)} />
           </div>
+          {kind === "video" && (
+            <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[13px] p-muted mr-1">Votre vidéo</span>
+                <button type="button" className={`p-chip h-8 text-[13px] ${vMode === "link" ? "p-chip-on" : ""}`} onClick={() => setVideoMode("link")}><Link2 size={13} /> Coller un lien</button>
+                {canUpload && <button type="button" className={`p-chip h-8 text-[13px] ${vMode === "file" ? "p-chip-on" : ""}`} onClick={() => setVideoMode("file")}><Upload size={13} /> Charger une vidéo</button>}
+              </div>
+              {vMode === "link" ? (
+                <input className="p-field" value={videoLink} onChange={(e) => setVideoLink(e.target.value)} placeholder="https://… (YouTube, Vimeo, Loom, Google Drive)" />
+              ) : videoFile ? (
+                <div className="flex items-center gap-2 h-11 px-3 rounded-xl border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }}>
+                  <Upload size={15} style={{ color: "var(--p-accent-text)" }} /><span className="flex-1 truncate text-[13.5px]">{videoFile.name}</span>
+                  <span className="text-[12px] p-faint">{fileSize(videoFile.size)}{progress !== null ? ` · envoi ${progress}%` : ""}</span>
+                  {progress === null && <button type="button" aria-label="Retirer la vidéo" onClick={() => setVideoFile(null)}><X size={15} /></button>}
+                </div>
+              ) : (
+                <label className="flex flex-col items-center gap-1 p-5 rounded-xl border-2 border-dashed cursor-pointer text-center" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }}>
+                  <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f && f.size > (cfg.data?.maxMb.forum ?? 500) * 1048576) toast.error(`La vidéo dépasse ${cfg.data?.maxMb.forum ?? 500} Mo.`); else if (f) setVideoFile(f); }} />
+                  <Upload size={20} style={{ color: "var(--p-accent-text)" }} />
+                  <span className="text-[14px] font-medium">Choisir une vidéo</span>
+                  <span className="text-[12px] p-muted">mp4, mov ou webm · jusqu’à {cfg.data?.maxMb.forum ?? 500} Mo</span>
+                </label>
+              )}
+              {!canUpload && <span className="text-[12px] p-faint">Le chargement direct de fichiers sera disponible une fois le stockage configuré ; en attendant, partagez un lien.</span>}
+            </div>
+          )}
           {isOpp && (
             <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
               <div className="flex flex-wrap gap-1.5">{(Object.keys(OPP) as (keyof typeof OPP)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${opp.type === k ? "p-chip-on" : ""}`} onClick={() => setOpp({ ...opp, type: k })}>{OPP[k].label}</button>)}</div>
@@ -78,6 +120,7 @@ function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySen
               <span className="p-pill ml-auto">{KINDS[p.kind]}</span>
             </div>
             <p className="m-0 text-[16px] leading-relaxed">{p.text}</p>
+            {p.videoUrl && <VideoEmbed url={p.videoUrl} title={`Vidéo de ${p.author.name}`} />}
             {p.askFeedback && <span className="text-[13px] p-muted">Demande un retour bienveillant et précis.</span>}
             <div className="flex items-center gap-1 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
               <button type="button" aria-pressed={p.liked} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: p.liked ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={() => like.mutate({ postId: p.id })}><Heart size={16} fill={p.liked ? "currentColor" : "none"} /> {p.likes}</button>

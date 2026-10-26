@@ -6,6 +6,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
 import { ago, plural } from "@/lib/format";
+import { embedUrl } from "@/components/VideoEmbed";
 
 type Talk = RouterOutputs["talks"]["list"][number];
 
@@ -106,7 +107,7 @@ function SubmitForm({ onDone }: { onDone: () => void }) {
 
   const uploadFile = (fl: File): Promise<string> =>
     new Promise((resolve, reject) => {
-      createUrl.mutate({ filename: fl.name, contentType: fl.type }, {
+      createUrl.mutate({ filename: fl.name, contentType: fl.type, size: fl.size }, {
         onError: (e) => reject(new Error(e.message)),
         onSuccess: (u) => {
           const xhr = new XMLHttpRequest();
@@ -115,7 +116,7 @@ function SubmitForm({ onDone }: { onDone: () => void }) {
           xhr.setRequestHeader("apikey", u.apikey);
           xhr.setRequestHeader("x-upsert", "false");
           xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100)); };
-          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve(u.publicUrl) : reject(new Error(`Envoi refusé (${xhr.status}) : ${xhr.responseText.slice(0, 200)}`)));
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve(u.publicUrl ?? "") : reject(new Error(`Envoi refusé (${xhr.status}) : ${xhr.responseText.slice(0, 200)}`)));
           xhr.onerror = () => reject(new Error("L’envoi de la vidéo a échoué. Vérifiez votre connexion et réessayez."));
           xhr.send(fl);
         },
@@ -253,18 +254,6 @@ function PendingPanel({ onPlay }: { onPlay: (t: Talk) => void }) {
 }
 
 /* ───────────── Lecteur ───────────── */
-
-const embedUrl = (url: string): string | null => {
-  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([\w-]{6,})/);
-  if (yt) return `https://www.youtube.com/embed/${yt[1]}`;
-  const vimeo = url.match(/vimeo\.com\/(\d+)/);
-  if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}`;
-  const loom = url.match(/loom\.com\/share\/([\w-]+)/);
-  if (loom) return `https://www.loom.com/embed/${loom[1]}`;
-  const drive = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/);
-  if (drive) return `https://drive.google.com/file/d/${drive[1]}/preview`;
-  return null;
-};
 
 function Player({ talk, onClose }: { talk: Talk; onClose: () => void }) {
   const view = trpc.talks.view.useMutation();

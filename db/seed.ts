@@ -59,6 +59,11 @@ async function seed() {
   await db.update(s.members).set({ status: "organizer" }).where(eq(s.members.id, 5));
   await db.update(s.members).set({ organizerRequest: "J’aimerais animer un cycle de déjeuners « IA et leadership » à Paris, un mardi par mois.", organizerRequestedAt: new Date() }).where(eq(s.members.id, 14));
 
+  // Profils enrichis (démo)
+  await db.update(s.members).set({ passions: ["Voyages lents", "Flamenco", "Cuisine"], ambition: "Rejoindre le comité exécutif du groupe d’ici deux ans." }).where(eq(s.members.id, 3));
+  await db.update(s.members).set({ passions: ["Voile", "Histoire"], ambition: "Transmettre trente ans de terrain à la nouvelle génération de commerciaux." }).where(eq(s.members.id, 5));
+  await db.update(s.members).set({ passions: ["Randonnée", "Romans russes"] }).where(eq(s.members.id, 6));
+
   console.log("Coaching…");
   await db.insert(s.coachingSessions).values([
     ...[1, 2, 3, 4].map((n) => ({ memberId: 1, number: n, total: 12, title: `Séance ${n}`, startsAt: d(`2026-0${5 + n}-15T18:00:00`), durationMin: 60, done: true })),
