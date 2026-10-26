@@ -10,11 +10,11 @@ const NAV = [
   { to: "/parcours", label: "Mon parcours", icon: Compass },
   { to: "/presence-ia", label: "Présence IA", icon: Sparkles },
   { to: "/talk-show", label: "Talk Show", icon: Mic },
+  { to: "/evenements", label: "Événements", icon: CalendarDays },
   { to: "/forum", label: "Forum", icon: MessagesSquare },
   { to: "/matching", label: "Matching", icon: Heart },
   { to: "/membres", label: "Membres", icon: Users },
   { to: "/ruches", label: "Ruches", icon: Hexagon },
-  { to: "/evenements", label: "Événements", icon: CalendarDays },
 ];
 
 function useTheme() {

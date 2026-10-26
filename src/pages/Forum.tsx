@@ -6,8 +6,9 @@ import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
 import { ago, plural } from "@/lib/format";
 
-const KINDS = { victoire: "Victoire", video: "Retour vidéo", question: "Question" } as const;
-const TABS = [["all", "Tout"], ["victoire", "Victoires"], ["video", "Retours vidéo"], ["question", "Questions"], ["opp", "Opportunités"]] as const;
+const KINDS = { victoire: "Victoire", video: "Retour vidéo", question: "Entraide" } as const;
+const TABS = [["all", "Tout"], ["victoire", "Victoires"], ["video", "Retours vidéo"], ["question", "Entraide"], ["opp", "Opportunités"]] as const;
+type ComposerKind = keyof typeof KINDS | "opportunite";
 const OPP = {
   recrut: { label: "Recrutement", icon: Briefcase, ph: "Ex. Responsable marketing (H/F)" },
   fin: { label: "Financement", icon: TrendingUp, ph: "Ex. Levée d’amorçage pour une jeune entreprise" },
@@ -18,23 +19,31 @@ export default function Forum() {
   const [tab, setTab] = useState<(typeof TABS)[number][0]>("all");
   return (
     <>
-      <PageHeader eyebrow="Le forum" title="Partager avec le cercle" intro="Racontez vos victoires, grandes ou discrètes, demandez des retours sur vos vidéos et partagez vos opportunités : recrutement, financement, recherche d’associé." />
+      <PageHeader eyebrow="Le forum" title="Partager avec le cercle" intro="Racontez vos victoires, grandes ou discrètes, demandez des retours sur vos vidéos, sollicitez l’entraide du cercle et partagez vos opportunités : recrutement, financement, recherche d’associé." />
       <div className="flex flex-wrap gap-2 mb-6">
         {TABS.map(([k, l]) => <button key={k} type="button" className={`p-chip h-10 ${tab === k ? "p-chip-on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
       </div>
-      {tab === "opp" ? <Opportunities /> : <Posts filter={tab} />}
+      {tab === "opp" ? <Opportunities /> : <Posts filter={tab} onOpportunitySent={() => setTab("opp")} />}
     </>
   );
 }
 
-function Posts({ filter }: { filter: string }) {
+function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySent: () => void }) {
   const utils = trpc.useUtils();
   const me = trpc.members.me.useQuery();
   const posts = trpc.forum.posts.useQuery();
   const create = trpc.forum.createPost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setText(""); toast.success("Publié dans le cercle"); } });
+  const createOpp = trpc.forum.createOpportunity.useMutation({ onSuccess: () => { utils.forum.opportunities.invalidate(); setText(""); setOpp({ type: "recrut", title: "", facts: "" }); setKind("victoire"); toast.success("Annonce envoyée à l’équipe pour relecture"); onOpportunitySent(); }, onError: (e) => toast.error(e.message) });
   const like = trpc.forum.toggleLike.useMutation({ onSuccess: () => utils.forum.posts.invalidate() });
   const [text, setText] = useState("");
-  const [kind, setKind] = useState<keyof typeof KINDS>("victoire");
+  const [kind, setKind] = useState<ComposerKind>("victoire");
+  const [opp, setOpp] = useState({ type: "recrut" as keyof typeof OPP, title: "", facts: "" });
+  const isOpp = kind === "opportunite";
+  const send = () => {
+    if (isOpp) createOpp.mutate({ type: opp.type, title: opp.title, text, facts: opp.facts.split(",").map((x) => x.trim()).filter(Boolean) });
+    else create.mutate({ kind, text, askFeedback: kind === "video" });
+  };
+  const canSend = !!text.trim() && (!isOpp || !!opp.title.trim()) && !create.isPending && !createOpp.isPending;
   const list = (posts.data ?? []).filter((p) => filter === "all" || p.kind === filter);
 
   return (
@@ -43,11 +52,22 @@ function Posts({ filter }: { filter: string }) {
         <section className="p-card p-5 flex flex-col gap-3">
           <div className="flex gap-3">
             {me.data && <Avatar m={me.data} size={44} />}
-            <textarea className="p-field" rows={3} placeholder="Racontez une victoire, posez une question, demandez un retour…" value={text} onChange={(e) => setText(e.target.value)} />
+            <textarea className="p-field" rows={3} placeholder={isOpp ? "Le contexte, ce que vous cherchez, ce que vous proposez en retour." : "Racontez une victoire, sollicitez l’entraide du cercle, demandez un retour…"} value={text} onChange={(e) => setText(e.target.value)} />
           </div>
+          {isOpp && (
+            <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
+              <div className="flex flex-wrap gap-1.5">{(Object.keys(OPP) as (keyof typeof OPP)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${opp.type === k ? "p-chip-on" : ""}`} onClick={() => setOpp({ ...opp, type: k })}>{OPP[k].label}</button>)}</div>
+              <input className="p-field" value={opp.title} placeholder={`Titre de l’annonce · ${OPP[opp.type].ph}`} onChange={(e) => setOpp({ ...opp, title: e.target.value })} />
+              <input className="p-field" value={opp.facts} placeholder="Lieu et format, séparés par des virgules · Ex. Lyon, CDI, dès janvier" onChange={(e) => setOpp({ ...opp, facts: e.target.value })} />
+              <span className="text-[12.5px] p-muted">Les opportunités sont relues par l’équipe Présence avant d’être visibles par tous les membres.</span>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-1.5">{(Object.keys(KINDS) as (keyof typeof KINDS)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${kind === k ? "p-chip-on" : ""}`} onClick={() => setKind(k)}>{KINDS[k]}</button>)}</div>
-            <button type="button" className="p-btn-primary p-btn-sm" disabled={!text.trim() || create.isPending} onClick={() => create.mutate({ kind, text, askFeedback: kind === "video" })}>Publier</button>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(KINDS) as (keyof typeof KINDS)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${kind === k ? "p-chip-on" : ""}`} onClick={() => setKind(k)}>{KINDS[k]}</button>)}
+              <button type="button" className={`p-chip h-8 text-[13px] ${isOpp ? "p-chip-on" : ""}`} onClick={() => setKind("opportunite")}>Opportunité</button>
+            </div>
+            <button type="button" className="p-btn-primary p-btn-sm" disabled={!canSend} onClick={send}>{isOpp ? "Soumettre l’annonce" : "Publier"}</button>
           </div>
         </section>
         {list.map((p) => (
@@ -70,8 +90,8 @@ function Posts({ filter }: { filter: string }) {
       <aside className="flex-[1_1_300px] min-w-0">
         <section className="p-band p-6 flex flex-col gap-2">
           <span className="text-[12px] font-medium uppercase tracking-[0.3em]" style={{ color: "var(--p-gold-bright)" }}>L’esprit du cercle</span>
-          <p className="m-0 serif text-[28px] leading-tight">Bienveillance, précision, confidentialité.</p>
-          <p className="m-0 text-[14px] text-white/75 leading-relaxed">Ce qui se partage ici reste ici. Un retour commence par ce qui fonctionne, puis propose un axe concret.</p>
+          <p className="m-0 serif text-[28px] leading-tight">Bienveillance, courtoisie et confidentialité.</p>
+          <p className="m-0 text-[14px] text-white/75 leading-relaxed">Nous vous invitons à faire des retours courtois et constructifs envers les membres.</p>
         </section>
       </aside>
     </div>

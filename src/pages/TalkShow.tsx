@@ -5,15 +5,13 @@ import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
-import { longDate, hour, ago, plural } from "@/lib/format";
+import { ago, plural } from "@/lib/format";
 
 type Talk = RouterOutputs["talks"]["list"][number];
 
 export default function TalkShow() {
   const me = trpc.members.me.useQuery();
   const talks = trpc.talks.list.useQuery();
-  const program = trpc.events.program.useQuery();
-  const live = program.data?.find((e) => e.title.startsWith("Talk Show live"));
   const [first, ...rest] = talks.data ?? [];
   const [playing, setPlaying] = useState<Talk | null>(null);
   const [proposing, setProposing] = useState(false);
@@ -70,15 +68,6 @@ export default function TalkShow() {
           {talks.data && talks.data.length === 0 && <div className="p-soft p-8 text-center p-muted">Aucun talk publié pour l’instant. Le vôtre sera peut-être le premier.</div>}
         </section>
         <aside className="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
-          {live && (
-            <section className="p-card p-5 flex flex-col gap-3">
-              <span className="p-eyebrow">Le live du mois</span>
-              <h3 className="m-0 text-[24px] leading-tight">{live.title.replace("Talk Show live : ", "")}</h3>
-              <span className="text-[14px] p-muted">{longDate(new Date(live.startsAt))} · {hour(new Date(live.startsAt))} · {live.where}</span>
-              {live.withLine && <span className="text-[14px]">{live.withLine}</span>}
-              <Link to={`/evenements?e=${live.id}`} className="p-btn-primary p-btn-sm no-underline self-start">{live.registered ? "Place réservée · voir" : "Réserver ma place"}</Link>
-            </section>
-          )}
           <section className="p-soft p-5 flex flex-col gap-2">
             <span className="p-eyebrow">Proposer un talk</span>
             <p className="m-0 text-[14px] leading-relaxed p-muted">Une idée qui a changé votre façon de diriger ? Dix minutes, face caméra. Vous envoyez votre vidéo, l’équipe Présence la regarde et la publie.</p>
