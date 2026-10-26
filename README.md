@@ -42,6 +42,12 @@ createdb -U presence presence
 
 ## Production
 
+**Render (recommandé, comme PresenceAI)** : New → Blueprint → ce dépôt ; `render.yaml` décrit le service. Renseigner `DATABASE_URL` (Supabase, URL « pooler » en mode session, port 5432) et `GEMINI_API_KEY` dans les variables du service.
+
+**Vercel** : `vercel.json` + `api/index.ts` sont prêts, mais les requêtes y sont limitées à 4,5 Mo : l'analyse vidéo ne fonctionne pas sur Vercel.
+
+**Serveur Node classique :**
+
 ```bash
 npm run build     # dist/public (front) + dist/boot.js (serveur)
 npm start         # sert le tout sur PORT (3000 par défaut)

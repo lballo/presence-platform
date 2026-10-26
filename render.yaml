@@ -1,0 +1,23 @@
+# Déploiement Render (même hébergement que PresenceAI) : New → Blueprint → ce dépôt.
+services:
+  - type: web
+    name: presence-platform
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/trpc/ping
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CURRENT_MEMBER_ID
+        value: "2"
+      - key: CALENDLY_URL
+        sync: false
+      - key: CALENDLY_EXPLO_URL
+        sync: false
