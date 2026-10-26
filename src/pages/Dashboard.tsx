@@ -150,6 +150,7 @@ function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
           <button type="button" onClick={onEdit} className="p-btn-outline p-btn-sm"><Pencil size={15} /> Modifier mon profil</button>
         </div>
         <p className="m-0 serif italic text-[clamp(26px,3vw,34px)] leading-tight">« {me.intention} »</p>
+        {me.bio && <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{me.bio}</p>}
         {me.ambition && <p className="m-0 text-[15px] leading-relaxed"><span className="p-muted">Mon ambition · </span>{me.ambition}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[13.5px] p-muted mr-1">Mes valeurs</span>
@@ -186,7 +187,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
   });
   const [f, setF] = useState({
     firstName: me.firstName, lastName: me.lastName, role: me.role, city: me.city, intention: me.intention,
-    ambition: me.ambition, passions: me.passions, linkedinUrl: me.linkedinUrl,
+    bio: me.bio, ambition: me.ambition, passions: me.passions, linkedinUrl: me.linkedinUrl,
     values: me.values, intents: me.intents, langs: me.langs, visibleInDirectory: me.visibleInDirectory,
     rencontreEnabled: me.rencontreEnabled, rencontrePref: me.rencontrePref as "f" | "m" | "all",
   });
@@ -219,6 +220,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Ville</span><input className="p-field" value={f.city} onChange={(e) => set({ city: e.target.value })} /></label>
       </div>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon intention</span><textarea className="p-field" rows={2} value={f.intention} onChange={(e) => set({ intention: e.target.value })} /></label>
+      <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Ma bio <span className="p-faint">· votre parcours et ce qui vous anime, en quelques lignes</span></span><textarea className="p-field" rows={4} maxLength={1500} value={f.bio} onChange={(e) => set({ bio: e.target.value })} placeholder="Ex. Vingt ans dans l’industrie, dont dix à diriger des équipes de production. J’aime faire grandir les gens et les projets qui ont du sens." /><span className="p-faint text-[12px] self-end">{f.bio.length} / 1500</span></label>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon ambition <span className="p-faint">· ce que vous voulez accomplir, pour vous ou votre organisation</span></span><textarea className="p-field" rows={2} value={f.ambition} onChange={(e) => set({ ambition: e.target.value })} placeholder="Ex. Prendre la direction générale d’ici trois ans, en gardant une équipe soudée." /></label>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon profil LinkedIn</span><input className="p-field" type="url" value={f.linkedinUrl} onChange={(e) => set({ linkedinUrl: e.target.value })} placeholder="https://www.linkedin.com/in/votre-nom" />{!linkedinOk && <span className="text-[12.5px]" style={{ color: "var(--p-accent-text)" }}>Collez l’adresse de votre profil, par exemple https://www.linkedin.com/in/votre-nom</span>}</label>
       <div className="flex flex-col gap-2">

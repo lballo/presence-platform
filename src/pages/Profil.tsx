@@ -36,7 +36,7 @@ export default function Profil() {
             {m.status !== "member" && <span className="p-pill self-start mt-1">{m.status === "admin" ? "Équipe Présence" : "Organisateur"}</span>}
           </div>
           {m.intention && <p className="m-0 serif italic text-[clamp(24px,2.8vw,32px)] leading-tight">« {m.intention} »</p>}
-          {m.bio && <p className="m-0 text-[16px] leading-relaxed">{m.bio}</p>}
+          {m.bio && <p className="m-0 text-[16px] leading-relaxed whitespace-pre-line">{m.bio}</p>}
           <div className="flex flex-wrap gap-2.5 pt-1">
             {!m.isMe && <Link to={`/messages?to=${m.id}`} className="p-btn-primary no-underline"><MessageCircle size={17} /> Écrire à {m.firstName}</Link>}
             {m.isMe && <Link to="/" className="p-btn-outline no-underline">Modifier mon profil</Link>}
