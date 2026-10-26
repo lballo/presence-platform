@@ -26,7 +26,7 @@ npm run dev                 # http://localhost:3000
 | Variable | Rôle |
 |---|---|
 | `DATABASE_URL` | Postgres, ex. `postgres://user:pass@localhost:5432/presence` (Neon/Supabase acceptés) |
-| `DB_SCHEMA` | Schéma Postgres à utiliser (vide = `public`). Sur Supabase : `presence` (tables créées par `db/migrations/0000_init.sql` dans ce schéma). Demande une connexion en mode session. |
+| `DB_SCHEMA` | Schéma Postgres à utiliser (vide = `public`). Sur Supabase : `presence` (tables créées par `db/migrations/0000_init.sql` dans ce schéma ; `db:push` le respecte aussi). |
 | `CURRENT_MEMBER_ID` | Membre « connecté » tant qu'il n'y a pas d'auth (1 = Hélène, 2 = Laura…). Peut aussi être passé par l'en-tête HTTP `x-member-id`. |
 | `GEMINI_API_KEY` | Clé Google AI Studio pour l'analyse vidéo et le Coach IA. Sans clé : coach en mode réponses fixes, analyse vidéo indisponible. |
 | `CALENDLY_URL` | Lien de réservation des séances de coaching (bandeau du tableau de bord) |
@@ -43,9 +43,9 @@ createdb -U presence presence
 
 ## Production
 
-**Render (recommandé, comme PresenceAI)** : New → Blueprint → ce dépôt ; `render.yaml` décrit le service. Renseigner `DATABASE_URL` (Supabase, URL « pooler » en mode session, port 5432) et `GEMINI_API_KEY` dans les variables du service.
+**Render (recommandé, comme PresenceAI)** : New → Blueprint → ce dépôt ; `render.yaml` décrit le service. Renseigner `DATABASE_URL` (Supabase, URL « pooler ») et `GEMINI_API_KEY` dans les variables du service.
 
-**Vercel** : `vercel.json` + `api/index.ts` sont prêts, mais les requêtes y sont limitées à 4,5 Mo : l'analyse vidéo ne fonctionne pas sur Vercel.
+**Vercel** : importer le dépôt (preset Vite, `vercel.json` et `api/index.ts` font le reste) et renseigner les mêmes variables, avec `DB_SCHEMA=presence` et l'URL Supabase « Transaction pooler » (port 6543). Limite : les requêtes y sont plafonnées à 4,5 Mo, donc l'analyse vidéo ne fonctionne pas sur Vercel — tout le reste oui.
 
 **Serveur Node classique :**
 

@@ -11,7 +11,6 @@ function required(name: string): string {
 export const env = {
   isProduction: process.env.NODE_ENV === "production",
   databaseUrl: required("DATABASE_URL"),
-  dbSchema: (process.env.DB_SCHEMA ?? "public").replace(/[^a-z0-9_]/gi, ""),
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   // Pas d'authentification en v1 : le membre connecté est fixé ici (Hélène = 1 dans le seed).
   currentMemberId: Number(process.env.CURRENT_MEMBER_ID ?? 1),

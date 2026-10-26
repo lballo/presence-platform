@@ -1,6 +1,7 @@
 import {
-  pgTable,
-  pgEnum,
+  pgTable as pgTableRoot,
+  pgEnum as pgEnumRoot,
+  pgSchema,
   serial,
   varchar,
   text,
@@ -12,6 +13,13 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+// Schéma Postgres : "public" par défaut, ou celui de DB_SCHEMA (ex. "presence" sur Supabase,
+// pour cohabiter avec d'autres applications dans la même base).
+const schemaName = (process.env.DB_SCHEMA ?? "").replace(/[^a-z0-9_]/gi, "");
+const dbSchema = schemaName && schemaName !== "public" ? pgSchema(schemaName) : null;
+const pgTable: typeof pgTableRoot = dbSchema ? (dbSchema.table.bind(dbSchema) as unknown as typeof pgTableRoot) : pgTableRoot;
+const pgEnum: typeof pgEnumRoot = dbSchema ? (dbSchema.enum.bind(dbSchema) as unknown as typeof pgEnumRoot) : pgEnumRoot;
 
 // ─────────────────────────────────────────────────────────────
 // Membres
