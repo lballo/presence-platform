@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download, Pencil, Trash2, Ban } from "lucide-react";
+import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download, Pencil, Trash2, Ban, Reply } from "lucide-react";
 import { useUpload, fileSize } from "@/lib/upload";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
@@ -113,7 +113,18 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
   const refreshThread = () => { utils.messages.thread.invalidate({ withId }); utils.messages.conversations.invalidate(); };
   const update = trpc.messages.update.useMutation({ onSuccess: () => { refreshThread(); setEditing(null); setText(""); }, onError: (e) => toast.error(e.message) });
   const remove = trpc.messages.remove.useMutation({ onSuccess: () => { refreshThread(); setConfirmDel(null); setSelected(null); }, onError: (e) => toast.error(e.message) });
-  const startEdit = (id: number, t: string) => { setEditing({ id, text: t }); setText(t); setSelected(null); setFile(null); };
+  const [replyTo, setReplyTo] = useState<{ id: number; text: string; mine: boolean } | null>(null);
+  const [flash, setFlash] = useState<number | null>(null);
+  const startEdit = (id: number, t: string) => { setEditing({ id, text: t }); setReplyTo(null); setText(t); setSelected(null); setFile(null); };
+  const startReply = (m: { id: number; text: string; mine: boolean; attachment?: { name: string } | null }) => {
+    setReplyTo({ id: m.id, text: m.text || (m.attachment ? `Pièce jointe : ${m.attachment.name}` : ""), mine: m.mine });
+    setEditing(null); setSelected(null);
+    window.setTimeout(() => document.getElementById("msg-input")?.focus(), 30);
+  };
+  const jumpTo = (id: number) => {
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlash(id); window.setTimeout(() => setFlash(null), 1400);
+  };
   const cancelEdit = () => { setEditing(null); setText(""); };
   const pick = (f: File | undefined) => {
     if (!f) return;
@@ -134,7 +145,8 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
         const up = await upload(file);
         setPending((p) => [...p, { key: Date.now(), text: t || `Pièce jointe : ${file.name}` }]);
         setText(""); setFile(null);
-        send.mutate({ toId: withId, text: t, attachment: { path: up.path, name: up.name, type: up.type, size: up.size } });
+        send.mutate({ toId: withId, text: t, attachment: { path: up.path, name: up.name, type: up.type, size: up.size }, replyToId: replyTo?.id });
+        setReplyTo(null);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Envoi impossible");
       }
@@ -142,7 +154,8 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
     }
     setPending((p) => [...p, { key: Date.now(), text: t }]);
     setText("");
-    send.mutate({ toId: withId, text: t });
+    send.mutate({ toId: withId, text: t, replyToId: replyTo?.id });
+    setReplyTo(null);
   };
 
   // Regroupement par jour
@@ -173,16 +186,18 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
           <div key={g.day} className="flex flex-col gap-1">
             <span className="self-center text-[11.5px] font-medium uppercase tracking-[0.18em] p-faint my-2">{g.day}</span>
             {g.items.map((m) => (
-              <div key={m.id} className="flex flex-col">
+              <div key={m.id} id={`msg-${m.id}`} className="flex flex-col">
                 <Bubble
                   mine={m.mine} text={m.text} attachment={m.attachment} deleted={m.deleted}
-                  highlighted={editing?.id === m.id}
+                  highlighted={editing?.id === m.id || replyTo?.id === m.id || flash === m.id}
+                  quote={m.replyTo ? <Quote q={m.replyTo} mine={m.mine} peerName={peer?.firstName ?? ""} onClick={() => jumpTo(m.replyTo!.id)} /> : null}
                   meta={<>{m.edited ? "modifié · " : ""}{hour(new Date(m.at))}{m.mine && !m.deleted && (m.read ? <CheckCheck size={13} /> : <Check size={13} />)}</>}
-                  onSelect={m.mine && !m.deleted ? () => setSelected(selected === m.id ? null : m.id) : undefined}
-                  actions={m.mine && !m.deleted && (selected === m.id) ? (
-                    <span className="flex items-center gap-1">
-                      {m.text && <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => startEdit(m.id, m.text)}><Pencil size={12} /> Modifier</button>}
-                      <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)", color: "var(--p-accent-text)" }} onClick={() => { setConfirmDel(m.id); setSelected(null); }}><Trash2 size={12} /> Supprimer</button>
+                  onSelect={!m.deleted ? () => setSelected(selected === m.id ? null : m.id) : undefined}
+                  actions={!m.deleted && (selected === m.id) ? (
+                    <span className={`flex items-center gap-1 ${m.mine ? "" : "order-last"}`}>
+                      <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => startReply(m)}><Reply size={12} /> Répondre</button>
+                      {m.mine && m.text && <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => startEdit(m.id, m.text)}><Pencil size={12} /> Modifier</button>}
+                      {m.mine && <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)", color: "var(--p-accent-text)" }} onClick={() => { setConfirmDel(m.id); setSelected(null); }}><Trash2 size={12} /> Supprimer</button>}
                       <button type="button" aria-label="Fermer" className="w-8 h-8 rounded-full flex items-center justify-center p-muted" onClick={() => setSelected(null)}><X size={14} /></button>
                     </span>
                   ) : undefined}
@@ -201,6 +216,15 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
         {pending.map((p) => <Bubble key={p.key} mine text={p.text} meta={<>envoi…</>} faded />)}
         <div ref={bottom} />
       </div>
+      {replyTo && (
+        <div className="flex items-center gap-3 px-4 pt-3 flex-none">
+          <span className="flex-1 min-w-0 flex flex-col pl-3 border-l-[3px] py-0.5" style={{ borderColor: "var(--p-accent)" }}>
+            <span className="text-[12.5px] font-semibold flex items-center gap-1.5" style={{ color: "var(--p-accent-text)" }}><Reply size={13} /> Réponse à {replyTo.mine ? "vous-même" : peer?.firstName}</span>
+            <span className="text-[13px] p-muted truncate">{replyTo.text}</span>
+          </span>
+          <button type="button" aria-label="Annuler la réponse" className="w-9 h-9 rounded-full flex items-center justify-center" onClick={() => setReplyTo(null)}><X size={16} /></button>
+        </div>
+      )}
       {editing && (
         <div className="flex items-center gap-3 px-4 pt-3 flex-none">
           <span className="flex-1 min-w-0 flex items-center gap-2 text-[13px]" style={{ color: "var(--p-accent-text)" }}><Pencil size={14} /> Modification du message <span className="p-muted truncate">· Entrée pour enregistrer</span></span>
@@ -221,10 +245,11 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
         <input ref={fileInput} type="file" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         <button type="button" aria-label="Joindre un fichier" title={cfg.data?.enabled ? `Joindre un fichier (jusqu’à ${maxMb} Mo)` : "L’envoi de fichiers sera disponible une fois le stockage configuré"} disabled={!cfg.data?.enabled || progress !== null || !!editing} className="w-12 h-12 rounded-full border flex items-center justify-center flex-none disabled:opacity-40" style={{ borderColor: "var(--p-line-2)" }} onClick={() => fileInput.current?.click()}><Paperclip size={18} /></button>
         <textarea
+          id="msg-input"
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } if (e.key === "Escape" && editing) cancelEdit(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } if (e.key === "Escape" && editing) cancelEdit(); if (e.key === "Escape" && replyTo) setReplyTo(null); }}
           placeholder={editing ? "Modifier le message…" : "Écrire un message…"}
           className="p-field flex-1 resize-none max-h-[140px]"
           style={{ minHeight: 46 }}
@@ -249,7 +274,16 @@ function Attachment({ a, mine }: { a: NonNullable<Att>; mine: boolean }) {
   );
 }
 
-function Bubble({ mine, text, meta, faded, attachment, deleted, onSelect, actions, highlighted }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att; deleted?: boolean; onSelect?: () => void; actions?: React.ReactNode; highlighted?: boolean }) {
+function Quote({ q, mine, peerName, onClick }: { q: { id: number; mine: boolean; deleted: boolean; text: string }; mine: boolean; peerName: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick(); }} className="block w-full text-left mb-1.5 px-2.5 py-1.5 rounded-lg border-l-[3px]" style={mine ? { background: "rgba(255,255,255,0.16)", borderColor: "rgba(255,255,255,0.7)" } : { background: "var(--p-surface-2)", borderColor: "var(--p-accent)" }}>
+      <span className={`block text-[12px] font-semibold ${mine ? "text-white/90" : ""}`} style={mine ? undefined : { color: "var(--p-accent-text)" }}>{q.mine ? "Vous" : peerName}</span>
+      <span className={`block text-[13px] leading-snug line-clamp-2 ${mine ? "text-white/80" : "p-muted"} ${q.deleted ? "italic" : ""}`}>{q.deleted ? "Message supprimé" : q.text}</span>
+    </button>
+  );
+}
+
+function Bubble({ mine, text, meta, faded, attachment, deleted, onSelect, actions, highlighted, quote }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att; deleted?: boolean; onSelect?: () => void; actions?: React.ReactNode; highlighted?: boolean; quote?: React.ReactNode }) {
   if (deleted)
     return (
       <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -260,13 +294,14 @@ function Bubble({ mine, text, meta, faded, attachment, deleted, onSelect, action
     <div className={`group flex items-center gap-2 ${mine ? "justify-end" : "justify-start"}`}>
       {actions}
       {onSelect && !actions && (
-        <button type="button" aria-label="Modifier ou supprimer" className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-8 h-8 rounded-full flex items-center justify-center p-muted transition-opacity" onClick={onSelect}><Pencil size={13} /></button>
+        <button type="button" aria-label={mine ? "Répondre, modifier ou supprimer" : "Répondre"} className={`opacity-0 group-hover:opacity-100 focus:opacity-100 w-8 h-8 rounded-full flex items-center justify-center p-muted transition-opacity ${mine ? "" : "order-last"}`} onClick={onSelect}><Reply size={14} /></button>
       )}
       <div
         className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[15px] leading-relaxed whitespace-pre-wrap break-words"
         onClick={onSelect && !actions ? (e) => { if (window.matchMedia("(hover: none)").matches && !(e.target as HTMLElement).closest("a,video")) onSelect(); } : undefined}
-        style={{ ...(mine ? { background: "var(--p-accent)", color: "#fff", borderBottomRightRadius: 6 } : { background: "var(--p-surface)", color: "var(--p-ink)", borderBottomLeftRadius: 6, border: "1px solid var(--p-line)" }), opacity: faded ? 0.6 : 1, boxShadow: highlighted ? "0 0 0 2px var(--p-surface), 0 0 0 4px var(--p-gold-bright)" : undefined }}
+        style={{ ...(mine ? { background: "var(--p-accent)", color: "#fff", borderBottomRightRadius: 6 } : { background: "var(--p-surface)", color: "var(--p-ink)", borderBottomLeftRadius: 6, border: "1px solid var(--p-line)" }), opacity: faded ? 0.6 : 1, boxShadow: highlighted ? "0 0 0 2px var(--p-surface), 0 0 0 4px var(--p-gold-bright)" : undefined, transition: "box-shadow .3s" }}
       >
+        {quote}
         {attachment && <Attachment a={attachment} mine={mine} />}
         {text}
         <span className={`flex items-center justify-end gap-1 text-[11px] mt-0.5 ${mine ? "text-white/70" : "p-faint"}`}>{meta}</span>

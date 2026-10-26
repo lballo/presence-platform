@@ -70,9 +70,14 @@ export const messagesRouter = createRouter({
         urls.set(m.id, { view, download });
       })
     );
+    const byId = new Map(list.map((m) => [m.id, m]));
     return {
       peer: publicMember(peer),
       messages: list.map((m) => ({
+        replyTo: m.replyToId && byId.has(m.replyToId) ? (() => {
+          const q = byId.get(m.replyToId)!;
+          return { id: q.id, mine: q.fromId === ctx.memberId, deleted: !!q.deletedAt, text: q.deletedAt ? "" : q.text || (q.attachmentName ? `Pièce jointe : ${q.attachmentName}` : "") };
+        })() : null,
         id: m.id, text: m.deletedAt ? "" : m.text, at: m.createdAt, mine: m.fromId === ctx.memberId, read: !!m.readAt,
         edited: !!m.editedAt && !m.deletedAt, deleted: !!m.deletedAt,
         attachment: m.attachmentPath && !m.deletedAt ? { name: m.attachmentName ?? "fichier", type: m.attachmentType ?? "", size: m.attachmentSize ?? 0, url: urls.get(m.id)?.view ?? null, downloadUrl: urls.get(m.id)?.download ?? null } : null,
@@ -85,6 +90,7 @@ export const messagesRouter = createRouter({
       toId: z.number(),
       text: z.string().trim().max(4000).default(""),
       attachment: z.object({ path: z.string().max(300), name: z.string().max(200), type: z.string().max(120), size: z.number().int().min(0) }).optional(),
+      replyToId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
     if (input.toId === ctx.memberId) throw new TRPCError({ code: "BAD_REQUEST", message: "Vous ne pouvez pas vous écrire à vous-même." });
@@ -93,8 +99,13 @@ export const messagesRouter = createRouter({
     const db = getDb();
     const peer = await db.query.members.findFirst({ where: eq(members.id, input.toId) });
     if (!peer) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable" });
+    if (input.replyToId) {
+      const q = await db.query.messages.findFirst({ where: eq(messages.id, input.replyToId) });
+      const sameThread = q && ((q.fromId === ctx.memberId && q.toId === input.toId) || (q.fromId === input.toId && q.toId === ctx.memberId));
+      if (!sameThread) throw new TRPCError({ code: "BAD_REQUEST", message: "Message cité introuvable." });
+    }
     const a = input.attachment;
-    const [row] = await db.insert(messages).values({ fromId: ctx.memberId, toId: input.toId, text: input.text, attachmentPath: a?.path, attachmentName: a?.name, attachmentType: a?.type, attachmentSize: a?.size }).returning();
+    const [row] = await db.insert(messages).values({ fromId: ctx.memberId, toId: input.toId, text: input.text, replyToId: input.replyToId ?? null, attachmentPath: a?.path, attachmentName: a?.name, attachmentType: a?.type, attachmentSize: a?.size }).returning();
     return { id: row.id };
   }),
 

@@ -1,18 +1,24 @@
 import { z } from "zod";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
-import { forumPosts, forumLikes, opportunities, opportunityInterests } from "../../db/schema";
+import { forumPosts, forumLikes, forumReplies, opportunities, opportunityInterests } from "../../db/schema";
 import { publicMember } from "../lib/format";
 
 export const forumRouter = createRouter({
   posts: proc.query(async ({ ctx }) => {
     const db = getDb();
-    const list = await db.query.forumPosts.findMany({ with: { author: true }, orderBy: [desc(forumPosts.createdAt)] });
+    const list = await db.query.forumPosts.findMany({ with: { author: true, replyList: { with: { author: true }, orderBy: [asc(forumReplies.createdAt)] } }, orderBy: [desc(forumPosts.createdAt)] });
     const mine = await db.query.forumLikes.findMany({ where: eq(forumLikes.memberId, ctx.memberId) });
     const likedIds = new Set(mine.map((l) => l.postId));
-    return list.map((p) => ({ ...p, author: publicMember(p.author), liked: likedIds.has(p.id), isMine: p.authorId === ctx.memberId, canEdit: p.authorId === ctx.memberId, canDelete: p.authorId === ctx.memberId || ctx.isAdmin }));
+    return list.map(({ replyList, ...p }) => ({
+      ...p,
+      author: publicMember(p.author),
+      liked: likedIds.has(p.id), isMine: p.authorId === ctx.memberId, canEdit: p.authorId === ctx.memberId, canDelete: p.authorId === ctx.memberId || ctx.isAdmin,
+      replies: replyList.length,
+      replyList: replyList.map((r) => ({ id: r.id, text: r.text, createdAt: r.createdAt, editedAt: r.editedAt, author: publicMember(r.author), isMine: r.authorId === ctx.memberId, canDelete: r.authorId === ctx.memberId || ctx.isAdmin })),
+    }));
   }),
 
   /** Modifier sa publication. */
@@ -38,6 +44,7 @@ export const forumRouter = createRouter({
     if (!post) throw new TRPCError({ code: "NOT_FOUND" });
     if (post.authorId !== ctx.memberId && !ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez supprimer que vos propres publications." });
     await db.delete(forumLikes).where(eq(forumLikes.postId, post.id));
+    await db.delete(forumReplies).where(eq(forumReplies.postId, post.id));
     await db.delete(forumPosts).where(eq(forumPosts.id, post.id));
     return { ok: true };
   }),
@@ -51,6 +58,33 @@ export const forumRouter = createRouter({
       const [row] = await db.insert(forumPosts).values({ ...input, authorId: ctx.memberId }).returning();
       return row;
     }),
+
+  /** Répondre à une publication. */
+  reply: proc.input(z.object({ postId: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.postId) });
+    if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Publication introuvable" });
+    const [row] = await db.insert(forumReplies).values({ postId: post.id, authorId: ctx.memberId, text: input.text }).returning();
+    return { id: row.id };
+  }),
+
+  updateReply: proc.input(z.object({ id: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const r = await db.query.forumReplies.findFirst({ where: eq(forumReplies.id, input.id) });
+    if (!r) throw new TRPCError({ code: "NOT_FOUND" });
+    if (r.authorId !== ctx.memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez modifier que vos propres réponses." });
+    await db.update(forumReplies).set({ text: input.text, editedAt: new Date() }).where(eq(forumReplies.id, input.id));
+    return { ok: true };
+  }),
+
+  deleteReply: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const r = await db.query.forumReplies.findFirst({ where: eq(forumReplies.id, input.id) });
+    if (!r) throw new TRPCError({ code: "NOT_FOUND" });
+    if (r.authorId !== ctx.memberId && !ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez supprimer que vos propres réponses." });
+    await db.delete(forumReplies).where(eq(forumReplies.id, input.id));
+    return { ok: true };
+  }),
 
   toggleLike: proc.input(z.object({ postId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();

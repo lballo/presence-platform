@@ -97,6 +97,20 @@ export const forumPosts = pgTable("forum_posts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Réponses aux publications du forum
+export const forumReplies = pgTable(
+  "forum_replies",
+  {
+    id: serial("id").primaryKey(),
+    postId: integer("post_id").notNull(),
+    authorId: integer("author_id").notNull(),
+    text: text("text").notNull(),
+    editedAt: timestamp("edited_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ postIdx: index("forum_replies_post_idx").on(t.postId, t.createdAt) })
+);
+
 export const forumLikes = pgTable(
   "forum_likes",
   {
@@ -374,6 +388,7 @@ export const messages = pgTable(
     attachmentSize: integer("attachment_size"),
     readAt: timestamp("read_at"),
     editedAt: timestamp("edited_at"),
+    replyToId: integer("reply_to_id"), // réponse à un message précis (citation, comme sur WhatsApp)
     deletedAt: timestamp("deleted_at"), // message supprimé par son auteur : on garde la trace « Message supprimé »
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

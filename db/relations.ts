@@ -15,6 +15,7 @@ import {
   advice,
   coachingSessions,
   messages,
+  forumReplies,
 } from "./schema";
 
 export const membersRelations = relations(members, ({ many }) => ({
@@ -26,8 +27,9 @@ export const coachingSessionsRelations = relations(coachingSessions, ({ one }) =
   member: one(members, { fields: [coachingSessions.memberId], references: [members.id] }),
 }));
 
-export const forumPostsRelations = relations(forumPosts, ({ one }) => ({
+export const forumPostsRelations = relations(forumPosts, ({ one, many }) => ({
   author: one(members, { fields: [forumPosts.authorId], references: [members.id] }),
+  replyList: many(forumReplies),
 }));
 
 export const opportunitiesRelations = relations(opportunities, ({ one }) => ({
@@ -90,4 +92,9 @@ export const adviceRelations = relations(advice, ({ one }) => ({
 export const messagesRelations = relations(messages, ({ one }) => ({
   from: one(members, { fields: [messages.fromId], references: [members.id], relationName: "sent" }),
   to: one(members, { fields: [messages.toId], references: [members.id], relationName: "received" }),
+}));
+
+export const forumRepliesRelations = relations(forumReplies, ({ one }) => ({
+  post: one(forumPosts, { fields: [forumReplies.postId], references: [forumPosts.id] }),
+  author: one(members, { fields: [forumReplies.authorId], references: [members.id] }),
 }));

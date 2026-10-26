@@ -31,7 +31,7 @@ async function seed() {
   const schemaName = (process.env.DB_SCHEMA ?? "").replace(/[^a-z0-9_]/gi, "");
   const tables = ["members", "coaching_sessions", "forum_posts", "forum_likes", "opportunities", "opportunity_interests",
     "hives", "hive_members", "hive_posts", "hive_resources", "events", "event_registrations", "swipes", "talks",
-    "coach_messages", "messages", "speeches", "speech_scores", "advice"].map((t) => (schemaName && schemaName !== "public" ? `"${schemaName}"."${t}"` : `"${t}"`));
+    "coach_messages", "messages", "forum_replies", "speeches", "speech_scores", "advice"].map((t) => (schemaName && schemaName !== "public" ? `"${schemaName}"."${t}"` : `"${t}"`));
   await db.execute(sql.raw(`TRUNCATE TABLE ${tables.join(", ")} RESTART IDENTITY CASCADE`));
 
   console.log("Membres…");
@@ -76,6 +76,15 @@ async function seed() {
     { authorId: 4, kind: "video", text: "Première répétition de mon discours de rentrée devant l’équipe. J’aimerais vos retours sur le rythme et les silences.", askFeedback: true, likes: 11, replies: 6, createdAt: d("2026-10-23T18:40:00") },
     { authorId: 10, kind: "question", text: "Comment dites-vous non à une demande de votre direction sans passer pour quelqu’un qui freine ?", likes: 8, replies: 14, createdAt: d("2026-10-22T11:30:00") },
     { authorId: 11, kind: "victoire", text: "J’ai présenté notre projet devant le conseil municipal. J’ai tenu les silences, comme on l’avait travaillé ici.", likes: 21, replies: 5, createdAt: d("2026-10-21T20:00:00") },
+  ]);
+  await db.insert(s.forumReplies).values([
+    { postId: 1, authorId: 2, text: "Bravo Julien ! Deux ans d’attente, et le jour venu tu étais prêt. C’est exactement ça, la présence." },
+    { postId: 1, authorId: 8, text: "Qu’est-ce qui t’a le plus aidé dans la préparation ?" },
+    { postId: 1, authorId: 9, text: "Les répétitions avec le club du mardi, et accepter de ne pas tout maîtriser." },
+    { postId: 2, authorId: 5, text: "Le rythme est bon. Ose un vrai silence après ta première phrase, il donnera du poids à la suite." },
+    { postId: 3, authorId: 6, text: "Je commence par reformuler la demande, puis je dis ce que je peux faire à la place. Le non passe beaucoup mieux." },
+    { postId: 3, authorId: 12, text: "Et je demande un délai pour réfléchir : ça évite le oui réflexe." },
+    { postId: 4, authorId: 7, text: "Magnifique, Nicolas. Le silence, c’est ta signature maintenant." },
   ]);
 
   await db.insert(s.opportunities).values([

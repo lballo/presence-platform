@@ -136,6 +136,7 @@ function PostCard({ p, onLike }: { p: Post; onLike: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const [text, setText] = useState(p.text);
   const [video, setVideo] = useState(p.videoUrl);
+  const [showReplies, setShowReplies] = useState(false);
   const update = trpc.forum.updatePost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setEditing(false); toast.success("Publication modifiée"); }, onError: (e) => toast.error(e.message) });
   const remove = trpc.forum.deletePost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); toast.success("Publication supprimée"); }, onError: (e) => toast.error(e.message) });
   const isLink = !p.videoUrl.includes("/storage/v1/object/");
@@ -182,9 +183,71 @@ function PostCard({ p, onLike }: { p: Post; onLike: () => void }) {
       )}
       <div className="flex items-center gap-1 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
         <button type="button" aria-pressed={p.liked} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: p.liked ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={onLike}><Heart size={16} fill={p.liked ? "currentColor" : "none"} /> {p.likes}</button>
-        <span className="inline-flex items-center gap-2 h-10 px-3 text-[14px] p-muted"><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</span>
+        <button type="button" aria-expanded={showReplies} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: showReplies ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={() => setShowReplies(!showReplies)}><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</button>
       </div>
+      {showReplies && <Replies post={p} />}
     </article>
+  );
+}
+
+/** Fil de réponses d'une publication. */
+function Replies({ post }: { post: Post }) {
+  const utils = trpc.useUtils();
+  const me = trpc.members.me.useQuery();
+  const [text, setText] = useState("");
+  const send = trpc.forum.reply.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setText(""); }, onError: (e) => toast.error(e.message) });
+  return (
+    <div className="flex flex-col gap-3 pt-1">
+      {post.replyList.map((r) => <ReplyItem key={r.id} r={r} />)}
+      <form className="flex items-end gap-2.5" onSubmit={(e) => { e.preventDefault(); if (text.trim()) send.mutate({ postId: post.id, text }); }}>
+        {me.data && <Avatar m={me.data} size={34} />}
+        <textarea rows={1} className="p-field flex-1 resize-none text-[14.5px]" style={{ minHeight: 42 }} value={text} onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (text.trim()) send.mutate({ postId: post.id, text }); } }}
+          placeholder={post.isMine ? "Ajouter une précision…" : `Répondre à ${post.author.firstName}…`} />
+        <button type="submit" className="p-btn-primary p-btn-sm" disabled={!text.trim() || send.isPending}>Répondre</button>
+      </form>
+    </div>
+  );
+}
+
+function ReplyItem({ r }: { r: Post["replyList"][number] }) {
+  const utils = trpc.useUtils();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(r.text);
+  const [confirm, setConfirm] = useState(false);
+  const update = trpc.forum.updateReply.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setEditing(false); }, onError: (e) => toast.error(e.message) });
+  const remove = trpc.forum.deleteReply.useMutation({ onSuccess: () => utils.forum.posts.invalidate(), onError: (e) => toast.error(e.message) });
+  return (
+    <div className="group flex gap-2.5">
+      <Avatar m={r.author} size={34} />
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-md" style={{ background: "var(--p-surface-2)" }}>
+          <span className="flex items-baseline gap-2 flex-wrap"><span className="text-[13.5px] font-semibold">{r.author.name}</span><span className="text-[12px] p-faint">{ago(new Date(r.createdAt))}{r.editedAt ? " · modifié" : ""}</span></span>
+          {editing ? (
+            <div className="flex flex-col gap-2 mt-1.5">
+              <textarea className="p-field text-[14.5px]" rows={2} value={text} onChange={(e) => setText(e.target.value)} />
+              <span className="flex gap-2"><button type="button" className="p-btn-primary p-btn-sm" disabled={!text.trim() || update.isPending} onClick={() => update.mutate({ id: r.id, text })}>Enregistrer</button><button type="button" className="p-btn-outline p-btn-sm" onClick={() => { setEditing(false); setText(r.text); }}>Annuler</button></span>
+            </div>
+          ) : <p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{r.text}</p>}
+        </div>
+        {!editing && (r.isMine || r.canDelete) && (
+          <span className="flex items-center gap-3 pl-2 text-[12.5px] p-muted">
+            {confirm ? (
+              <>
+                <span>Supprimer cette réponse ?</span>
+                <button type="button" className="font-semibold" style={{ color: "var(--p-accent-text)" }} disabled={remove.isPending} onClick={() => remove.mutate({ id: r.id })}>Oui, supprimer</button>
+                <button type="button" onClick={() => setConfirm(false)}>Annuler</button>
+              </>
+            ) : (
+              <>
+                {r.isMine && <button type="button" className="hover:underline" onClick={() => setEditing(true)}>Modifier</button>}
+                {r.canDelete && <button type="button" className="hover:underline" onClick={() => setConfirm(true)}>Supprimer{!r.isMine ? " (modération)" : ""}</button>}
+              </>
+            )}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
