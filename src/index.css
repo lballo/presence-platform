@@ -1,0 +1,134 @@
+@import "@fontsource/cormorant-garamond/500.css";
+@import "@fontsource/cormorant-garamond/600.css";
+@import "@fontsource/cormorant-garamond/500-italic.css";
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn */
+    --background: 0 0% 100%;
+    --foreground: 20 10% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 10% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 10% 8%;
+    --primary: 0 60% 41%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 20% 96%;
+    --secondary-foreground: 20 10% 8%;
+    --muted: 30 20% 96%;
+    --muted-foreground: 20 4% 36%;
+    --accent: 30 20% 96%;
+    --accent-foreground: 20 10% 8%;
+    --destructive: 0 60% 41%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 15% 91%;
+    --input: 30 11% 83%;
+    --ring: 0 60% 41%;
+    --radius: 0.9rem;
+
+    /* Présence */
+    --p-accent: #A92B2A;
+    --p-accent-text: #A92B2A;
+    --p-accent-soft: #F7E6E6;
+    --p-accent-line: #EDC9C8;
+    --p-gold: #8A6D3B;
+    --p-gold-bright: #C4A574;
+    --p-pill: #F6EEE7;
+    --p-bg: #FFFFFF;
+    --p-surface: #FFFFFF;
+    --p-surface-2: #F7F5F2;
+    --p-ink: #141211;
+    --p-ink-2: #5C5856;
+    --p-ink-3: #78716C;
+    --p-line: #ECE8E4;
+    --p-line-2: #D9D4CF;
+    --p-track: #EFEAE5;
+    --p-menu-bg: #F5F5F5;
+    --p-menu-ink: #4A4644;
+    --p-menu-line: #E6E3E0;
+    --p-band: radial-gradient(130% 120% at 100% 0%, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0) 60%), linear-gradient(135deg, #141211 0%, #221F1D 55%, #46403C 100%);
+    --p-logo-filter: none;
+  }
+  .dark {
+    --background: 20 10% 8%;
+    --foreground: 60 5% 96%;
+    --card: 20 7% 11%;
+    --card-foreground: 60 5% 96%;
+    --popover: 20 7% 11%;
+    --popover-foreground: 60 5% 96%;
+    --secondary: 20 6% 14%;
+    --secondary-foreground: 60 5% 96%;
+    --muted: 20 6% 14%;
+    --muted-foreground: 25 6% 66%;
+    --accent: 20 6% 14%;
+    --accent-foreground: 60 5% 96%;
+    --border: 20 5% 18%;
+    --input: 20 5% 28%;
+
+    --p-accent-text: #E07A73;
+    --p-accent-soft: #2E1615;
+    --p-accent-line: #4E2220;
+    --p-gold: #C4A574;
+    --p-pill: #2A1E1B;
+    --p-bg: #141211;
+    --p-surface: #1C1A19;
+    --p-surface-2: #242120;
+    --p-ink: #F5F5F4;
+    --p-ink-2: #A8A29E;
+    --p-ink-3: #8F8882;
+    --p-line: #2E2B29;
+    --p-line-2: #4A4542;
+    --p-track: #2A2725;
+    --p-menu-bg: #0E0D0C;
+    --p-menu-ink: #C9C4BF;
+    --p-menu-line: #24211F;
+    --p-band: #141211;
+    --p-logo-filter: invert(1);
+  }
+  * { @apply border-border; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body {
+    background: var(--p-bg);
+    color: var(--p-ink);
+    font-family: "Plus Jakarta Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .serif { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 500; }
+}
+
+@layer components {
+  .p-eyebrow { @apply text-[12px] font-medium uppercase tracking-[0.32em] text-[var(--p-gold)]; }
+  .p-card { background: var(--p-surface); border: 1px solid var(--p-line); @apply rounded-[18px]; }
+  .p-soft { background: var(--p-surface-2); @apply rounded-[18px]; }
+  .p-band { background: var(--p-band); color: #fff; @apply rounded-[20px]; }
+  .p-btn { @apply inline-flex items-center justify-center gap-2 h-12 px-6 rounded-full text-[15px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
+  .p-btn-primary { @apply p-btn bg-[var(--p-accent)] text-white hover:brightness-110; }
+  .p-btn-outline { @apply p-btn border border-[var(--p-line-2)] text-[var(--p-ink)] hover:bg-[var(--p-surface-2)]; }
+  .p-btn-ghost { @apply inline-flex items-center gap-1.5 min-h-10 text-[14px] font-medium text-[var(--p-accent-text)] hover:underline; }
+  .p-btn-white { @apply p-btn bg-white text-[#141211] font-semibold hover:bg-[#f2f2f2]; }
+  .p-btn-sm { @apply h-10 px-4 text-[14px]; }
+  .p-chip { @apply inline-flex items-center gap-1.5 h-9 px-4 rounded-full border text-[13.5px] font-medium cursor-pointer transition-colors; border-color: var(--p-line-2); }
+  .p-chip-on { background: var(--p-ink); color: var(--p-bg); border-color: var(--p-ink); }
+  .p-pill { @apply inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-[12.5px] font-medium; background: var(--p-pill); color: var(--p-accent-text); }
+  .p-field { @apply w-full min-h-[46px] px-3.5 rounded-xl border text-[15px] outline-none focus:ring-2 focus:ring-[var(--p-accent)]; background: var(--p-surface); border-color: var(--p-line-2); color: var(--p-ink); }
+  textarea.p-field { @apply py-3 leading-relaxed resize-y; }
+  .p-avatar { @apply rounded-full object-cover flex-none; }
+  .p-initials { @apply rounded-full flex items-center justify-center serif font-semibold flex-none; background: var(--p-pill); color: var(--p-accent-text); }
+  .p-muted { color: var(--p-ink-2); }
+  .p-faint { color: var(--p-ink-3); }
+  .p-link { color: var(--p-accent-text); }
+}
+
+@keyframes p-pulse { 0% { transform: scale(1); opacity: .6 } 100% { transform: scale(2.2); opacity: 0 } }
+.p-live-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: currentColor; animation: p-pulse 1.6s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
