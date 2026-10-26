@@ -39,7 +39,7 @@ export default function Messages() {
               <button key={c.peer.id} type="button" onClick={() => open(c.peer.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left border-b" style={{ borderColor: "var(--p-line)", background: c.peer.id === withId ? "var(--p-surface-2)" : undefined }}>
                 <Avatar m={c.peer} size={46} />
                 <span className="flex-1 min-w-0 flex flex-col gap-0.5">
-                  <span className="flex items-baseline justify-between gap-2"><span className={`truncate text-[15px] ${c.unread ? "font-semibold" : "font-medium"}`}>{c.peer.name}</span><span className="text-[12px] p-faint flex-none">{when(new Date(c.lastAt))}</span></span>
+                  <span className="flex items-baseline justify-between gap-2"><span className={`truncate text-[15px] ${c.unread ? "font-semibold" : "font-medium"}`}>{c.peer.name}</span><span className="text-[12px] p-faint flex-none">{c.lastAt ? when(new Date(c.lastAt)) : ""}</span></span>
                   <span className="flex items-center justify-between gap-2"><span className={`truncate text-[13.5px] ${c.unread ? "" : "p-muted"}`} style={c.unread ? { color: "var(--p-ink)" } : undefined}>{c.lastMine ? "Vous : " : ""}{c.lastText}</span>{!!c.unread && <span className="min-w-[20px] h-5 px-1.5 rounded-full text-[11.5px] font-semibold text-white flex items-center justify-center flex-none" style={{ background: "var(--p-accent)" }}>{c.unread}</span>}</span>
                 </span>
               </button>

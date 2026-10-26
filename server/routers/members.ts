@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, or, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
-import { members } from "../../db/schema";
+import { members, swipes, messages } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { INTENT_CODES, INTENT_GROUPS, intentLabel, myIntentLabel } from "../lib/intents";
 
@@ -49,6 +49,65 @@ export const membersRouter = createRouter({
     }),
 
   /** Annuaire : tous les membres visibles sauf moi. */
+  /**
+   * Mes relations : membres avec qui j'ai matché (hors Espace Rencontre, qui reste privé)
+   * ou avec qui une conversation est engagée dans les deux sens.
+   */
+  relations: proc.query(async ({ ctx }) => {
+    const db = getDb();
+    const me = ctx.memberId;
+    const GOALS: Record<string, string> = { mentorat: "Mentorat", pairs: "Pairs", associe: "Associé", invest: "Investissement", recrut: "Recrutement", amitie: "Amitié", parole: "Prise de parole" };
+    const liked = await db.select().from(swipes).where(and(eq(swipes.liked, true), or(eq(swipes.fromId, me), eq(swipes.toId, me))));
+    const rel = new Map<number, { goals: Set<string>; since: Date; lastMessageAt: Date | null; sent: boolean; received: boolean }>();
+    const get = (id: number, at: Date) => {
+      if (!rel.has(id)) rel.set(id, { goals: new Set(), since: at, lastMessageAt: null, sent: false, received: false });
+      return rel.get(id)!;
+    };
+    for (const s of liked.filter((x) => x.fromId === me && x.goal !== "amour")) {
+      const back = liked.find((t) => t.fromId === s.toId && t.toId === me && t.goal === s.goal);
+      if (back) {
+        const at = back.createdAt > s.createdAt ? back.createdAt : s.createdAt;
+        const r = get(s.toId, at);
+        r.goals.add(s.goal);
+        if (at < r.since) r.since = at;
+      }
+    }
+    const msgs = await db.select({ fromId: messages.fromId, toId: messages.toId, at: messages.createdAt }).from(messages).where(or(eq(messages.fromId, me), eq(messages.toId, me)));
+    const talk = new Map<number, { sent: boolean; received: boolean; first: Date; last: Date }>();
+    for (const m of msgs) {
+      const peer = m.fromId === me ? m.toId : m.fromId;
+      const t = talk.get(peer) ?? { sent: false, received: false, first: m.at, last: m.at };
+      if (m.fromId === me) t.sent = true; else t.received = true;
+      if (m.at < t.first) t.first = m.at;
+      if (m.at > t.last) t.last = m.at;
+      talk.set(peer, t);
+    }
+    for (const [peer, t] of talk) {
+      if (rel.has(peer) || (t.sent && t.received)) {
+        const r = get(peer, t.first);
+        r.lastMessageAt = t.last; r.sent = t.sent; r.received = t.received;
+      }
+    }
+    const ids = [...rel.keys()];
+    if (!ids.length) return [];
+    const people = await db.select().from(members).where(inArray(members.id, ids));
+    return people
+      .map((m) => {
+        const r = rel.get(m.id)!;
+        const reasons = [...r.goals].map((g) => `Match · ${GOALS[g] ?? g}`);
+        if (r.sent && r.received) reasons.push("Échange en cours");
+        return {
+          ...publicMember(m),
+          rencontreEnabled: undefined, rencontrePref: undefined, rencontreBlurb: undefined,
+          tags: m.intents.map((code) => ({ code, key: code.split(":")[0], offer: code.endsWith(":offer"), label: intentLabel(code, m.gender) })),
+          reasons,
+          since: r.since,
+          lastMessageAt: r.lastMessageAt,
+        };
+      })
+      .sort((a, b) => +(b.lastMessageAt ?? b.since) - +(a.lastMessageAt ?? a.since));
+  }),
+
   directory: proc.query(async ({ ctx }) => {
     const db = getDb();
     const list = await db.query.members.findMany({

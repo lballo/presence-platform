@@ -5,6 +5,9 @@ import { createRouter, proc } from "../middleware";
 import { getDb } from "../queries/connection";
 import { messages, members } from "../../db/schema";
 import { publicMember } from "../lib/format";
+import { matchedPeers, isMatched, GOAL_LABELS } from "../lib/matches";
+
+const NOT_MATCHED = "La messagerie est réservée à vos relations : les membres avec qui vous avez matché.";
 
 /** Messages échangés entre deux membres, dans les deux sens. */
 const between = (a: number, b: number) =>
@@ -13,41 +16,48 @@ const between = (a: number, b: number) =>
 export const messagesRouter = createRouter({
   /** Nombre de messages non lus (badge du menu). */
   unreadCount: proc.query(async ({ ctx }) => {
+    const peerIds = [...(await matchedPeers(ctx.memberId)).keys()];
+    if (!peerIds.length) return 0;
     const [row] = await getDb()
       .select({ n: sql<number>`count(*)::int` })
       .from(messages)
-      .where(and(eq(messages.toId, ctx.memberId), isNull(messages.readAt)));
+      .where(and(eq(messages.toId, ctx.memberId), isNull(messages.readAt), inArray(messages.fromId, peerIds)));
     return row?.n ?? 0;
   }),
 
-  /** Mes conversations : un interlocuteur par ligne, avec le dernier message et les non-lus. */
+  /** Mes relations (= mes matchs), avec le dernier message échangé et les non-lus. */
   conversations: proc.query(async ({ ctx }) => {
     const db = getDb();
     const me = ctx.memberId;
+    const peers = await matchedPeers(me);
+    const peerIds = [...peers.keys()];
+    if (!peerIds.length) return [];
     const rows = await db
       .select()
       .from(messages)
-      .where(or(eq(messages.fromId, me), eq(messages.toId, me)))
+      .where(or(and(eq(messages.fromId, me), inArray(messages.toId, peerIds)), and(eq(messages.toId, me), inArray(messages.fromId, peerIds))))
       .orderBy(desc(messages.createdAt))
-      .limit(1000);
-    const byPeer = new Map<number, { last: (typeof rows)[number]; unread: number }>();
-    for (const m of rows) {
-      const peer = m.fromId === me ? m.toId : m.fromId;
-      const cur = byPeer.get(peer);
-      if (!cur) byPeer.set(peer, { last: m, unread: 0 });
-      const entry = byPeer.get(peer)!;
-      if (m.toId === me && !m.readAt) entry.unread += 1;
-    }
-    const peerIds = [...byPeer.keys()];
-    if (!peerIds.length) return [];
-    const peers = await db.select().from(members).where(inArray(members.id, peerIds));
+      .limit(2000);
+    const people = await db.select().from(members).where(inArray(members.id, peerIds));
     return peerIds
       .map((id) => {
-        const p = peers.find((x) => x.id === id);
-        const { last, unread } = byPeer.get(id)!;
-        return p ? { peer: publicMember(p), lastText: last.text, lastAt: last.createdAt, lastMine: last.fromId === me, unread } : null;
+        const p = people.find((x) => x.id === id);
+        if (!p) return null;
+        const last = rows.find((m) => m.fromId === id || m.toId === id);
+        const unread = rows.filter((m) => m.fromId === id && m.toId === me && !m.readAt).length;
+        const match = peers.get(id)!;
+        return {
+          peer: publicMember(p),
+          goals: match.goals.map((g) => GOAL_LABELS[g] ?? g),
+          matchedAt: match.at,
+          lastText: last?.text ?? null,
+          lastAt: last?.createdAt ?? null,
+          lastMine: last ? last.fromId === me : false,
+          unread,
+        };
       })
-      .filter((x): x is NonNullable<typeof x> => !!x);
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .sort((x, y) => +(y.lastAt ?? y.matchedAt) - +(x.lastAt ?? x.matchedAt));
   }),
 
   /** Fil avec un membre (les messages reçus sont marqués comme lus). */
@@ -55,6 +65,7 @@ export const messagesRouter = createRouter({
     const db = getDb();
     const peer = await db.query.members.findFirst({ where: eq(members.id, input.withId) });
     if (!peer) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable" });
+    if (!(await isMatched(ctx.memberId, input.withId))) throw new TRPCError({ code: "FORBIDDEN", message: NOT_MATCHED });
     const list = await db.select().from(messages).where(between(ctx.memberId, input.withId)).orderBy(asc(messages.createdAt)).limit(500);
     if (list.some((m) => m.toId === ctx.memberId && !m.readAt)) {
       await db
@@ -73,6 +84,7 @@ export const messagesRouter = createRouter({
     const db = getDb();
     const peer = await db.query.members.findFirst({ where: eq(members.id, input.toId) });
     if (!peer) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable" });
+    if (!(await isMatched(ctx.memberId, input.toId))) throw new TRPCError({ code: "FORBIDDEN", message: NOT_MATCHED });
     const [row] = await db.insert(messages).values({ fromId: ctx.memberId, toId: input.toId, text: input.text }).returning();
     return { id: row.id, text: row.text, at: row.createdAt, mine: true, read: false };
   }),
