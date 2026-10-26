@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Pencil, CalendarPlus, ExternalLink, ChevronLeft, ChevronRight, ArrowRight, Compass } from "lucide-react";
+import { Pencil, CalendarPlus, ExternalLink, ChevronLeft, ChevronRight, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, iso, monthTitle, plural, monthAbr, dayNum } from "@/lib/format";
@@ -45,7 +45,50 @@ export default function Dashboard() {
           ))}
         </div>
       </section>
+
+      <MiracleRoutine />
     </>
+  );
+}
+
+// Lien vers l’application (Google Play) : VITE_MIRACLE_ROUTINE_URL dans .env, sinon lien neutre.
+const MIRACLE_ROUTINE_URL: string = import.meta.env.VITE_MIRACLE_ROUTINE_URL || "#";
+
+function MiracleRoutine() {
+  const steps = [["Respiration carrée", "3 min", true], ["Intention du jour", "2 min", false], ["Ancrage des pieds", "3 min", false]] as const;
+  return (
+    <section aria-label="Mes rituels avec Miracle Routine" className="mt-9 rounded-3xl border overflow-hidden flex flex-wrap items-stretch gap-x-12" style={{ borderColor: "var(--p-line)", background: "var(--p-surface-2)", padding: "clamp(24px,4vw,44px) clamp(24px,4vw,48px) 0" }}>
+      <div className="flex-[1_1_380px] min-w-0 flex flex-col gap-4" style={{ paddingBottom: "clamp(24px,4vw,44px)" }}>
+        <span className="p-eyebrow">Mes rituels</span>
+        <h2 className="m-0 text-[clamp(30px,3.4vw,40px)] leading-[1.1]">Miracle Routine, vos rituels partout avec vous.</h2>
+        <p className="m-0 max-w-[560px] text-[15.5px] leading-relaxed p-muted">Des routines guidées pour le matin, le soir ou juste avant une prise de parole, avec une alarme pour chaque rituel.</p>
+        <ul className="list-none m-0 p-0 flex flex-col gap-2.5 text-[15px]">
+          {["Une alarme pour chaque rituel", "Un catalogue de routines et d’exercices guidés", "Vos routines favorites et celles que vous créez"].map((t) => <li key={t} className="flex items-center gap-2.5"><Check size={16} className="flex-none" style={{ color: "var(--p-accent-text)" }} /> {t}</li>)}
+        </ul>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pt-1">
+          <a href={MIRACLE_ROUTINE_URL} target={MIRACLE_ROUTINE_URL === "#" ? undefined : "_blank"} rel="noopener" className="p-btn-primary no-underline gap-3 pl-5 pr-6"><Play size={18} fill="currentColor" /><span className="flex flex-col leading-[1.15] text-left"><span className="text-[11px] opacity-70">Télécharger sur</span><span className="text-[16px] font-semibold">Google Play</span></span></a>
+          <span className="text-[13.5px] p-muted">Application Android</span>
+        </div>
+        <p className="m-0 flex items-start gap-2 text-[13.5px] p-muted leading-relaxed"><Info size={15} className="flex-none mt-0.5" /><span>Bientôt, les rituels que vous réalisez dans l’application apparaîtront ici et dans Mon parcours.</span></p>
+      </div>
+      <div aria-hidden="true" className="flex-[0_1_300px] min-w-[240px] flex items-end justify-center">
+        <div className="w-[240px] rounded-t-[32px] border border-b-0 p-2 pb-0 shadow-xl" style={{ borderColor: "var(--p-line-2)", background: "var(--p-ink)" }}>
+          <div className="rounded-t-[24px] p-4 flex flex-col gap-2 min-h-[280px]" style={{ background: "var(--p-surface)" }}>
+            <span className="text-[10.5px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>Routine du matin</span>
+            <span className="serif text-[22px] leading-tight">Bien démarrer la journée</span>
+            <span className="text-[12px] p-muted">12 min · 4 exercices</span>
+            <div className="flex flex-col gap-1.5 mt-2">
+              {steps.map(([t, d, done]) => (
+                <span key={t} className="flex items-center gap-2 text-[12.5px] px-2.5 py-2 rounded-xl" style={{ background: "var(--p-surface-2)" }}>
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center flex-none" style={done ? { background: "var(--p-accent)", color: "#fff" } : { border: "1.5px solid var(--p-line-2)" }}>{done && <Check size={9} strokeWidth={3.4} />}</span>
+                  <span className="flex-1">{t}</span><span className="p-faint">{d}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
