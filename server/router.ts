@@ -1,4 +1,5 @@
-import { createRouter, proc } from "./middleware";
+import { createRouter, publicProc } from "./middleware";
+import { authRouter } from "./routers/auth";
 import { membersRouter } from "./routers/members";
 import { forumRouter } from "./routers/forum";
 import { hivesRouter } from "./routers/hives";
@@ -12,7 +13,8 @@ import { messagesRouter } from "./routers/messages";
 import { uploadsRouter } from "./routers/uploads";
 
 export const appRouter = createRouter({
-  ping: proc.query(() => ({ ok: true, ts: Date.now() })),
+  ping: publicProc.query(() => ({ ok: true, ts: Date.now() })),
+  auth: authRouter,
   members: membersRouter,
   forum: forumRouter,
   hives: hivesRouter,

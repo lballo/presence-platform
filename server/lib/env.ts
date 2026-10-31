@@ -10,10 +10,10 @@ export const env = {
   isProduction: process.env.NODE_ENV === "production",
   databaseUrl: required("DATABASE_URL"),
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
-  // Pas d'authentification en v1 : le membre connecté est fixé ici (Hélène = 1 dans le seed).
-  currentMemberId: Number(process.env.CURRENT_MEMBER_ID ?? 1),
-  // Membre « administrateur » (valide les talks) tant qu'il n'y a pas d'authentification : Laura = 2 dans le seed.
-  adminMemberId: Number(process.env.ADMIN_MEMBER_ID ?? 2),
+  // Adresse publique de l'application (liens d'invitation)
+  appUrl: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, ""),
+  // Page expliquant comment revenir, affichée quand un accès est terminé
+  membershipUrl: process.env.MEMBERSHIP_URL ?? "",
   // Stockage des vidéos de talks (bucket Supabase « talks », envoi direct depuis le navigateur via URL signée)
   supabaseUrl: (process.env.SUPABASE_URL ?? "").replace(/\/$/, ""),
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",

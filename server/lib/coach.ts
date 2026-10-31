@@ -19,7 +19,7 @@ export const EXERCISES = [
 
 export type ChatTurn = { role: "user" | "coach"; text: string };
 
-export async function coachReply(history: ChatTurn[], member: { firstName: string; role: string; intention: string }): Promise<string> {
+export async function coachReply(history: ChatTurn[], member: { firstName: string; jobTitle: string; intention: string }): Promise<string> {
   if (!env.geminiApiKey) {
     // Sans clé Gemini : réponse de secours pour que l'interface reste utilisable.
     const last = history[history.length - 1]?.text ?? "";
@@ -30,7 +30,7 @@ export async function coachReply(history: ChatTurn[], member: { firstName: strin
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: `${SYSTEM}\n\nLa personne s'appelle ${member.firstName}, ${member.role}. Son intention du moment : « ${member.intention} ».` }] },
+      systemInstruction: { parts: [{ text: `${SYSTEM}\n\nLa personne s'appelle ${member.firstName}, ${member.jobTitle}. Son intention du moment : « ${member.intention} ».` }] },
       contents,
       generationConfig: { temperature: 0.7, maxOutputTokens: 600 },
     }),

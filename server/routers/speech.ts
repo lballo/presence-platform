@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { speeches, speechScores, advice } from "../../db/schema";
 import { uploadVideoToGemini, analyzeVideoWithGemini, deleteGeminiFile } from "../lib/gemini";
@@ -22,21 +22,23 @@ async function findSpeech(id: number, memberId: number) {
   return s;
 }
 
+const speechProc = procFor("speech.use");
+
 export const speechRouter = createRouter({
-  list: proc.query(async ({ ctx }) => {
+  list: speechProc.query(async ({ ctx }) => {
     const db = getDb();
     return db.query.speeches.findMany({ where: eq(speeches.memberId, ctx.memberId), with: { scores: true }, orderBy: [desc(speeches.createdAt)] });
   }),
 
-  getById: proc.input(z.object({ id: z.number() })).query(({ ctx, input }) => findSpeech(input.id, ctx.memberId)),
+  getById: speechProc.input(z.object({ id: z.number() })).query(({ ctx, input }) => findSpeech(input.id, ctx.memberId)),
 
-  create: proc.input(z.object({ title: z.string().min(1), duration: z.number().optional() })).mutation(async ({ ctx, input }) => {
+  create: speechProc.input(z.object({ title: z.string().min(1), duration: z.number().optional() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const [row] = await db.insert(speeches).values({ title: input.title, duration: input.duration, videoUrl: "pending_gemini_upload", memberId: ctx.memberId }).returning({ id: speeches.id });
     return row;
   }),
 
-  delete: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  delete: speechProc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     await findSpeech(input.id, ctx.memberId);
     await db.delete(advice).where(eq(advice.speechId, input.id));
@@ -45,7 +47,7 @@ export const speechRouter = createRouter({
     return { ok: true };
   }),
 
-  generateAnalysis: proc.input(z.object({ id: z.number(), videoDataUrl: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+  generateAnalysis: speechProc.input(z.object({ id: z.number(), videoDataUrl: z.string().min(1) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     await findSpeech(input.id, ctx.memberId);
     await db.update(speeches).set({ status: "processing", updatedAt: new Date() }).where(eq(speeches.id, input.id));

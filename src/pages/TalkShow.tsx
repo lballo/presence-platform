@@ -24,7 +24,7 @@ export default function TalkShow() {
       <PageHeader eyebrow="Talk Show" title="Des membres, des idées qui transforment" intro="Chaque mois, des leaders du cercle racontent l’idée qui a changé leur façon de diriger. En vidéo, puis en direct."
         action={<button type="button" className="p-btn-primary" onClick={openForm}><Film size={17} /> Proposer mon talk</button>} />
 
-      {me.data?.isAdmin && <PendingPanel onPlay={setPlaying} />}
+      {me.data?.permissions.validateTalks && <PendingPanel onPlay={setPlaying} />}
 
       {proposing && <div ref={formRef}><SubmitForm onDone={() => setProposing(false)} /></div>}
 
@@ -36,7 +36,7 @@ export default function TalkShow() {
             <span className="text-[12px] font-medium uppercase tracking-[0.3em]" style={{ color: "var(--p-gold-bright)" }}>Le talk de la semaine</span>
             <h2 className="serif text-[clamp(32px,4vw,46px)] leading-[1.08] m-0">{first.title}</h2>
             <p className="m-0 text-[16px] text-white/80 leading-relaxed">{first.summary}</p>
-            <div className="flex items-center gap-3"><Avatar m={first.speaker} size={44} /><span className="flex flex-col"><span className="font-semibold">{first.speaker.name}</span><span className="text-[13px] text-white/70">{first.speaker.role} · {first.speaker.city}</span></span></div>
+            <div className="flex items-center gap-3"><Avatar m={first.speaker} size={44} /><span className="flex flex-col"><span className="font-semibold">{first.speaker.name}</span><span className="text-[13px] text-white/70">{first.speaker.jobTitle} · {first.speaker.city}</span></span></div>
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <button type="button" className="p-btn-white" onClick={() => setPlaying(first)} disabled={!first.videoUrl}><Play size={18} /> {first.videoUrl ? `Regarder · ${first.durationMin} min` : "Vidéo bientôt disponible"}</button>
               <span className="text-[13px] text-white/65 flex items-center gap-1.5"><Eye size={13} /> {first.views} vues</span>
@@ -237,7 +237,7 @@ function PendingPanel({ onPlay }: { onPlay: (t: Talk) => void }) {
         <article key={t.id} className="p-card p-5 flex flex-wrap gap-4 items-start">
           <Avatar m={t.speaker} size={48} />
           <div className="flex-[1_1_320px] min-w-0 flex flex-col gap-1.5">
-            <span className="text-[13px] p-muted">{t.speaker.name} · {t.speaker.role} · envoyé {ago(new Date(t.submittedAt))}</span>
+            <span className="text-[13px] p-muted">{t.speaker.name} · {t.speaker.jobTitle} · envoyé {ago(new Date(t.submittedAt))}</span>
             <h3 className="m-0 text-[24px] leading-tight">{t.title}</h3>
             <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{t.description}</p>
             <span className="text-[12.5px] p-faint flex items-center gap-1"><Clock size={12} /> {t.durationMin} min</span>

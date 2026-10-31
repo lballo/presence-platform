@@ -15,6 +15,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx db/seed.ts",
+    "invite": "tsx scripts/invite.ts",
+    "test": "vitest run",
     "build:vercel": "vite build && esbuild server/boot.ts --platform=node --bundle --format=esm --outfile=api/_server.mjs --banner:js=\"import { createRequire } from 'module';const require = createRequire(import.meta.url);\""
   },
   "dependencies": {
@@ -31,6 +33,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.90.16",
     "@trpc/client": "^11.8.1",
     "@trpc/react-query": "^11.8.1",

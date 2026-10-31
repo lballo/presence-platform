@@ -72,7 +72,7 @@ function MemberPicker({ onPick }: { onPick: (id: number) => void }) {
   const dir = trpc.members.directory.useQuery();
   const me = trpc.members.me.useQuery();
   const [q, setQ] = useState("");
-  const list = (dir.data ?? []).filter((m) => m.id !== me.data?.id && (!q || norm(`${m.name} ${m.role} ${m.city}`).includes(norm(q)))).slice(0, 8);
+  const list = (dir.data ?? []).filter((m) => m.id !== me.data?.id && (!q || norm(`${m.name} ${m.jobTitle} ${m.city}`).includes(norm(q)))).slice(0, 8);
   return (
     <div className="border-b p-3 flex flex-col gap-2" style={{ borderColor: "var(--p-line)", background: "var(--p-surface-2)" }}>
       <label className="flex items-center gap-2 h-10 px-3 rounded-full border p-muted" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }}>
@@ -81,7 +81,7 @@ function MemberPicker({ onPick }: { onPick: (id: number) => void }) {
       <div className="flex flex-col max-h-[260px] overflow-y-auto">
         {list.map((m) => (
           <button key={m.id} type="button" onClick={() => onPick(m.id)} className="flex items-center gap-2.5 px-2 py-2 rounded-xl text-left hover:bg-black/5 dark:hover:bg-white/5">
-            <Avatar m={m} size={34} /><span className="flex flex-col min-w-0"><span className="text-[14px] font-medium truncate">{m.name}</span><span className="text-[12px] p-muted truncate">{m.role} · {m.city}</span></span>
+            <Avatar m={m} size={34} /><span className="flex flex-col min-w-0"><span className="text-[14px] font-medium truncate">{m.name}</span><span className="text-[12px] p-muted truncate">{m.jobTitle} · {m.city}</span></span>
           </button>
         ))}
         {list.length === 0 && <span className="text-[13px] p-muted px-2 py-2">Aucun membre trouvé.</span>}
@@ -175,7 +175,7 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
     <>
       <div className="flex items-center gap-3 px-4 h-[62px] border-b flex-none" style={{ borderColor: "var(--p-line)" }}>
         <button type="button" className="md:hidden w-9 h-9 rounded-full flex items-center justify-center" onClick={onBack} aria-label="Retour"><ArrowLeft size={18} /></button>
-        {peer && <><Avatar m={peer} size={38} /><span className="flex flex-col min-w-0"><span className="font-semibold text-[15px] truncate">{peer.name}</span><span className="text-[12.5px] p-muted truncate">{peer.role} · {peer.city}</span></span></>}
+        {peer && <><Avatar m={peer} size={38} /><span className="flex flex-col min-w-0"><span className="font-semibold text-[15px] truncate">{peer.name}</span><span className="text-[12.5px] p-muted truncate">{peer.jobTitle} · {peer.city}</span></span></>}
         {peer && <Link to={`/membres/${peer.id}`} className="ml-auto p-btn-ghost text-[13px] no-underline">Voir le profil</Link>}
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1" style={{ background: "var(--p-surface-2)" }}>

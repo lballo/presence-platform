@@ -12,6 +12,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 // Schéma Postgres : "public" par défaut, ou celui de DB_SCHEMA (ex. "presence" sur Supabase,
@@ -25,15 +26,19 @@ const pgEnum: typeof pgEnumRoot = dbSchema ? (dbSchema.enum.bind(dbSchema) as un
 // Membres
 // ─────────────────────────────────────────────────────────────
 
-// Statut dans la plateforme : membre simple, organisateur (gère des événements) ou administrateur
-export const memberStatusEnum = pgEnum("member_status", ["member", "organizer", "admin"]);
+// Rôle dans la plateforme (droits : server/lib/permissions.ts)
+export const memberRoleEnum = pgEnum("member_role", ["membre", "organisateur", "administrateur"]);
+// Ce que comprend l'accompagnement du membre
+export const accessTypeEnum = pgEnum("access_type", ["collectif", "individuel", "les_deux"]);
+// État du compte : seul « actif » donne accès à la plateforme
+export const accountStatusEnum = pgEnum("account_status", ["actif", "suspendu", "termine"]);
 
 export const members = pgTable("members", {
   id: serial("id").primaryKey(),
   firstName: varchar("first_name", { length: 80 }).notNull(),
   lastName: varchar("last_name", { length: 80 }).notNull(),
   gender: varchar("gender", { length: 1 }).notNull().default("f"), // f | m
-  role: varchar("role", { length: 160 }).notNull().default(""),
+  jobTitle: varchar("job_title", { length: 160 }).notNull().default(""),
   org: varchar("org", { length: 160 }).notNull().default(""),
   city: varchar("city", { length: 80 }).notNull().default(""),
   zone: varchar("zone", { length: 40 }).notNull().default("France"),
@@ -54,13 +59,31 @@ export const members = pgTable("members", {
   rencontrePref: varchar("rencontre_pref", { length: 3 }).notNull().default("all"), // f | m | all
   rencontreBlurb: text("rencontre_blurb").notNull().default(""),
   isCoached: boolean("is_coached").notNull().default(false),
-  status: memberStatusEnum("status").notNull().default("member"),
+  role: memberRoleEnum("role").notNull().default("membre"),
+  accessType: accessTypeEnum("access_type").notNull().default("collectif"),
+  accessEndsAt: timestamp("access_ends_at", { withTimezone: true }),
+  status: accountStatusEnum("status").notNull().default("actif"),
+  invitedAt: timestamp("invited_at", { withTimezone: true }),
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }), // nul : invitation pas encore acceptée
+  email: varchar("email", { length: 255 }),
+  authUserId: uuid("auth_user_id"), // auth.users(id) : clé étrangère posée par la migration Supabase
   organizerRequest: text("organizer_request").notNull().default(""), // motivation de la candidature organisateur
   organizerRequestedAt: timestamp("organizer_requested_at"), // non nul = candidature en attente
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type Member = typeof members.$inferSelect;
+
+// Jetons d'invitation valables 7 jours : le lien Supabase, limité à 24 h, n'est produit qu'au clic.
+export const invitations = pgTable("invitations", {
+  id: serial("id").primaryKey(),
+  memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 // ─────────────────────────────────────────────────────────────
 // Coaching individuel
@@ -122,7 +145,7 @@ export const forumLikes = pgTable(
 );
 
 export const opportunityTypeEnum = pgEnum("opportunity_type", ["recrut", "fin", "assoc"]);
-export const opportunityStatusEnum = pgEnum("opportunity_status", ["pending", "published"]);
+export const opportunityStatusEnum = pgEnum("opportunity_status", ["pending", "published", "rejected"]);
 
 export const opportunities = pgTable("opportunities", {
   id: serial("id").primaryKey(),
@@ -319,7 +342,7 @@ export const speeches = pgTable(
   "speeches",
   {
     id: serial("id").primaryKey(),
-    memberId: integer("member_id").notNull().default(1),
+    memberId: integer("member_id").notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     videoUrl: text("videoUrl").notNull(),
     duration: integer("duration"),

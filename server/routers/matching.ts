@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { eq, and, ne } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { members, swipes } from "../../db/schema";
 import { publicMember } from "../lib/format";
+import { isListed } from "../lib/listed";
 import { complement, intentKey, intentLabel, myIntentLabel } from "../lib/intents";
 
 async function me(id: number) {
@@ -13,23 +14,25 @@ async function me(id: number) {
   return m;
 }
 
+const matchProc = procFor("matching.use");
+
 export const matchingRouter = createRouter({
   /** Mes intentions (réglées dans le profil) : ce sur quoi le matching peut tourner. */
-  goals: proc.query(async ({ ctx }) => {
+  goals: matchProc.query(async ({ ctx }) => {
     const m = await me(ctx.memberId);
     const codes = [...m.intents, ...(m.rencontreEnabled ? ["amour"] : [])];
     return codes.map((code) => ({ code, label: myIntentLabel(code), key: intentKey(code) }));
   }),
 
   /** Profils à découvrir pour une intention, hors ceux déjà vus. */
-  deck: proc.input(z.object({ goal: z.string() })).query(async ({ ctx, input }) => {
+  deck: matchProc.input(z.object({ goal: z.string() })).query(async ({ ctx, input }) => {
     const db = getDb();
     const m = await me(ctx.memberId);
     const goalKey = intentKey(input.goal);
     const allowed = [...m.intents, ...(m.rencontreEnabled ? ["amour"] : [])];
     if (!allowed.includes(input.goal)) return [];
 
-    const others = await db.query.members.findMany({ where: ne(members.id, ctx.memberId) });
+    const others = await db.query.members.findMany({ where: and(ne(members.id, ctx.memberId), isListed()) });
     const seen = await db.query.swipes.findMany({ where: and(eq(swipes.fromId, ctx.memberId), eq(swipes.goal, goalKey)) });
     const seenIds = new Set(seen.map((s) => s.toId));
 
@@ -57,7 +60,7 @@ export const matchingRouter = createRouter({
   }),
 
   /** Glisser : à droite (liked) ou à gauche. Un intérêt réciproque fait un match. */
-  swipe: proc.input(z.object({ toId: z.number(), goal: z.string(), liked: z.boolean() })).mutation(async ({ ctx, input }) => {
+  swipe: matchProc.input(z.object({ toId: z.number(), goal: z.string(), liked: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const goalKey = intentKey(input.goal);
     await db.insert(swipes).values({ fromId: ctx.memberId, toId: input.toId, goal: goalKey, liked: input.liked })
@@ -67,14 +70,14 @@ export const matchingRouter = createRouter({
     return { matched: !!back };
   }),
 
-  undo: proc.input(z.object({ toId: z.number(), goal: z.string() })).mutation(async ({ ctx, input }) => {
+  undo: matchProc.input(z.object({ toId: z.number(), goal: z.string() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     await db.delete(swipes).where(and(eq(swipes.fromId, ctx.memberId), eq(swipes.toId, input.toId), eq(swipes.goal, intentKey(input.goal))));
     return { ok: true };
   }),
 
   /** Mes matchs : intérêt réciproque sur une même intention. */
-  matches: proc.query(async ({ ctx }) => {
+  matches: matchProc.query(async ({ ctx }) => {
     const db = getDb();
     const mine = await db.query.swipes.findMany({ where: and(eq(swipes.fromId, ctx.memberId), eq(swipes.liked, true)) });
     const theirs = await db.query.swipes.findMany({ where: and(eq(swipes.toId, ctx.memberId), eq(swipes.liked, true)) });

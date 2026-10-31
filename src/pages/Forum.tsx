@@ -144,7 +144,7 @@ function PostCard({ p, onLike }: { p: Post; onLike: () => void }) {
     <article className="p-card p-5 flex flex-col gap-3">
       <div className="flex items-center gap-3">
         <Avatar m={p.author} size={44} />
-        <span className="flex flex-col min-w-0"><span className="font-semibold">{p.author.name}</span><span className="text-[12.5px] p-muted">{p.author.role} · {p.author.city} · {ago(new Date(p.createdAt))}{p.editedAt ? " · modifié" : ""}</span></span>
+        <span className="flex flex-col min-w-0"><span className="font-semibold">{p.author.name}</span><span className="text-[12.5px] p-muted">{p.author.jobTitle} · {p.author.city} · {ago(new Date(p.createdAt))}{p.editedAt ? " · modifié" : ""}</span></span>
         <span className="p-pill ml-auto">{KINDS[p.kind]}</span>
         {(p.canEdit || p.canDelete) && !editing && (
           <span className="relative">
@@ -252,6 +252,7 @@ function ReplyItem({ r }: { r: Post["replyList"][number] }) {
 }
 
 function Opportunities() {
+  const me = trpc.members.me.useQuery();
   const utils = trpc.useUtils();
   const opps = trpc.forum.opportunities.useQuery();
   const interest = trpc.forum.toggleInterest.useMutation({ onSuccess: () => utils.forum.opportunities.invalidate() });
@@ -263,6 +264,7 @@ function Opportunities() {
   return (
     <div className="flex flex-wrap gap-6 items-start">
       <div className="flex-[2_1_540px] min-w-0 flex flex-col gap-4">
+        {me.data?.permissions.validateOpportunities && <PendingOpportunities />}
         <div className="p-soft p-4 flex gap-3 text-[14px] leading-relaxed p-muted"><ShieldCheck size={20} className="flex-none mt-0.5" style={{ color: "var(--p-accent-text)" }} /><span><b style={{ color: "var(--p-ink)" }}>Un espace d’entraide.</b> Chaque annonce est relue par l’équipe Présence avant d’être publiée, et la prospection commerciale n’y a pas sa place.</span></div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={`p-chip h-9 ${filter === "all" ? "p-chip-on" : ""}`} onClick={() => setFilter("all")}>Toutes</button>
@@ -278,7 +280,7 @@ function Opportunities() {
             <p className="m-0 text-[15.5px] leading-relaxed">{o.text}</p>
             <div className="flex flex-wrap gap-1.5">{o.facts.map((x) => <span key={x} className="p-chip h-[30px] text-[13px] cursor-default">{x}</span>)}</div>
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t" style={{ borderColor: "var(--p-line)" }}>
-              <span className="flex items-center gap-2.5"><Avatar m={o.author} size={40} /><span className="flex flex-col"><span className="text-[14.5px] font-semibold">{o.author.name}</span><span className="text-[12.5px] p-muted">{o.author.role} · {o.author.city}</span></span></span>
+              <span className="flex items-center gap-2.5"><Avatar m={o.author} size={40} /><span className="flex flex-col"><span className="text-[14.5px] font-semibold">{o.author.name}</span><span className="text-[12.5px] p-muted">{o.author.jobTitle} · {o.author.city}</span></span></span>
               <span className="flex items-center gap-2.5">
                 <span className="text-[13px] p-muted">{o.isMine ? "Votre annonce" : o.interestedCount ? plural(o.interestedCount, "membre intéressé", "membres intéressés") : "Personne pour l’instant"}</span>
                 {!o.isMine && <button type="button" className={o.interested ? "p-btn-outline p-btn-sm" : "p-btn-primary p-btn-sm"} onClick={() => interest.mutate({ opportunityId: o.id })}>{o.interested ? "✓ Intérêt envoyé" : "Ça m’intéresse"}</button>}
@@ -301,5 +303,35 @@ function Opportunities() {
         </section>
       </aside>
     </div>
+  );
+}
+
+/** Administrateur : annonces à relire avant publication. */
+function PendingOpportunities() {
+  const utils = trpc.useUtils();
+  const pending = trpc.forum.pendingOpportunities.useQuery();
+  const decide = trpc.forum.decideOpportunity.useMutation({
+    onSuccess: (_r, v) => { utils.forum.pendingOpportunities.invalidate(); utils.forum.opportunities.invalidate(); toast.success(v.accept ? "Annonce publiée" : "Annonce refusée"); },
+    onError: (e) => toast.error(e.message),
+  });
+  if (!pending.data?.length) return null;
+  return (
+    <section className="p-5 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
+      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}><ShieldCheck size={14} /> Équipe Présence · annonces à valider</span>
+      {pending.data.map((o) => (
+        <article key={o.id} className="p-card p-4 flex flex-wrap gap-4 items-start">
+          <Avatar m={o.author} size={44} />
+          <div className="flex-[1_1_280px] min-w-0 flex flex-col gap-1">
+            <span className="text-[13px] p-muted">{OPP[o.type].label} · {o.author.name} · {ago(new Date(o.createdAt))}</span>
+            <span className="serif text-[22px] leading-tight">{o.title}</span>
+            <p className="m-0 text-[14.5px] leading-relaxed">{o.text}</p>
+          </div>
+          <div className="flex gap-2 self-center">
+            <button type="button" className="p-btn-primary p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: o.id, accept: true })}>Publier</button>
+            <button type="button" className="p-btn-outline p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: o.id, accept: false })}>Refuser</button>
+          </div>
+        </article>
+      ))}
+    </section>
   );
 }

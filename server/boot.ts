@@ -18,8 +18,9 @@ app.get("/api/health", async (c) => {
     DB_SCHEMA: process.env.DB_SCHEMA ?? "(public)",
     GEMINI_API_KEY: !!env.geminiApiKey,
     SUPABASE_STORAGE: !!(env.supabaseUrl && env.supabaseServiceKey),
-    ADMIN_MEMBER_ID: env.adminMemberId,
-    CURRENT_MEMBER_ID: env.currentMemberId,
+    SUPABASE_AUTH: !!(env.supabaseUrl && env.supabaseAnonKey && env.supabaseServiceKey),
+    APP_URL: env.appUrl,
+    MEMBERSHIP_URL: !!env.membershipUrl,
     runtime: process.env.VERCEL ? "vercel" : process.env.RENDER ? "render" : "node",
   };
   if (!env.databaseUrl) return c.json({ ok: false, error: "DATABASE_URL manquante", config }, 500);
@@ -33,6 +34,9 @@ app.get("/api/health", async (c) => {
     return c.json({ ok: false, error: (e instanceof Error ? e.message : String(e)) + cause, config }, 500);
   }
 });
+
+// Configuration publique lue par le navigateur au démarrage (la clé anon est faite pour être publique).
+app.get("/api/config", (c) => c.json({ supabaseUrl: env.supabaseUrl, supabaseAnonKey: env.supabaseAnonKey, membershipUrl: env.membershipUrl }));
 
 app.onError((err, c) => {
   console.error(err);

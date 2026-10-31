@@ -1,13 +1,17 @@
 import { z } from "zod";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { assertCan, createRouter, procFor } from "../middleware";
+import { can } from "../lib/permissions";
 import { getDb } from "../queries/connection";
 import { forumPosts, forumLikes, forumReplies, opportunities, opportunityInterests } from "../../db/schema";
 import { publicMember } from "../lib/format";
 
+const forumProc = procFor("forum.use");
+const oppProc = procFor("opportunities.use");
+
 export const forumRouter = createRouter({
-  posts: proc.query(async ({ ctx }) => {
+  posts: forumProc.query(async ({ ctx }) => {
     const db = getDb();
     const list = await db.query.forumPosts.findMany({ with: { author: true, replyList: { with: { author: true }, orderBy: [asc(forumReplies.createdAt)] } }, orderBy: [desc(forumPosts.createdAt)] });
     const mine = await db.query.forumLikes.findMany({ where: eq(forumLikes.memberId, ctx.memberId) });
@@ -15,20 +19,20 @@ export const forumRouter = createRouter({
     return list.map(({ replyList, ...p }) => ({
       ...p,
       author: publicMember(p.author),
-      liked: likedIds.has(p.id), isMine: p.authorId === ctx.memberId, canEdit: p.authorId === ctx.memberId, canDelete: p.authorId === ctx.memberId || ctx.isAdmin,
+      liked: likedIds.has(p.id), isMine: p.authorId === ctx.memberId, canEdit: can(ctx.member, "content.edit", { ownerId: p.authorId }), canDelete: can(ctx.member, "content.delete", { ownerId: p.authorId }),
       replies: replyList.length,
-      replyList: replyList.map((r) => ({ id: r.id, text: r.text, createdAt: r.createdAt, editedAt: r.editedAt, author: publicMember(r.author), isMine: r.authorId === ctx.memberId, canDelete: r.authorId === ctx.memberId || ctx.isAdmin })),
+      replyList: replyList.map((r) => ({ id: r.id, text: r.text, createdAt: r.createdAt, editedAt: r.editedAt, author: publicMember(r.author), isMine: r.authorId === ctx.memberId, canDelete: can(ctx.member, "content.delete", { ownerId: r.authorId }) })),
     }));
   }),
 
   /** Modifier sa publication. */
-  updatePost: proc
+  updatePost: forumProc
     .input(z.object({ id: z.number(), text: z.string().trim().min(1).max(2000), videoUrl: z.string().trim().max(1000).optional() }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.id) });
       if (!post) throw new TRPCError({ code: "NOT_FOUND" });
-      if (post.authorId !== ctx.memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez modifier que vos propres publications." });
+      assertCan(ctx.member, "content.edit", { ownerId: post.authorId }, "Vous ne pouvez modifier que vos propres publications.");
       if (input.videoUrl !== undefined) {
         if (input.videoUrl && !/^https?:\/\/\S+$/.test(input.videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Le lien de la vidéo doit commencer par https://" });
         if (post.kind === "video" && !input.videoUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Gardez une vidéo pour votre demande de retour." });
@@ -38,18 +42,18 @@ export const forumRouter = createRouter({
     }),
 
   /** Supprimer sa publication (ou modération par l'équipe). */
-  deletePost: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  deletePost: forumProc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.id) });
     if (!post) throw new TRPCError({ code: "NOT_FOUND" });
-    if (post.authorId !== ctx.memberId && !ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez supprimer que vos propres publications." });
+    assertCan(ctx.member, "content.delete", { ownerId: post.authorId }, "Vous ne pouvez supprimer que vos propres publications.");
     await db.delete(forumLikes).where(eq(forumLikes.postId, post.id));
     await db.delete(forumReplies).where(eq(forumReplies.postId, post.id));
     await db.delete(forumPosts).where(eq(forumPosts.id, post.id));
     return { ok: true };
   }),
 
-  createPost: proc
+  createPost: forumProc
     .input(z.object({ kind: z.enum(["victoire", "video", "question"]), text: z.string().min(1).max(2000), askFeedback: z.boolean().default(false), videoUrl: z.string().trim().max(1000).default("") }))
     .mutation(async ({ ctx, input }) => {
       if (input.videoUrl && !/^https?:\/\/\S+$/.test(input.videoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Le lien de la vidéo doit commencer par https://" });
@@ -60,7 +64,7 @@ export const forumRouter = createRouter({
     }),
 
   /** Répondre à une publication. */
-  reply: proc.input(z.object({ postId: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+  reply: forumProc.input(z.object({ postId: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.postId) });
     if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Publication introuvable" });
@@ -68,25 +72,25 @@ export const forumRouter = createRouter({
     return { id: row.id };
   }),
 
-  updateReply: proc.input(z.object({ id: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+  updateReply: forumProc.input(z.object({ id: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const r = await db.query.forumReplies.findFirst({ where: eq(forumReplies.id, input.id) });
     if (!r) throw new TRPCError({ code: "NOT_FOUND" });
-    if (r.authorId !== ctx.memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez modifier que vos propres réponses." });
+    assertCan(ctx.member, "content.edit", { ownerId: r.authorId }, "Vous ne pouvez modifier que vos propres réponses.");
     await db.update(forumReplies).set({ text: input.text, editedAt: new Date() }).where(eq(forumReplies.id, input.id));
     return { ok: true };
   }),
 
-  deleteReply: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  deleteReply: forumProc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const r = await db.query.forumReplies.findFirst({ where: eq(forumReplies.id, input.id) });
     if (!r) throw new TRPCError({ code: "NOT_FOUND" });
-    if (r.authorId !== ctx.memberId && !ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez supprimer que vos propres réponses." });
+    assertCan(ctx.member, "content.delete", { ownerId: r.authorId }, "Vous ne pouvez supprimer que vos propres réponses.");
     await db.delete(forumReplies).where(eq(forumReplies.id, input.id));
     return { ok: true };
   }),
 
-  toggleLike: proc.input(z.object({ postId: z.number() })).mutation(async ({ ctx, input }) => {
+  toggleLike: forumProc.input(z.object({ postId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const existing = await db.query.forumLikes.findFirst({ where: and(eq(forumLikes.postId, input.postId), eq(forumLikes.memberId, ctx.memberId)) });
     if (existing) {
@@ -100,7 +104,7 @@ export const forumRouter = createRouter({
   }),
 
   /** Opportunités : annonces publiées + mes annonces en relecture. */
-  opportunities: proc.query(async ({ ctx }) => {
+  opportunities: oppProc.query(async ({ ctx }) => {
     const db = getDb();
     const list = await db.query.opportunities.findMany({ with: { author: true }, orderBy: [desc(opportunities.createdAt)] });
     const interests = await db.query.opportunityInterests.findMany();
@@ -121,7 +125,7 @@ export const forumRouter = createRouter({
       }));
   }),
 
-  createOpportunity: proc
+  createOpportunity: oppProc
     .input(z.object({ type: z.enum(["recrut", "fin", "assoc"]), title: z.string().min(1).max(200), text: z.string().min(1).max(3000), facts: z.array(z.string().min(1).max(60)).max(6) }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
@@ -130,7 +134,20 @@ export const forumRouter = createRouter({
       return row;
     }),
 
-  toggleInterest: proc.input(z.object({ opportunityId: z.number() })).mutation(async ({ ctx, input }) => {
+  /** Administrateur : annonces à relire. */
+  pendingOpportunities: oppProc.query(async ({ ctx }) => {
+    if (!can(ctx.member, "opportunity.validate")) return [];
+    const list = await getDb().query.opportunities.findMany({ where: eq(opportunities.status, "pending"), with: { author: true }, orderBy: [asc(opportunities.createdAt)] });
+    return list.map((o) => ({ ...o, author: publicMember(o.author) }));
+  }),
+
+  /** Administrateur : publier ou refuser une annonce. */
+  decideOpportunity: procFor("opportunity.validate").input(z.object({ id: z.number(), accept: z.boolean() })).mutation(async ({ input }) => {
+    await getDb().update(opportunities).set({ status: input.accept ? "published" : "rejected" }).where(and(eq(opportunities.id, input.id), eq(opportunities.status, "pending")));
+    return { ok: true };
+  }),
+
+  toggleInterest: oppProc.input(z.object({ opportunityId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const existing = await db.query.opportunityInterests.findFirst({ where: and(eq(opportunityInterests.opportunityId, input.opportunityId), eq(opportunityInterests.memberId, ctx.memberId)) });
     if (existing) {

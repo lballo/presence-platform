@@ -1,13 +1,15 @@
 import { eq, and, asc, desc, gte, isNull, inArray } from "drizzle-orm";
-import { createRouter, proc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { coachingSessions, events, eventRegistrations, talks, forumPosts, hivePosts, hiveMembers } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { env } from "../lib/env";
 
+const dashProc = procFor("dashboard.read");
+
 export const dashboardRouter = createRouter({
   /** Bandeau coaching : prochaine séance, séances restantes, liens Calendly. */
-  coaching: proc.query(async ({ ctx }) => {
+  coaching: dashProc.query(async ({ ctx }) => {
     const db = getDb();
     const sessions = await db.query.coachingSessions.findMany({ where: eq(coachingSessions.memberId, ctx.memberId), orderBy: [asc(coachingSessions.number)] });
     const next = sessions.find((s) => !s.done);
@@ -22,7 +24,7 @@ export const dashboardRouter = createRouter({
   }),
 
   /** Mon agenda : tout ce à quoi je suis inscrite (événements, ruches, salons) + coachings. */
-  agenda: proc.query(async ({ ctx }) => {
+  agenda: dashProc.query(async ({ ctx }) => {
     const db = getDb();
     const regs = await db.query.eventRegistrations.findMany({ where: and(eq(eventRegistrations.memberId, ctx.memberId), eq(eventRegistrations.waitlist, false)), with: { event: { with: { hive: true, host: true } } } });
     const items = regs.filter((r) => r.event.status === "published").map((r) => ({
@@ -42,7 +44,7 @@ export const dashboardRouter = createRouter({
    * Suggestions de l'agenda : prochains événements de Présence et des ruches dont je suis membre,
    * auxquels je ne suis pas encore inscrite. Les deux canaux restent distincts.
    */
-  suggestions: proc.query(async ({ ctx }) => {
+  suggestions: dashProc.query(async ({ ctx }) => {
     const db = getDb();
     const now = new Date();
     const mine = new Set((await db.select({ id: eventRegistrations.eventId }).from(eventRegistrations).where(eq(eventRegistrations.memberId, ctx.memberId))).map((r) => r.id));
@@ -62,7 +64,7 @@ export const dashboardRouter = createRouter({
   }),
 
   /** « Cette semaine dans Présence » : actualités du cercle. */
-  news: proc.query(async () => {
+  news: dashProc.query(async () => {
     const db = getDb();
     const now = new Date();
     const talk = await db.query.talks.findFirst({ where: eq(talks.status, "published"), with: { speaker: true }, orderBy: [desc(talks.publishedAt)] });

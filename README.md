@@ -27,10 +27,10 @@ npm run dev                 # http://localhost:3000
 |---|---|
 | `DATABASE_URL` | Postgres, ex. `postgres://user:pass@localhost:5432/presence` (Neon/Supabase acceptés) |
 | `DB_SCHEMA` | Schéma Postgres à utiliser (vide = `public`). Sur Supabase : `presence` (tables créées par `db/migrations/0000_init.sql` dans ce schéma ; `db:push` le respecte aussi). |
-| `CURRENT_MEMBER_ID` | Membre « connecté » tant qu'il n'y a pas d'auth (1 = Hélène, 2 = Laura…). Peut aussi être passé par l'en-tête HTTP `x-member-id`. |
 | `GEMINI_API_KEY` | Clé Google AI Studio pour l'analyse vidéo et le Coach IA. Sans clé : coach en mode réponses fixes, analyse vidéo indisponible. |
-| `ADMIN_MEMBER_ID` | Membre qui valide les talks soumis (2 = Laura). |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Envoi des vidéos du Talk Show dans le bucket Supabase Storage `talks` (public en lecture). Sans elles, le formulaire propose un lien vidéo à la place du fichier. |
+| `APP_URL` | Adresse publique de l'application : base des liens d'invitation. |
+| `MEMBERSHIP_URL` | Page qui explique comment revenir, sur l'écran « Accès terminé ». Sans elle, le bouton propose d'écrire à Laura. |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Connexion des membres (obligatoires), invitations, et envoi des vidéos dans Supabase Storage. |
 | `CALENDLY_URL` | Lien de réservation des séances de coaching (bandeau du tableau de bord) |
 | `CALENDLY_EXPLO_URL` | Lien « Réserver votre session exploratoire » (membres non accompagnés) |
 
@@ -80,7 +80,7 @@ Chaque membre règle dans son profil (tableau de bord → Modifier mon profil) j
 
 ## Talk Show
 
-Chaque membre peut proposer un talk (titre, description/motivation, vidéo chargée ou lien). La proposition passe en « attente de validation » ; le membre `ADMIN_MEMBER_ID` voit un panneau « à valider » en haut du Talk Show et publie ou refuse. Les vidéos chargées partent directement du navigateur vers Supabase Storage (URL signée créée par le serveur), ce qui contourne la limite de 4,5 Mo de Vercel.
+Chaque membre peut proposer un talk (titre, description/motivation, vidéo chargée ou lien). La proposition passe en « attente de validation » ; le membre un administrateur voit un panneau « à valider » en haut du Talk Show et publie ou refuse. Les vidéos chargées partent directement du navigateur vers Supabase Storage (URL signée créée par le serveur), ce qui contourne la limite de 4,5 Mo de Vercel.
 
 ## Messagerie
 
@@ -105,10 +105,16 @@ Les vidéos (Talk Show, demandes de retour du forum) et les pièces jointes des 
 - **Administrateur** : valide les propositions et les candidatures, change le statut des membres (fiche membre de l’annuaire), modifie ou supprime tous les événements.
 - **Deux canaux distincts** : la page Événements ne montre que le programme Présence ; les événements de ruche vivent dans leur ruche (créés par les leaders). Le tableau de bord consolide dans « Mon agenda » tout ce à quoi on est inscrit et suggère les prochains événements des deux canaux.
 
+## Connexion et droits
+
+- **Connexion** : Supabase Auth, e-mail et mot de passe, réseau sur invitation. Réglages et e-mails : [docs/auth-setup.md](docs/auth-setup.md).
+- **Droits** : une seule fonction, `can(membre, action, ressource)` dans `server/lib/permissions.ts`. Le routeur ne peut déclarer une route membre qu’avec `procFor(action)` ; la RLS (`db/migrations/supabase/0008_rls_policies.sql`) en est le second rempart.
+- **Inviter** : `npm run invite -- email "Prénom Nom" rôle type_acces` (`--sans-email` affiche le lien sans rien envoyer ; `--fiche=N` relie une fiche existante).
+- **Migrations Supabase** : `db/migrations/supabase/`, écrites pour le schéma `presence`, à appliquer dans l’ordre.
+
 ## Prochaine session (feuille de route)
 
-- **Authentification des membres** : comptes (e-mail + mot de passe ou lien magique), invitation par l’équipe, mot de passe oublié. Remplace `CURRENT_MEMBER_ID` / `x-member-id`.
-- **Rôle administrateur** : statut `admin` en base (remplace `ADMIN_MEMBER_ID`) et **panneau d’administration** dédié dans l’app :
+- **Panneau d’administration** dédié dans l’app :
   - ajouter, suspendre ou supprimer des membres ;
   - créer, modifier ou supprimer n’importe quel événement ;
   - modérer les contenus (forum, ruches, opportunités, talks) : masquer, supprimer, valider ;

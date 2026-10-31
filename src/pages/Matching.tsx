@@ -75,7 +75,7 @@ export default function Matching() {
                 <div className="absolute left-0 right-0 bottom-0 p-6 flex flex-col gap-2.5 text-white">
                   <span className="self-start p-pill text-white" style={{ background: "var(--p-accent)" }}>{cur.reason}</span>
                   <span className="serif text-[38px] leading-none">{cur.name}</span>
-                  <span className="text-[14.5px] text-white/85">{cur.role} · {cur.city}</span>
+                  <span className="text-[14.5px] text-white/85">{cur.jobTitle} · {cur.city}</span>
                   <div className="flex flex-wrap gap-1.5">{cur.common.map((c) => <span key={c} className="h-7 px-3 rounded-full text-[12.5px] bg-white/15 border border-white/30 flex items-center">{c}</span>)}</div>
                   <span className="text-[14px] text-white/90 leading-relaxed">{cur.blurb}</span>
                 </div>

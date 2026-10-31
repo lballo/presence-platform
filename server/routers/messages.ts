@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, eq, or, desc, asc, isNull, sql, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { messages, members } from "../../db/schema";
 import { publicMember } from "../lib/format";
@@ -13,9 +13,11 @@ const between = (a: number, b: number) =>
   or(and(eq(messages.fromId, a), eq(messages.toId, b)), and(eq(messages.fromId, b), eq(messages.toId, a)));
 
 // La messagerie est ouverte à tous les membres du cercle ; un match éventuel est simplement signalé.
+const msgProc = procFor("messages.use");
+
 export const messagesRouter = createRouter({
   /** Nombre de messages non lus (badge du menu). */
-  unreadCount: proc.query(async ({ ctx }) => {
+  unreadCount: msgProc.query(async ({ ctx }) => {
     const [row] = await getDb()
       .select({ n: sql<number>`count(*)::int` })
       .from(messages)
@@ -24,7 +26,7 @@ export const messagesRouter = createRouter({
   }),
 
   /** Mes conversations : un interlocuteur par ligne, avec le dernier message, les non-lus et le match éventuel. */
-  conversations: proc.query(async ({ ctx }) => {
+  conversations: msgProc.query(async ({ ctx }) => {
     const db = getDb();
     const me = ctx.memberId;
     const rows = await db.select().from(messages).where(or(eq(messages.fromId, me), eq(messages.toId, me))).orderBy(desc(messages.createdAt)).limit(2000);
@@ -51,7 +53,7 @@ export const messagesRouter = createRouter({
   }),
 
   /** Fil avec un membre (les messages reçus sont marqués comme lus). */
-  thread: proc.input(z.object({ withId: z.number(), afterId: z.number().optional() })).query(async ({ ctx, input }) => {
+  thread: msgProc.input(z.object({ withId: z.number(), afterId: z.number().optional() })).query(async ({ ctx, input }) => {
     const db = getDb();
     const peer = await db.query.members.findFirst({ where: eq(members.id, input.withId) });
     if (!peer) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable" });
@@ -85,7 +87,7 @@ export const messagesRouter = createRouter({
     };
   }),
 
-  send: proc
+  send: msgProc
     .input(z.object({
       toId: z.number(),
       text: z.string().trim().max(4000).default(""),
@@ -110,7 +112,7 @@ export const messagesRouter = createRouter({
   }),
 
   /** Modifier un de mes messages. */
-  update: proc.input(z.object({ id: z.number(), text: z.string().trim().min(1).max(4000) })).mutation(async ({ ctx, input }) => {
+  update: msgProc.input(z.object({ id: z.number(), text: z.string().trim().min(1).max(4000) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const m = await db.query.messages.findFirst({ where: eq(messages.id, input.id) });
     if (!m || m.deletedAt) throw new TRPCError({ code: "NOT_FOUND" });
@@ -120,7 +122,7 @@ export const messagesRouter = createRouter({
   }),
 
   /** Supprimer un de mes messages : il disparaît pour les deux personnes (« Message supprimé »). */
-  remove: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  remove: msgProc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const m = await db.query.messages.findFirst({ where: eq(messages.id, input.id) });
     if (!m) throw new TRPCError({ code: "NOT_FOUND" });

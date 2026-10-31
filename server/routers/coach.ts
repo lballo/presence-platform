@@ -1,20 +1,22 @@
 import { z } from "zod";
 import { eq, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { coachMessages, members } from "../../db/schema";
 import { coachReply, EXERCISES, type ChatTurn } from "../lib/coach";
 
-export const coachRouter = createRouter({
-  exercises: proc.query(() => EXERCISES),
+const coachProc = procFor("coach.use");
 
-  history: proc.query(async ({ ctx }) => {
+export const coachRouter = createRouter({
+  exercises: coachProc.query(() => EXERCISES),
+
+  history: coachProc.query(async ({ ctx }) => {
     const db = getDb();
     return db.query.coachMessages.findMany({ where: eq(coachMessages.memberId, ctx.memberId), orderBy: [asc(coachMessages.createdAt)] });
   }),
 
-  send: proc.input(z.object({ text: z.string().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+  send: coachProc.input(z.object({ text: z.string().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const m = await db.query.members.findFirst({ where: eq(members.id, ctx.memberId) });
     if (!m) throw new TRPCError({ code: "NOT_FOUND" });
@@ -26,7 +28,7 @@ export const coachRouter = createRouter({
     return row;
   }),
 
-  reset: proc.mutation(async ({ ctx }) => {
+  reset: coachProc.mutation(async ({ ctx }) => {
     await getDb().delete(coachMessages).where(eq(coachMessages.memberId, ctx.memberId));
     return { ok: true };
   }),

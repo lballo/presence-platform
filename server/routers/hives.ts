@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { assertCan, createRouter, procFor } from "../middleware";
+import { can } from "../lib/permissions";
 import { getDb } from "../queries/connection";
 import { hives, hiveMembers, hivePosts, hiveResources, events, eventRegistrations } from "../../db/schema";
 import { publicMember } from "../lib/format";
@@ -15,8 +16,7 @@ async function roleOf(hiveId: number, memberId: number): Promise<Role> {
   return (row?.role ?? "") as Role;
 }
 const isIn = (r: Role) => r === "founder" || r === "leader" || r === "member";
-const canManage = (r: Role) => r === "founder" || r === "leader";
-const manages = async (hiveId: number, ctx: { memberId: number; isAdmin: boolean }) => ctx.isAdmin || canManage(await roleOf(hiveId, ctx.memberId));
+const hiveProc = procFor("hive.read");
 
 async function requireHive(id: number) {
   const db = getDb();
@@ -27,7 +27,7 @@ async function requireHive(id: number) {
 
 export const hivesRouter = createRouter({
   /** Galerie : toutes les ruches avec mon rôle, le nombre de membres et le prochain rendez-vous. */
-  list: proc.query(async ({ ctx }) => {
+  list: hiveProc.query(async ({ ctx }) => {
     const db = getDb();
     const all = await db.query.hives.findMany({ with: { memberships: { with: { member: true } }, events: true, parent: true, children: true }, orderBy: [asc(hives.id)] });
     return all.map((h) => {
@@ -41,6 +41,7 @@ export const hivesRouter = createRouter({
         projectCount: h.children.length,
         pendingCount: h.memberships.filter((m) => m.role === "pending").length,
         role: (mine?.role ?? "") as Role,
+        canManage: can(ctx.member, "hive.manage", { hiveRole: (mine?.role ?? "") as Role }),
         faces: active.filter((m) => m.memberId !== ctx.memberId).slice(0, 3).map((m) => publicMember(m.member)),
         nextEvent: next ? { title: next.title, startsAt: next.startsAt } : null,
       };
@@ -48,7 +49,7 @@ export const hivesRouter = createRouter({
   }),
 
   /** Détail d'une ruche : discussions, projets, ressources, membres, événements. */
-  byId: proc.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+  byId: hiveProc.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = getDb();
     const h = await db.query.hives.findFirst({
       where: eq(hives.id, input.id),
@@ -64,15 +65,17 @@ export const hivesRouter = createRouter({
     if (!h) throw new TRPCError({ code: "NOT_FOUND", message: "Ruche introuvable" });
     const role = (h.memberships.find((m) => m.memberId === ctx.memberId)?.role ?? "") as Role;
     const inside = isIn(role);
-    const open = inside || h.access === "libre";
+    const manager = can(ctx.member, "hive.manage", { hiveRole: role });
+    const open = h.access === "libre" || can(ctx.member, "hive.read_private", { hiveRole: role });
     const leaders = h.memberships.filter((m) => m.role === "founder" || m.role === "leader");
     return {
       ...h,
-      role, inside, canManage: canManage(role) || ctx.isAdmin, canDelete: role === "founder" || ctx.isAdmin, locked: !open,
+      role, inside, canManage: manager, canDelete: can(ctx.member, "hive.delete"), locked: !open,
+      canNameLeader: can(ctx.member, "hive.name_leader", { hiveRole: role }), canRemoveLeader: can(ctx.member, "hive.remove_leader", { hiveRole: role }),
       founder: publicMember(h.memberships.find((m) => m.role === "founder")?.member ?? h.memberships[0].member),
       leaders: leaders.map((m) => ({ ...publicMember(m.member), role: m.role })),
       members: h.memberships.filter((m) => m.role === "member").map((m) => publicMember(m.member)),
-      requests: canManage(role) ? h.memberships.filter((m) => m.role === "pending").map((m) => ({ ...publicMember(m.member), note: m.note })) : [],
+      requests: can(ctx.member, "hive.validate_member", { hiveRole: role }) ? h.memberships.filter((m) => m.role === "pending").map((m) => ({ ...publicMember(m.member), note: m.note })) : [],
       memberCount: h.memberships.filter((m) => m.role !== "pending").length,
       posts: open ? h.posts.map((p) => ({ ...p, author: publicMember(p.author), isLeader: leaders.some((l) => l.memberId === p.authorId) })) : [],
       resources: open ? h.resources.map((r) => ({ ...r, author: publicMember(r.author) })) : [],
@@ -84,7 +87,7 @@ export const hivesRouter = createRouter({
           registered,
           count: registrations.filter((r) => !r.waitlist).length,
           isMine: e.hostId === ctx.memberId,
-          ...eventAccess({ address, meetingUrl, kind: e.kind }, registered || e.hostId === ctx.memberId || canManage(role) || ctx.isAdmin),
+          ...eventAccess({ address, meetingUrl, kind: e.kind }, registered || e.hostId === ctx.memberId || manager),
         };
       }),
       children: h.children.map((c) => ({
@@ -97,7 +100,7 @@ export const hivesRouter = createRouter({
     };
   }),
 
-  join: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  join: procFor("hive.join").input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const h = await requireHive(input.id);
     const role = await roleOf(h.id, ctx.memberId);
@@ -107,7 +110,7 @@ export const hivesRouter = createRouter({
     return { role: newRole };
   }),
 
-  leave: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  leave: hiveProc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const role = await roleOf(input.id, ctx.memberId);
     if (role === "founder") throw new TRPCError({ code: "BAD_REQUEST", message: "La personne fondatrice ne peut pas quitter sa ruche." });
@@ -116,42 +119,43 @@ export const hivesRouter = createRouter({
   }),
 
   /** Leaders : accepter ou refuser une demande d'adhésion. */
-  decideRequest: proc.input(z.object({ id: z.number(), memberId: z.number(), accept: z.boolean() })).mutation(async ({ ctx, input }) => {
+  decideRequest: hiveProc.input(z.object({ id: z.number(), memberId: z.number(), accept: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    if (!(await manages(input.id, ctx))) throw new TRPCError({ code: "FORBIDDEN" });
+    assertCan(ctx.member, "hive.validate_member", { hiveRole: await roleOf(input.id, ctx.memberId) });
     const where = and(eq(hiveMembers.hiveId, input.id), eq(hiveMembers.memberId, input.memberId), eq(hiveMembers.role, "pending"));
     if (input.accept) await db.update(hiveMembers).set({ role: "member" }).where(where);
     else await db.delete(hiveMembers).where(where);
     return { ok: true };
   }),
 
-  /** Fondateur : nommer ou retirer un leader. */
-  setLeader: proc.input(z.object({ id: z.number(), memberId: z.number(), leader: z.boolean() })).mutation(async ({ ctx, input }) => {
+  /** Fondatrice, leaders ou administrateur : nommer un leader. Retirer le rôle : fondatrice ou administrateur. */
+  setLeader: hiveProc.input(z.object({ id: z.number(), memberId: z.number(), leader: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    if ((await roleOf(input.id, ctx.memberId)) !== "founder") throw new TRPCError({ code: "FORBIDDEN" });
-    await db.update(hiveMembers).set({ role: input.leader ? "leader" : "member" })
-      .where(and(eq(hiveMembers.hiveId, input.id), eq(hiveMembers.memberId, input.memberId), sql`${hiveMembers.role} <> 'founder'`));
+    assertCan(ctx.member, input.leader ? "hive.name_leader" : "hive.remove_leader", { hiveRole: await roleOf(input.id, ctx.memberId) });
+    const rows = await db.update(hiveMembers).set({ role: input.leader ? "leader" : "member" })
+      .where(and(eq(hiveMembers.hiveId, input.id), eq(hiveMembers.memberId, input.memberId), sql`${hiveMembers.role} in ('member', 'leader')`)).returning();
+    if (!rows.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette personne doit d’abord être membre de la ruche." });
     return { ok: true };
   }),
 
-  post: proc.input(z.object({ id: z.number(), text: z.string().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+  post: hiveProc.input(z.object({ id: z.number(), text: z.string().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    if (!isIn(await roleOf(input.id, ctx.memberId))) throw new TRPCError({ code: "FORBIDDEN", message: "Rejoignez la ruche pour écrire." });
+    assertCan(ctx.member, "hive.contribute", { hiveRole: await roleOf(input.id, ctx.memberId) }, "Rejoignez la ruche pour écrire.");
     const [row] = await db.insert(hivePosts).values({ hiveId: input.id, authorId: ctx.memberId, text: input.text }).returning();
     return row;
   }),
 
-  addResource: proc
+  addResource: hiveProc
     .input(z.object({ id: z.number(), kind: z.enum(["doc", "pdf", "sheet", "slides", "link"]), title: z.string().min(1).max(200), url: z.string().max(500).default("") }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      if (!isIn(await roleOf(input.id, ctx.memberId))) throw new TRPCError({ code: "FORBIDDEN" });
+      assertCan(ctx.member, "hive.contribute", { hiveRole: await roleOf(input.id, ctx.memberId) });
       const [row] = await db.insert(hiveResources).values({ hiveId: input.id, authorId: ctx.memberId, kind: input.kind, title: input.title, url: input.url, meta: input.url }).returning();
       return row;
     }),
 
   /** Créer une communauté ou une ruche projet (depuis la galerie ou depuis l'onglet Projets d'une ruche). */
-  create: proc
+  create: procFor("hive.create")
     .input(
       z.object({
         type: z.enum(["communaute", "projet"]),
@@ -178,15 +182,15 @@ export const hivesRouter = createRouter({
       return h;
     }),
 
-  setPhase: proc.input(z.object({ id: z.number(), phase: z.enum(["idee", "en_cours", "termine"]) })).mutation(async ({ ctx, input }) => {
+  setPhase: hiveProc.input(z.object({ id: z.number(), phase: z.enum(["idee", "en_cours", "termine"]) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    if (!(await manages(input.id, ctx))) throw new TRPCError({ code: "FORBIDDEN" });
+    assertCan(ctx.member, "hive.manage", { hiveRole: await roleOf(input.id, ctx.memberId) });
     await db.update(hives).set({ phase: input.phase }).where(eq(hives.id, input.id));
     return { ok: true };
   }),
 
   /** Leaders : créer un événement de ruche (ou un salon live). */
-  createEvent: proc
+  createEvent: hiveProc
     .input(
       z.object({
         id: z.number(),
@@ -205,7 +209,7 @@ export const hivesRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      if (!(await manages(input.id, ctx))) throw new TRPCError({ code: "FORBIDDEN", message: "Seuls les leaders créent des événements." });
+      assertCan(ctx.member, "hive.create_event", { hiveRole: await roleOf(input.id, ctx.memberId) }, "Seuls les leaders créent des événements.");
       if (input.kind === "onsite" && !input.address.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez l’adresse de l’événement." });
       if (input.kind !== "onsite" && !/^https?:\/\/\S+$/.test(input.meetingUrl.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez le lien de la visio (https://…)." });
       const { id, ...rest } = input;
@@ -216,9 +220,9 @@ export const hivesRouter = createRouter({
     }),
 
   /** Fondatrice, leaders ou administratrice : changer la confidentialité de la ruche. */
-  setAccess: proc.input(z.object({ id: z.number(), access: z.enum(["libre", "validation"]) })).mutation(async ({ ctx, input }) => {
+  setAccess: hiveProc.input(z.object({ id: z.number(), access: z.enum(["libre", "validation"]) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    if (!(await manages(input.id, ctx))) throw new TRPCError({ code: "FORBIDDEN", message: "Réservé aux leaders de la ruche." });
+    assertCan(ctx.member, "hive.manage", { hiveRole: await roleOf(input.id, ctx.memberId) }, "Réservé aux leaders de la ruche.");
     await db.update(hives).set({ access: input.access }).where(eq(hives.id, input.id));
     // En passant en accès libre, les demandes en attente sont acceptées.
     let accepted = 0;
@@ -229,12 +233,10 @@ export const hivesRouter = createRouter({
     return { ok: true, accepted };
   }),
 
-  /** Fondatrice ou administratrice : supprimer la ruche et son contenu. */
-  remove: proc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  /** Administrateur : supprimer la ruche et son contenu. */
+  remove: procFor("hive.delete").input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const db = getDb();
     const h = await requireHive(input.id);
-    const role = await roleOf(h.id, ctx.memberId);
-    if (role !== "founder" && !ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Seule la personne fondatrice peut supprimer la ruche." });
     const evs = await db.select({ id: events.id }).from(events).where(eq(events.hiveId, h.id));
     for (const e of evs) await db.delete(eventRegistrations).where(eq(eventRegistrations.eventId, e.id));
     await db.delete(events).where(eq(events.hiveId, h.id));

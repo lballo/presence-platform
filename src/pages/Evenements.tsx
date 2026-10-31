@@ -45,9 +45,9 @@ export default function Evenements() {
   return (
     <>
       <PageHeader eyebrow="Le programme" title="Événements Présence" intro="Salons live, ateliers en ligne et rencontres en présentiel organisés par Présence. Cliquez sur une date pour en voir le détail et vous inscrire. Les rendez-vous de vos ruches se trouvent dans chaque ruche et dans votre agenda."
-        action={<button type="button" className={proposing ? "p-btn-outline" : "p-btn-primary"} onClick={() => { setEditing(null); setProposing(!proposing); }}><Plus size={17} /> {proposing ? "Fermer" : me.data?.isOrganizer ? "Créer un événement" : "Proposer un événement"}</button>} />
+        action={<button type="button" className={proposing ? "p-btn-outline" : "p-btn-primary"} onClick={() => { setEditing(null); setProposing(!proposing); }}><Plus size={17} /> {proposing ? "Fermer" : me.data?.permissions.publishEventsDirectly ? "Créer un événement" : "Proposer un événement"}</button>} />
 
-      {me.data?.isAdmin && <PendingEvents />}
+      {me.data?.permissions.validateEvents && <PendingEvents />}
       {(proposing || editing) && <EventForm key={editing?.id ?? "new"} initial={editing} onDone={() => { setProposing(false); setEditing(null); }} />}
       <MyProposals />
 
@@ -147,7 +147,7 @@ function Detail({ e, onToggle, pending, onEdit, onDeleted }: { e: Ev; onToggle: 
         {e.description && <p className="m-0 text-[15.5px] leading-relaxed">{e.description}</p>}
         <div className="p-soft p-4 flex gap-3.5">
           <Avatar m={e.host} size={56} />
-          <span className="flex flex-col gap-1 min-w-0"><span className="text-[12px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>{e.withLine || "Intervenant"}</span><span className="text-[16px] font-semibold">{e.host.name}{e.isMine ? " (vous)" : ""}</span><span className="text-[13px] p-muted">{e.host.role}</span>{e.host.bio && <span className="text-[13.5px] leading-relaxed mt-1">{e.host.bio}</span>}</span>
+          <span className="flex flex-col gap-1 min-w-0"><span className="text-[12px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>{e.withLine || "Intervenant"}</span><span className="text-[16px] font-semibold">{e.host.name}{e.isMine ? " (vous)" : ""}</span><span className="text-[13px] p-muted">{e.host.jobTitle}</span>{e.host.bio && <span className="text-[13.5px] leading-relaxed mt-1">{e.host.bio}</span>}</span>
         </div>
         {e.faces.length > 0 && <span className="flex items-center gap-2 text-[13px] p-muted"><Faces list={e.faces} /> {e.faces.map((f) => f.name.split(" ")[0]).join(", ")}{e.taken > e.faces.length ? ` et ${e.taken - e.faces.length} autres` : ""} y participent</span>}
         {past ? <span className="p-chip h-11 justify-center cursor-default p-muted">Événement passé</span>
@@ -182,7 +182,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 function EventForm({ initial, onDone }: { initial: Ev | null; onDone: () => void }) {
   const utils = trpc.useUtils();
   const me = trpc.members.me.useQuery();
-  const isOrganizer = !!me.data?.isOrganizer;
+  const isOrganizer = !!me.data?.permissions.publishEventsDirectly;
   const refresh = () => { utils.events.invalidate(); utils.hives.invalidate(); utils.dashboard.invalidate(); };
   const create = trpc.events.create.useMutation({ onSuccess: (r) => { refresh(); toast.success(r.status === "published" ? "Événement publié dans le programme" : "Proposition envoyée à l’équipe Présence pour validation"); onDone(); }, onError: (e) => toast.error(e.message) });
   const update = trpc.events.update.useMutation({ onSuccess: () => { refresh(); toast.success("Événement mis à jour"); onDone(); }, onError: (e) => toast.error(e.message) });

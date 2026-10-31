@@ -52,7 +52,7 @@ export default function Ruche() {
           {!r.role && r.access !== "libre" && <span className="text-[13.5px] text-white/80">Chaque {pj ? "contribution est validée par les porteurs" : "adhésion est validée par les leaders"}.</span>}
           {r.role === "pending" && <><span className="h-12 px-4 rounded-full border border-white/45 flex items-center text-[14.5px]">Demande envoyée · en attente de validation</span><button type="button" className="underline text-white/85" onClick={() => leave.mutate({ id: hiveId })}>Annuler la demande</button></>}
           {r.role === "member" && <><span className="h-12 px-4 rounded-full bg-white/15 flex items-center text-[14.5px]">✓ {pj ? "Vous contribuez à ce projet" : "Vous êtes membre"}</span><button type="button" className="underline text-white/85" onClick={() => leave.mutate({ id: hiveId })}>{pj ? "Quitter le projet" : "Quitter la ruche"}</button></>}
-          {r.canManage && <span className="h-12 px-4 rounded-full bg-white/15 flex items-center text-[14.5px]">{r.role === "founder" ? (pj ? "Vous avez lancé ce projet" : "Vous êtes la leader fondatrice") : pj ? "Vous portez ce projet" : "Vous êtes leader de cette ruche"}</span>}
+          {r.canManage && (r.role === "founder" || r.role === "leader") && <span className="h-12 px-4 rounded-full bg-white/15 flex items-center text-[14.5px]">{r.role === "founder" ? (pj ? "Vous avez lancé ce projet" : "Vous êtes la leader fondatrice") : pj ? "Vous portez ce projet" : "Vous êtes leader de cette ruche"}</span>}
         </div>
       </section>
 
@@ -130,7 +130,7 @@ function Discussions({ r, hiveId, refresh, join }: { r: R; hiveId: number; refre
       ) : <GuestNote text={r.type === "projet" ? "Vous lisez ce projet en invitée. Rejoignez-le pour écrire et partager des ressources." : "Vous lisez cette ruche en invitée. Rejoignez-la pour écrire et participer à ses événements."} join={join} />}
       {r.posts.map((p) => (
         <article key={p.id} className="p-4 rounded-2xl border flex flex-col gap-3" style={{ borderColor: "var(--p-line)" }}>
-          <div className="flex items-center gap-3"><Avatar m={p.author} size={42} /><span className="flex flex-col"><span className="flex items-center gap-2 font-semibold">{p.author.name}{p.isLeader && <span className="h-5 px-2 rounded-full text-[11px] font-semibold" style={{ background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{r.type === "projet" ? (p.author.gender === "m" ? "Porteur" : "Porteuse") : "Leader"}</span>}</span><span className="text-[12.5px] p-muted">{p.author.role} · {ago(new Date(p.createdAt))}</span></span></div>
+          <div className="flex items-center gap-3"><Avatar m={p.author} size={42} /><span className="flex flex-col"><span className="flex items-center gap-2 font-semibold">{p.author.name}{p.isLeader && <span className="h-5 px-2 rounded-full text-[11px] font-semibold" style={{ background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{r.type === "projet" ? (p.author.gender === "m" ? "Porteur" : "Porteuse") : "Leader"}</span>}</span><span className="text-[12.5px] p-muted">{p.author.jobTitle} · {ago(new Date(p.createdAt))}</span></span></div>
           <p className="m-0 text-[16px] leading-relaxed">{p.text}</p>
           <div className="flex items-center gap-1 pt-2 border-t text-[14px] p-muted" style={{ borderColor: "var(--p-line)" }}><span className="inline-flex items-center gap-2 h-9 px-2.5"><Heart size={16} /> {p.likes}</span><span className="inline-flex items-center gap-2 h-9 px-2.5"><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</span></div>
         </article>
@@ -207,9 +207,9 @@ function Members({ r, hiveId, refresh }: { r: R; hiveId: number; refresh: () => 
   const Card = ({ m, leader }: { m: R["members"][number] & { role?: string }; leader?: boolean }) => (
     <div className="flex flex-col items-center gap-2 p-4 rounded-2xl border text-center" style={{ borderColor: leader ? "var(--p-accent-line)" : "var(--p-line)" }}>
       <Avatar m={m} size={58} />
-      <span className="flex flex-col"><span className="text-[14.5px] font-semibold leading-tight">{m.name}</span><span className="text-[12.5px] p-muted">{m.role}</span></span>
+      <span className="flex flex-col"><span className="text-[14.5px] font-semibold leading-tight">{m.name}</span><span className="text-[12.5px] p-muted">{m.jobTitle}</span></span>
       {leader && <span className="h-6 px-2.5 rounded-full text-[11.5px] font-semibold flex items-center" style={(m as { role?: string }).role === "founder" ? { background: "var(--p-accent)", color: "#fff" } : { background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{(m as { role?: string }).role === "founder" ? (pj ? "À l’initiative" : "Fondatrice") : pj ? "Porteur" : "Leader"}</span>}
-      {r.role === "founder" && m.id !== r.founder.id && (leader
+      {m.id !== r.founder.id && (leader ? r.canRemoveLeader : r.canNameLeader) && (leader
         ? <button type="button" className="text-[13px] underline p-muted" onClick={() => setLeader.mutate({ id: hiveId, memberId: m.id, leader: false })}>Retirer le rôle</button>
         : <button type="button" className="h-9 px-3.5 rounded-full border text-[13px] font-medium" style={{ borderColor: "var(--p-accent)", color: "var(--p-accent-text)" }} onClick={() => setLeader.mutate({ id: hiveId, memberId: m.id, leader: true })}>{pj ? "Associer au portage" : "Nommer leader"}</button>)}
     </div>
@@ -222,7 +222,7 @@ function Members({ r, hiveId, refresh }: { r: R; hiveId: number; refresh: () => 
           {r.requests.map((q) => (
             <div key={q.id} className="flex flex-wrap items-center gap-3 p-3.5 rounded-xl" style={{ background: "var(--p-surface)" }}>
               <Avatar m={q} size={44} />
-              <span className="flex-[1_1_220px] flex flex-col"><span className="font-semibold">{q.name}</span><span className="text-[13px] p-muted">{q.role} · {q.city}</span>{q.note && <span className="text-[14px] mt-1">{q.note}</span>}</span>
+              <span className="flex-[1_1_220px] flex flex-col"><span className="font-semibold">{q.name}</span><span className="text-[13px] p-muted">{q.jobTitle} · {q.city}</span>{q.note && <span className="text-[14px] mt-1">{q.note}</span>}</span>
               <span className="flex gap-2"><button type="button" className="p-btn-primary p-btn-sm" onClick={() => decide.mutate({ id: hiveId, memberId: q.id, accept: true })}>Accepter</button><button type="button" className="p-btn-outline p-btn-sm" onClick={() => decide.mutate({ id: hiveId, memberId: q.id, accept: false })}>Refuser</button></span>
             </div>
           ))}

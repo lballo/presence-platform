@@ -103,8 +103,8 @@ function OrganizerCard({ me }: { me: Me }) {
   const [motivation, setMotivation] = useState("");
   const apply = trpc.members.requestOrganizer.useMutation({ onSuccess: () => { utils.members.me.invalidate(); utils.members.organizerRequests.invalidate(); setOpen(false); toast.success("Candidature envoyée à l’équipe Présence"); }, onError: (e) => toast.error(e.message) });
   const cancel = trpc.members.cancelOrganizerRequest.useMutation({ onSuccess: () => utils.members.me.invalidate() });
-  if (me.isAdmin) return null;
-  if (me.isOrganizer)
+  if (!me.permissions.applyOrganizer && me.memberRole !== "organisateur") return null;
+  if (me.memberRole === "organisateur")
     return (
       <section className="p-soft p-4 mb-6 flex flex-wrap items-center gap-3">
         <span className="p-pill">Organisatrice·eur</span>
@@ -146,16 +146,18 @@ function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
       </div>
       <div className="flex-[999_1_380px] min-w-0 p-7 flex flex-col gap-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-[14px] p-muted">{me.role} · {me.city}</span>
+          <span className="text-[14px] p-muted">{[me.jobTitle, me.city].filter(Boolean).join(" · ")}</span>
           <button type="button" onClick={onEdit} className="p-btn-outline p-btn-sm"><Pencil size={15} /> Modifier mon profil</button>
         </div>
-        <p className="m-0 serif italic text-[clamp(26px,3vw,34px)] leading-tight">« {me.intention} »</p>
+        {me.intention && <p className="m-0 serif italic text-[clamp(26px,3vw,34px)] leading-tight">« {me.intention} »</p>}
         {me.bio && <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{me.bio}</p>}
         {me.ambition && <p className="m-0 text-[15px] leading-relaxed"><span className="p-muted">Mon ambition · </span>{me.ambition}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13.5px] p-muted mr-1">Mes valeurs</span>
-          {me.values.map((v) => <span key={v} className="p-chip h-[30px] cursor-default">{v}</span>)}
-        </div>
+        {me.values.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[13.5px] p-muted mr-1">Mes valeurs</span>
+            {me.values.map((v) => <span key={v} className="p-chip h-[30px] cursor-default">{v}</span>)}
+          </div>
+        )}
         {me.passions.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[13.5px] p-muted mr-1">Mes passions</span>
@@ -186,7 +188,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
     onError: (e) => toast.error(e.message),
   });
   const [f, setF] = useState({
-    firstName: me.firstName, lastName: me.lastName, role: me.role, city: me.city, intention: me.intention,
+    firstName: me.firstName, lastName: me.lastName, jobTitle: me.jobTitle, city: me.city, intention: me.intention,
     bio: me.bio, ambition: me.ambition, passions: me.passions, linkedinUrl: me.linkedinUrl,
     values: me.values, intents: me.intents, langs: me.langs, visibleInDirectory: me.visibleInDirectory,
     rencontreEnabled: me.rencontreEnabled, rencontrePref: me.rencontrePref as "f" | "m" | "all",
@@ -216,7 +218,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
       <div className="grid gap-3.5 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Prénom</span><input className="p-field" value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} /></label>
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Nom</span><input className="p-field" value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} /></label>
-        <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Fonction</span><input className="p-field" value={f.role} onChange={(e) => set({ role: e.target.value })} /></label>
+        <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Fonction</span><input className="p-field" value={f.jobTitle} onChange={(e) => set({ jobTitle: e.target.value })} /></label>
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Ville</span><input className="p-field" value={f.city} onChange={(e) => set({ city: e.target.value })} /></label>
       </div>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon intention</span><textarea className="p-field" rows={2} value={f.intention} onChange={(e) => set({ intention: e.target.value })} /></label>

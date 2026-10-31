@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { eq, and, ne, or, inArray, isNotNull, isNull, desc, asc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, proc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
+import { can } from "../lib/permissions";
+import { isListed } from "../lib/listed";
 import { getDb } from "../queries/connection";
 import { members, swipes, messages, hiveMembers, talks, events } from "../../db/schema";
 import { publicMember } from "../lib/format";
@@ -14,62 +16,74 @@ async function requireMember(id: number) {
   return m;
 }
 
+const profileProc = procFor("profile.use");
+
 export const membersRouter = createRouter({
   /** Le membre "connecté" et son profil complet. */
-  me: proc.query(async ({ ctx }) => {
+  me: profileProc.query(async ({ ctx }) => {
     const m = await requireMember(ctx.memberId);
     return {
       ...publicMember(m),
       intentLabels: m.intents.map((c) => ({ code: c, label: myIntentLabel(c) })),
       intentGroups: INTENT_GROUPS,
-      isAdmin: ctx.isAdmin,
-      isOrganizer: ctx.isOrganizer,
-      status: ctx.status,
+      email: m.email,
+      memberRole: m.role,
+      accessType: m.accessType,
+      accessEndsAt: m.accessEndsAt,
+      rencontreEnabled: m.rencontreEnabled, rencontrePref: m.rencontrePref, rencontreBlurb: m.rencontreBlurb,
+      // Ce que l'interface affiche ou masque : la décision reste celle de can()
+      permissions: {
+        publishEventsDirectly: can(m, "event.publish_directly"),
+        validateEvents: can(m, "event.validate"),
+        validateTalks: can(m, "talk.validate"),
+        validateOpportunities: can(m, "opportunity.validate"),
+        validateOrganizers: can(m, "organizer.validate"),
+        manageMembers: can(m, "members.manage"),
+        moderate: can(m, "moderate"),
+        applyOrganizer: can(m, "organizer.apply"),
+      },
       organizerRequest: m.organizerRequest,
       organizerRequestedAt: m.organizerRequestedAt,
     };
   }),
 
   /** Membre simple : postuler pour devenir organisateur. */
-  requestOrganizer: proc.input(z.object({ motivation: z.string().trim().min(10).max(1500) })).mutation(async ({ ctx, input }) => {
-    if (ctx.isOrganizer) throw new TRPCError({ code: "BAD_REQUEST", message: "Vous êtes déjà organisateur." });
+  requestOrganizer: procFor("organizer.apply").input(z.object({ motivation: z.string().trim().min(10).max(1500) })).mutation(async ({ ctx, input }) => {
     await getDb().update(members).set({ organizerRequest: input.motivation, organizerRequestedAt: new Date() }).where(eq(members.id, ctx.memberId));
     return { ok: true };
   }),
 
-  cancelOrganizerRequest: proc.mutation(async ({ ctx }) => {
+  cancelOrganizerRequest: profileProc.mutation(async ({ ctx }) => {
     await getDb().update(members).set({ organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, ctx.memberId));
     return { ok: true };
   }),
 
-  /** Administratrice : candidatures organisateur en attente. */
-  organizerRequests: proc.query(async ({ ctx }) => {
-    if (!ctx.isAdmin) return [];
-    const list = await getDb().select().from(members).where(and(isNotNull(members.organizerRequestedAt), eq(members.status, "member")));
+  /** Administrateur : candidatures organisateur en attente. */
+  organizerRequests: profileProc.query(async ({ ctx }) => {
+    if (!can(ctx.member, "organizer.validate")) return [];
+    const list = await getDb().select().from(members).where(and(isNotNull(members.organizerRequestedAt), eq(members.role, "membre")));
     return list.map((m) => ({ ...publicMember(m), motivation: m.organizerRequest, requestedAt: m.organizerRequestedAt! }));
   }),
 
-  /** Administratrice : changer le statut d'un membre (membre, organisateur, administrateur). */
-  setStatus: proc.input(z.object({ memberId: z.number(), status: z.enum(["member", "organizer", "admin"]) })).mutation(async ({ ctx, input }) => {
-    if (!ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Réservé à l’équipe Présence." });
-    if (input.memberId === ctx.memberId && input.status !== "admin") throw new TRPCError({ code: "BAD_REQUEST", message: "Vous ne pouvez pas retirer votre propre statut d’administratrice." });
-    await getDb().update(members).set({ status: input.status, organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
+  /** Administrateur : changer le rôle d'un membre (membre, organisateur, administrateur). */
+  setRole: procFor("members.manage").input(z.object({ memberId: z.number(), role: z.enum(["membre", "organisateur", "administrateur"]) })).mutation(async ({ ctx, input }) => {
+    if (input.memberId === ctx.memberId && input.role !== "administrateur") throw new TRPCError({ code: "BAD_REQUEST", message: "Vous ne pouvez pas retirer votre propre rôle d’administratrice." });
+    await getDb().update(members).set({ role: input.role, organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
     return { ok: true };
   }),
 
-  /** Administratrice : refuser une candidature (le membre reste membre simple). */
-  declineOrganizer: proc.input(z.object({ memberId: z.number() })).mutation(async ({ ctx, input }) => {
-    if (!ctx.isAdmin) throw new TRPCError({ code: "FORBIDDEN" });
+  /** Administrateur : refuser une candidature (le membre reste membre simple). */
+  declineOrganizer: procFor("organizer.validate").input(z.object({ memberId: z.number() })).mutation(async ({ input }) => {
     await getDb().update(members).set({ organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
     return { ok: true };
   }),
 
-  updateProfile: proc
+  updateProfile: profileProc
     .input(
       z.object({
         firstName: z.string().min(1).max(80),
         lastName: z.string().max(80).default(""),
-        role: z.string().max(160).default(""),
+        jobTitle: z.string().max(160).default(""),
         city: z.string().max(80).default(""),
         intention: z.string().max(400).default(""),
         bio: z.string().max(1500).default(""),
@@ -95,7 +109,7 @@ export const membersRouter = createRouter({
    * Mes relations : membres avec qui j'ai matché (hors Espace Rencontre, qui reste privé)
    * ou avec qui une conversation est engagée dans les deux sens.
    */
-  relations: proc.query(async ({ ctx }) => {
+  relations: profileProc.query(async ({ ctx }) => {
     const db = getDb();
     const me = ctx.memberId;
     const GOALS: Record<string, string> = { mentorat: "Mentorat", pairs: "Pairs", associe: "Associé", invest: "Investissement", recrut: "Recrutement", amitie: "Amitié", parole: "Prise de parole" };
@@ -140,7 +154,7 @@ export const membersRouter = createRouter({
         if (r.sent && r.received) reasons.push("Échange en cours");
         return {
           ...publicMember(m),
-          rencontreEnabled: undefined, rencontrePref: undefined, rencontreBlurb: undefined,
+          memberRole: m.role,
           tags: m.intents.map((code) => ({ code, key: code.split(":")[0], offer: code.endsWith(":offer"), label: intentLabel(code, m.gender) })),
           reasons,
           since: r.since,
@@ -150,29 +164,26 @@ export const membersRouter = createRouter({
       .sort((a, b) => +(b.lastMessageAt ?? b.since) - +(a.lastMessageAt ?? a.since));
   }),
 
-  directory: proc.query(async ({ ctx }) => {
+  directory: profileProc.query(async ({ ctx }) => {
     const db = getDb();
     const list = await db.query.members.findMany({
-      where: and(eq(members.visibleInDirectory, true), ne(members.id, ctx.memberId)),
+      where: and(eq(members.visibleInDirectory, true), ne(members.id, ctx.memberId), isListed()),
       orderBy: (m, { asc }) => [asc(m.lastName)],
     });
     return list.map((m) => ({
       ...publicMember(m),
-      // la rencontre amoureuse ne sort jamais de l'annuaire
-      rencontreEnabled: undefined,
-      rencontrePref: undefined,
-      rencontreBlurb: undefined,
+      memberRole: m.role,
       tags: m.intents.map((code) => ({ code, key: code.split(":")[0], offer: code.endsWith(":offer"), label: intentLabel(code, m.gender) })),
     }));
   }),
 
-  byId: proc.input(z.object({ id: z.number() })).query(async ({ input }) => {
+  byId: profileProc.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const m = await requireMember(input.id);
-    return { ...publicMember(m), rencontreEnabled: undefined, rencontrePref: undefined, rencontreBlurb: undefined, tags: m.intents.map((code) => ({ code, label: intentLabel(code, m.gender) })) };
+    return { ...publicMember(m), tags: m.intents.map((code) => ({ code, label: intentLabel(code, m.gender) })) };
   }),
 
   /** Profil complet d'un membre : présentation, ruches, talks, événements animés, et notre lien éventuel. */
-  profile: proc.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+  profile: profileProc.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     const db = getDb();
     const m = await requireMember(input.id);
     const [memberships, myTalks, hosted, liked, msgs] = await Promise.all([
@@ -188,7 +199,7 @@ export const membersRouter = createRouter({
       .map((s) => GOALS[s.goal] ?? s.goal);
     return {
       ...publicMember(m),
-      rencontreEnabled: undefined, rencontrePref: undefined, rencontreBlurb: undefined,
+      memberRole: m.role,
       isMe: m.id === ctx.memberId,
       tags: m.intents.map((code) => ({ code, offer: code.endsWith(":offer"), label: intentLabel(code, m.gender) })),
       hives: memberships.filter((h) => h.role !== "pending").map((h) => ({ id: h.hive.id, name: h.hive.name, type: h.hive.type, cover: h.hive.cover, role: h.role })),

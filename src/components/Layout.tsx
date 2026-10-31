@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router";
 import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon, Mail, Menu, X } from "lucide-react";
 import { Toaster } from "sonner";
 import { trpc } from "@/providers/trpc";
+import { useAuth } from "@/providers/auth";
 import { Avatar } from "@/components/Avatar";
 import { CoachBubble } from "@/components/CoachBubble";
 
@@ -50,6 +51,7 @@ function UnreadBadge({ n, small }: { n?: number; small?: boolean }) {
 /** Contenu du menu : utilisé dans la barre latérale (ordinateur) et dans le tiroir (mobile). */
 function MenuContent({ unread, dark, setDark }: { unread?: number; dark: boolean; setDark: (v: boolean) => void }) {
   const me = trpc.members.me.useQuery();
+  const { signOut } = useAuth();
   return (
     <>
       <nav className="flex flex-col gap-1 px-3.5 py-5">
@@ -84,9 +86,9 @@ function MenuContent({ unread, dark, setDark }: { unread?: number; dark: boolean
         {me.data ? <NavLink to={`/membres/${me.data.id}`} aria-label="Mon profil"><Avatar m={me.data} size={40} /></NavLink> : <div className="w-10 h-10 rounded-full" style={{ background: "var(--p-track)" }} />}
         <span className="flex flex-col flex-1 min-w-0">
           <span className="text-[14.5px] font-medium truncate" style={{ color: "var(--p-ink)" }}>{me.data?.name ?? "…"}</span>
-          <span className="text-[12.5px] truncate" style={{ color: "var(--p-menu-ink)" }}>{me.data?.role ?? ""}</span>
+          <span className="text-[12.5px] truncate" style={{ color: "var(--p-menu-ink)" }}>{me.data?.jobTitle ?? ""}</span>
         </span>
-        <button type="button" aria-label="Se déconnecter" title="Authentification à venir" className="w-10 h-10 flex items-center justify-center rounded-lg" style={{ color: "var(--p-menu-ink)" }}>
+        <button type="button" aria-label="Se déconnecter" title="Se déconnecter" onClick={() => signOut()} className="w-10 h-10 flex items-center justify-center rounded-lg" style={{ color: "var(--p-menu-ink)" }}>
           <LogOut size={18} strokeWidth={1.6} />
         </button>
       </div>

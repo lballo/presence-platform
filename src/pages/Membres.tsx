@@ -27,7 +27,7 @@ export default function Membres() {
   const list = source.filter((m) =>
     (zone === "Toutes" || m.zone === zone) &&
     (open === "Tous" || m.tags.some((t) => t.key === open)) &&
-    (!q || norm(`${m.name} ${m.role} ${m.org} ${m.city}`).includes(norm(q)))
+    (!q || norm(`${m.name} ${m.jobTitle} ${m.org} ${m.city}`).includes(norm(q)))
   );
   const sel = source.find((m) => m.id === selId) ?? list[0];
 
@@ -35,7 +35,7 @@ export default function Membres() {
     <>
       <PageHeader eyebrow="Le cercle" title="Annuaire des membres" intro="Retrouvez les leaders du réseau, leur ville et ce qu’ils cherchent : mentorat, pairs, association, investissement, recrutement, amitié ou prise de parole."
         action={<Link to="/matching" className="p-btn-outline no-underline"><Heart size={16} /> Mes affinités de la semaine</Link>} />
-      {me.data?.isAdmin && <OrganizerRequests />}
+      {me.data?.permissions.validateOrganizers && <OrganizerRequests />}
       <div className="flex flex-wrap gap-2 mb-5">
         <button type="button" className={`p-chip h-11 px-5 ${view === "all" ? "p-chip-on" : ""}`} onClick={() => { setView("all"); setSelId(null); }}><Users size={16} /> Tout l’annuaire</button>
         <button type="button" className={`p-chip h-11 px-5 ${view === "relations" ? "p-chip-on" : ""}`} onClick={() => { setView("relations"); setSelId(null); }}><Sparkles size={16} /> Mes relations{rels.data?.length ? ` · ${rels.data.length}` : ""}</button>
@@ -59,7 +59,7 @@ export default function Membres() {
                   {m.photoUrl ? <img src={m.photoUrl} alt="" className="w-full aspect-square object-cover object-[50%_22%]" /> : <span className="w-full aspect-square flex items-center justify-center serif italic text-[60px]" style={{ background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{m.initials}</span>}
                   <span className="p-4 flex flex-col gap-1">
                     <span className="serif text-[23px] leading-tight">{m.name}</span>
-                    <span className="text-[13px] p-muted leading-snug">{m.role}</span>
+                    <span className="text-[13px] p-muted leading-snug">{m.jobTitle}</span>
                     <span className="text-[12.5px] p-muted flex items-center gap-1"><MapPin size={12} /> {m.city}</span>
                     {!!m.reasons?.length && <span className="flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "var(--p-accent-text)" }}><Sparkles size={11} /> {view === "relations" ? m.reasons[0] : "Ma relation"}{view === "relations" && m.reasons.length > 1 ? ` +${m.reasons.length - 1}` : ""}</span>}
                     <span className="flex flex-wrap gap-1 mt-1.5">
@@ -84,7 +84,7 @@ export default function Membres() {
           <aside className="flex-[2_1_320px] min-w-0 p-card overflow-hidden">
             {sel.photoUrl ? <img src={sel.photoUrl} alt="" className="w-full aspect-[4/3] object-cover object-[50%_20%]" /> : <span className="w-full aspect-[4/3] flex items-center justify-center serif italic text-[96px]" style={{ background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{sel.initials}</span>}
             <div className="p-6 flex flex-col gap-3.5">
-              <div><span className="p-eyebrow">{sel.city}</span><h2 className="m-0 text-[36px] leading-tight">{sel.name}</h2><span className="text-[14.5px] p-muted">{sel.role} · {sel.org}</span></div>
+              <div><span className="p-eyebrow">{sel.city}</span><h2 className="m-0 text-[36px] leading-tight">{sel.name}</h2><span className="text-[14.5px] p-muted">{sel.jobTitle} · {sel.org}</span></div>
               <p className="m-0 text-[15px] leading-relaxed">{sel.bio}</p>
               {sel.ambition && <p className="m-0 text-[14.5px] leading-relaxed"><span className="text-[12px] font-semibold uppercase tracking-[0.22em] mr-1.5" style={{ color: "var(--p-gold)" }}>Ambition</span>{sel.ambition}</p>}
               {sel.passions?.length > 0 && <div className="flex flex-col gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>Passions</span><div className="flex flex-wrap gap-1.5">{sel.passions.map((v) => <span key={v} className="p-chip h-[30px] text-[13px] cursor-default border-dashed">{v}</span>)}</div></div>}
@@ -103,8 +103,8 @@ export default function Membres() {
                   <span className="text-[13px] p-muted">{sel.since ? `En relation depuis ${ago(new Date(sel.since)).replace("il y a ", "")}` : ""}{sel.lastMessageAt ? ` · dernier message ${ago(new Date(sel.lastMessageAt))}` : ""}</span>
                 </div>
               )}
-              {sel.status !== "member" && <span className="p-pill self-start">{sel.status === "admin" ? "Équipe Présence" : "Organisateur"}</span>}
-              {me.data?.isAdmin && me.data.id !== sel.id && <StatusPicker memberId={sel.id} status={sel.status} />}
+              {sel.memberRole && sel.memberRole !== "membre" && <span className="p-pill self-start">{sel.memberRole === "administrateur" ? "Équipe Présence" : "Organisateur"}</span>}
+              {me.data?.permissions.manageMembers && me.data.id !== sel.id && <RolePicker memberId={sel.id} role={sel.memberRole ?? "membre"} />}
               <div className="flex flex-wrap gap-2.5 pt-1">
                 {me.data?.id !== sel.id && <Link to={`/messages?to=${sel.id}`} className="p-btn-primary flex-1 no-underline"><MessageCircle size={16} /> Écrire</Link>}
                 <Link to={`/membres/${sel.id}`} className="p-btn-outline flex-1 no-underline">Voir le profil complet</Link>
@@ -117,16 +117,16 @@ export default function Membres() {
   );
 }
 
-const STATUSES = [["member", "Membre"], ["organizer", "Organisateur"], ["admin", "Administrateur"]] as const;
+const ROLES = [["membre", "Membre"], ["organisateur", "Organisateur"], ["administrateur", "Administrateur"]] as const;
 
-/** Administratrice : changer le statut d’un membre. */
-export function StatusPicker({ memberId, status }: { memberId: number; status: string }) {
+/** Administrateur : changer le rôle d’un membre. */
+export function RolePicker({ memberId, role }: { memberId: number; role: string }) {
   const utils = trpc.useUtils();
-  const set = trpc.members.setStatus.useMutation({ onSuccess: () => { utils.members.invalidate(); toast.success("Statut mis à jour"); }, onError: (e) => toast.error(e.message) });
+  const set = trpc.members.setRole.useMutation({ onSuccess: () => { utils.members.invalidate(); toast.success("Rôle mis à jour"); }, onError: (e) => toast.error(e.message) });
   return (
     <div className="flex flex-col gap-2 p-3.5 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
-      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}><ShieldCheck size={13} /> Statut · administration</span>
-      <div className="flex flex-wrap gap-1.5">{STATUSES.map(([k, l]) => <button key={k} type="button" disabled={set.isPending} className={`p-chip h-8 text-[13px] ${status === k ? "p-chip-on" : ""}`} onClick={() => status !== k && set.mutate({ memberId, status: k })}>{l}</button>)}</div>
+      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}><ShieldCheck size={13} /> Rôle · administration</span>
+      <div className="flex flex-wrap gap-1.5">{ROLES.map(([k, l]) => <button key={k} type="button" disabled={set.isPending} className={`p-chip h-8 text-[13px] ${role === k ? "p-chip-on" : ""}`} onClick={() => role !== k && set.mutate({ memberId, role: k })}>{l}</button>)}</div>
     </div>
   );
 }
@@ -136,8 +136,8 @@ function OrganizerRequests() {
   const utils = trpc.useUtils();
   const reqs = trpc.members.organizerRequests.useQuery();
   const done = (msg: string) => { utils.members.invalidate(); toast.success(msg); };
-  const accept = trpc.members.setStatus.useMutation({ onSuccess: () => done("Le membre est désormais organisateur") });
-  const decline = trpc.members.declineOrganizer.useMutation({ onSuccess: () => done("Candidature refusée") });
+  const accept = trpc.members.setRole.useMutation({ onSuccess: () => done("Le membre est désormais organisateur"), onError: (e) => toast.error(e.message) });
+  const decline = trpc.members.declineOrganizer.useMutation({ onSuccess: () => done("Candidature refusée"), onError: (e) => toast.error(e.message) });
   if (!reqs.data?.length) return null;
   return (
     <section className="mb-6 p-5 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
@@ -145,9 +145,9 @@ function OrganizerRequests() {
       {reqs.data.map((r) => (
         <div key={r.id} className="p-card p-4 flex flex-wrap items-start gap-3">
           <Avatar m={r} size={44} />
-          <span className="flex-[1_1_280px] min-w-0 flex flex-col gap-1"><span className="font-semibold">{r.name} <span className="font-normal text-[13px] p-muted">· {r.role} · {ago(new Date(r.requestedAt))}</span></span><span className="text-[14.5px] leading-relaxed">{r.motivation}</span></span>
+          <span className="flex-[1_1_280px] min-w-0 flex flex-col gap-1"><span className="font-semibold">{r.name} <span className="font-normal text-[13px] p-muted">· {r.jobTitle} · {ago(new Date(r.requestedAt))}</span></span><span className="text-[14.5px] leading-relaxed">{r.motivation}</span></span>
           <span className="flex gap-2 self-center">
-            <button type="button" className="p-btn-primary p-btn-sm" onClick={() => accept.mutate({ memberId: r.id, status: "organizer" })}>Accepter</button>
+            <button type="button" className="p-btn-primary p-btn-sm" onClick={() => accept.mutate({ memberId: r.id, role: "organisateur" })}>Accepter</button>
             <button type="button" className="p-btn-outline p-btn-sm" onClick={() => decline.mutate({ memberId: r.id })}>Refuser</button>
           </span>
         </div>

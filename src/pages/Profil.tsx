@@ -3,7 +3,7 @@ import { ArrowLeft, MapPin, MessageCircle, Linkedin, Sparkles, Mic, CalendarDays
 import { trpc } from "@/providers/trpc";
 import { ago, longDate, hour, plural } from "@/lib/format";
 import { COVERS } from "./Ruches";
-import { StatusPicker } from "./Membres";
+import { RolePicker } from "./Membres";
 
 const KIND = { salon: "Salon live", online: "En ligne", onsite: "Présentiel" } as const;
 const ROLE = { founder: "Fondatrice·eur", leader: "Leader", member: "Membre", pending: "" } as const;
@@ -32,8 +32,8 @@ export default function Profil() {
           <div className="flex flex-col gap-1">
             <span className="p-eyebrow flex items-center gap-1.5"><MapPin size={13} /> {m.city}{m.zone && m.zone !== m.city ? ` · ${m.zone}` : ""}</span>
             <h1 className="m-0 text-[clamp(38px,5vw,54px)] leading-[1.02]">{m.name}</h1>
-            <span className="text-[16px] p-muted">{m.role}{m.org ? ` · ${m.org}` : ""}</span>
-            {m.status !== "member" && <span className="p-pill self-start mt-1">{m.status === "admin" ? "Équipe Présence" : "Organisateur"}</span>}
+            <span className="text-[16px] p-muted">{m.jobTitle}{m.org ? ` · ${m.org}` : ""}</span>
+            {m.memberRole !== "membre" && <span className="p-pill self-start mt-1">{m.memberRole === "administrateur" ? "Équipe Présence" : "Organisateur"}</span>}
           </div>
           {m.intention && <p className="m-0 serif italic text-[clamp(24px,2.8vw,32px)] leading-tight">« {m.intention} »</p>}
           {m.bio && <p className="m-0 text-[16px] leading-relaxed whitespace-pre-line">{m.bio}</p>}
@@ -114,7 +114,7 @@ export default function Profil() {
             </section>
           )}
 
-          {me.data?.isAdmin && !m.isMe && <StatusPicker memberId={m.id} status={m.status} />}
+          {me.data?.permissions.manageMembers && !m.isMe && <RolePicker memberId={m.id} role={m.memberRole ?? "membre"} />}
         </aside>
       </div>
     </>

@@ -28,7 +28,7 @@ export default function Ruches() {
   const all = hives.data ?? [];
   const mine = all.filter((h) => h.role).sort((a, b) => (a.type === "projet" ? 1 : 0) - (b.type === "projet" ? 1 : 0));
   const others = all.filter((h) => !h.role && h.phase !== "termine" && (tfilter === "all" || h.type === tfilter) && (afilter === "all" || h.access === afilter));
-  const toValidate = all.filter((h) => (h.role === "founder" || h.role === "leader") && h.pendingCount > 0);
+  const toValidate = all.filter((h) => h.canManage && h.pendingCount > 0);
 
   return (
     <>

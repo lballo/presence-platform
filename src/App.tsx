@@ -13,10 +13,22 @@ import Ruche from "@/pages/Ruche";
 import Evenements from "@/pages/Evenements";
 import Messages from "@/pages/Messages";
 import Profil from "@/pages/Profil";
+import RequireAuth from "@/components/RequireAuth";
+import Connexion from "@/pages/auth/Connexion";
+import MotDePasseOublie from "@/pages/auth/MotDePasseOublie";
+import ChoisirMotDePasse from "@/pages/auth/ChoisirMotDePasse";
+import Invitation from "@/pages/auth/Invitation";
+import AccesTermine from "@/pages/auth/AccesTermine";
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/connexion" element={<Connexion />} />
+      <Route path="/mot-de-passe-oublie" element={<MotDePasseOublie />} />
+      <Route path="/choisir-mot-de-passe" element={<ChoisirMotDePasse />} />
+      <Route path="/invitation/:token" element={<Invitation />} />
+      <Route path="/acces-termine" element={<AccesTermine />} />
+      <Route element={<RequireAuth />}>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/parcours" element={<Parcours />} />
@@ -32,6 +44,7 @@ export default function App() {
         <Route path="/evenements" element={<Evenements />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="*" element={<div className="py-20 text-center p-muted">Cette page n’existe pas.</div>} />
+      </Route>
       </Route>
     </Routes>
   );

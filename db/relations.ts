@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   members,
+  invitations,
   forumPosts,
   opportunities,
   hives,
@@ -97,4 +98,8 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 export const forumRepliesRelations = relations(forumReplies, ({ one }) => ({
   post: one(forumPosts, { fields: [forumReplies.postId], references: [forumPosts.id] }),
   author: one(members, { fields: [forumReplies.authorId], references: [members.id] }),
+}));
+
+export const invitationsRelations = relations(invitations, ({ one }) => ({
+  member: one(members, { fields: [invitations.memberId], references: [members.id] }),
 }));
