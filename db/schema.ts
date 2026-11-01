@@ -16,7 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { CourseContent, ModuleContent } from "../server/lib/courseBlocks";
+import type { CourseContent, PageContent } from "../server/lib/courseBlocks";
 
 // Schéma Postgres : "public" par défaut, ou celui de DB_SCHEMA (ex. "presence" sur Supabase,
 // pour cohabiter avec d'autres applications dans la même base).
@@ -663,6 +663,7 @@ export const messages = pgTable(
 export const coursePublicEnum = pgEnum("course_public", ["tous", "attribution"]);
 export const courseRhythmEnum = pgEnum("course_rhythm", ["hebdo", "complet"]);
 export const contentStatusEnum = pgEnum("content_status", ["brouillon", "relecture", "publie"]);
+export const lessonTypeEnum = pgEnum("lesson_type", ["contenu", "video", "exercice", "test", "defi"]);
 
 export const courses = pgTable("courses", {
   id: serial("id").primaryKey(),
@@ -686,6 +687,7 @@ export const courses = pgTable("courses", {
 
 export type Course = typeof courses.$inferSelect;
 
+// Ancien modèle à deux niveaux : plus lu que par la reprise de la progression (server/lib/courseResume.ts), retiré ensuite.
 export const courseModules = pgTable(
   "course_modules",
   {
@@ -700,7 +702,7 @@ export const courseModules = pgTable(
     videoUrl: text("video_url").notNull().default(""),
     testUrl: text("test_url").notNull().default(""),
     coachBrief: text("coach_brief").notNull().default(""), // « Ce que le coach IA retient » : jamais envoyé aux membres
-    content: jsonb("content").$type<ModuleContent>().notNull().default({}),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull().default({}),
     issues: jsonb("issues").$type<string[]>().notNull().default([]),
     notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -710,7 +712,54 @@ export const courseModules = pgTable(
   (t) => ({ courseIdx: index("course_modules_course_idx").on(t.courseId, t.position) })
 );
 
-export type CourseModule = typeof courseModules.$inferSelect;
+export const courseSections = pgTable(
+  "course_sections",
+  {
+    id: serial("id").primaryKey(),
+    courseId: integer("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+    notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+    title: varchar("title", { length: 200 }).notNull(),
+    position: integer("position").notNull().default(0), // « Ordre » dans Notion : fixe la semaine d'ouverture
+    status: contentStatusEnum("status").notNull().default("brouillon"),
+    intention: text("intention").notNull().default(""),
+    content: jsonb("content").$type<PageContent>().notNull().default({}),
+    issues: jsonb("issues").$type<string[]>().notNull().default([]),
+    notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ courseIdx: index("course_sections_course_idx").on(t.courseId, t.position) })
+);
+
+export type CourseSection = typeof courseSections.$inferSelect;
+
+export const courseLessons = pgTable(
+  "course_lessons",
+  {
+    id: serial("id").primaryKey(),
+    sectionId: integer("section_id").notNull().references(() => courseSections.id, { onDelete: "cascade" }),
+    notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+    title: varchar("title", { length: 200 }).notNull(),
+    position: integer("position").notNull().default(0), // « Ordre » dans Notion : place dans la section
+    type: lessonTypeEnum("type").notNull().default("contenu"),
+    status: contentStatusEnum("status").notNull().default("brouillon"),
+    intention: text("intention").notNull().default(""),
+    durationMin: integer("duration_min"),
+    videoUrl: text("video_url").notNull().default(""),
+    testUrl: text("test_url").notNull().default(""),
+    content: jsonb("content").$type<PageContent>().notNull().default({}),
+    issues: jsonb("issues").$type<string[]>().notNull().default([]),
+    legacyModuleId: integer("legacy_module_id").unique(), // l'ancien module repris sur cette leçon : garde les anciennes adresses valables
+    notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ sectionIdx: index("course_lessons_section_idx").on(t.sectionId, t.position) })
+);
+
+export type CourseLesson = typeof courseLessons.$inferSelect;
 
 export const courseHashtags = pgTable(
   "course_hashtags",
@@ -721,13 +770,22 @@ export const courseHashtags = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.courseId, t.hashtagId] }) })
 );
 
-export const courseModuleHashtags = pgTable(
-  "course_module_hashtags",
+export const courseSectionHashtags = pgTable(
+  "course_section_hashtags",
   {
-    moduleId: integer("module_id").notNull().references(() => courseModules.id, { onDelete: "cascade" }),
+    sectionId: integer("section_id").notNull().references(() => courseSections.id, { onDelete: "cascade" }),
     hashtagId: integer("hashtag_id").notNull().references(() => hashtags.id, { onDelete: "cascade" }),
   },
-  (t) => ({ pk: primaryKey({ columns: [t.moduleId, t.hashtagId] }), tagIdx: index("course_module_hashtags_tag_idx").on(t.hashtagId) })
+  (t) => ({ pk: primaryKey({ columns: [t.sectionId, t.hashtagId] }), tagIdx: index("course_section_hashtags_tag_idx").on(t.hashtagId) })
+);
+
+export const courseLessonHashtags = pgTable(
+  "course_lesson_hashtags",
+  {
+    lessonId: integer("lesson_id").notNull().references(() => courseLessons.id, { onDelete: "cascade" }),
+    hashtagId: integer("hashtag_id").notNull().references(() => hashtags.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.lessonId, t.hashtagId] }), tagIdx: index("course_lesson_hashtags_tag_idx").on(t.hashtagId) })
 );
 
 // Étiquettes de membres : servent à attribuer une formation à un groupe
@@ -776,6 +834,34 @@ export const courseEnrollments = pgTable(
   (t) => ({ uniq: uniqueIndex("course_enrollments_course_id_member_id_key").on(t.courseId, t.memberId), memberIdx: index("course_enrollments_member_idx").on(t.memberId) })
 );
 
+export const sectionProgress = pgTable(
+  "section_progress",
+  {
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    sectionId: integer("section_id").notNull().references(() => courseSections.id, { onDelete: "cascade" }),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    openedViaFullAccess: boolean("opened_via_full_access").notNull().default(false), // ouverte avant sa date : se referme si l'accès complet est retiré
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    challengeDoneAt: timestamp("challenge_done_at", { withTimezone: true }),
+    challengeNoteEnc: text("challenge_note_enc").notNull().default(""),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.sectionId] }), sectionIdx: index("section_progress_section_idx").on(t.sectionId) })
+);
+
+export const lessonProgress = pgTable(
+  "lesson_progress",
+  {
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    lessonId: integer("lesson_id").notNull().references(() => courseLessons.id, { onDelete: "cascade" }),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    challengeDoneAt: timestamp("challenge_done_at", { withTimezone: true }),
+    challengeNoteEnc: text("challenge_note_enc").notNull().default(""),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.lessonId] }), lessonIdx: index("lesson_progress_lesson_idx").on(t.lessonId) })
+);
+
+// Ancien modèle : plus lu que par la reprise de la progression, retiré ensuite.
 export const moduleProgress = pgTable(
   "module_progress",
   {
@@ -797,9 +883,11 @@ export const journalEntries = pgTable(
   {
     id: serial("id").primaryKey(),
     memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
-    moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }),
+    lessonId: integer("lesson_id").references(() => courseLessons.id, { onDelete: "set null" }),
+    moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }), // ancien modèle
     courseTitle: varchar("course_title", { length: 200 }).notNull().default(""),
-    moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""),
+    lessonTitle: varchar("lesson_title", { length: 200 }).notNull().default(""),
+    moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""), // ancien modèle
     questionId: varchar("question_id", { length: 64 }).notNull(), // identifiant du bloc Notion, ou « note » pour une réflexion libre
     questionText: text("question_text").notNull().default(""), // copie : la question peut changer dans Notion
     answerEnc: text("answer_enc").notNull(),
@@ -807,32 +895,42 @@ export const journalEntries = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => ({ uniq: uniqueIndex("journal_entries_member_id_module_id_question_id_key").on(t.memberId, t.moduleId, t.questionId) })
+  (t) => ({ uniq: uniqueIndex("journal_entries_member_lesson_question_key").on(t.memberId, t.lessonId, t.questionId) })
 );
 
 export const testResults = pgTable("test_results", {
   id: serial("id").primaryKey(),
   memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
-  moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }),
+  lessonId: integer("lesson_id").references(() => courseLessons.id, { onDelete: "set null" }),
+  moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }), // ancien modèle
   courseTitle: varchar("course_title", { length: 200 }).notNull().default(""),
-  moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""),
+  lessonTitle: varchar("lesson_title", { length: 200 }).notNull().default(""),
+  moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""), // ancien modèle
   resultEnc: text("result_enc").notNull(),
   sharedAt: timestamp("shared_at", { withTimezone: true }),
   passedAt: timestamp("passed_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const coachMemory = pgTable("coach_memory", {
-  id: serial("id").primaryKey(),
-  memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
-  source: varchar("source", { length: 20 }).notNull(), // module | test | defi
-  sourceLabel: varchar("source_label", { length: 240 }).notNull().default(""), // « Module 1 · Faire le point »
-  courseId: integer("course_id").references(() => courses.id, { onDelete: "set null" }),
-  moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }),
-  contentEnc: text("content_enc").notNull(),
-  correctedAt: timestamp("corrected_at", { withTimezone: true }),
-  sharedAt: timestamp("shared_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const coachMemory = pgTable(
+  "coach_memory",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    source: varchar("source", { length: 20 }).notNull(), // exercice | reflexion | test | defi
+    sourceLabel: varchar("source_label", { length: 240 }).notNull().default(""), // « Fondations · Faire le point »
+    courseId: integer("course_id").references(() => courses.id, { onDelete: "set null" }),
+    sectionId: integer("section_id").references(() => courseSections.id, { onDelete: "set null" }),
+    lessonId: integer("lesson_id").references(() => courseLessons.id, { onDelete: "set null" }),
+    moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }), // ancien modèle
+    origin: varchar("origin", { length: 60 }), // l'entrée dont vient ce souvenir : journal:12, test:3, defi:lecon:7, defi:section:2
+    contentEnc: text("content_enc").notNull(),
+    correctedAt: timestamp("corrected_at", { withTimezone: true }),
+    erasedAt: timestamp("erased_at", { withTimezone: true }), // effacé par le membre : il ne reste que l'origine, pour ne pas revenir tout seul
+    sharedAt: timestamp("shared_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ originUniq: uniqueIndex("coach_memory_member_origin_key").on(t.memberId, t.origin) })
+);
 
 export const coachSettings = pgTable("coach_settings", {
   memberId: integer("member_id").primaryKey().references(() => members.id, { onDelete: "cascade" }),
@@ -861,7 +959,9 @@ export const memberActivity = pgTable(
     memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
     type: varchar("type", { length: 40 }).notNull(),
     courseId: integer("course_id"),
-    moduleId: integer("module_id"),
+    sectionId: integer("section_id"),
+    lessonId: integer("lesson_id"),
+    moduleId: integer("module_id"), // ancien modèle
     label: text("label").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -917,7 +1017,9 @@ export const emailSends = pgTable(
     kind: varchar("kind", { length: 12 }).notNull(), // manuel | auto | essai
     template: varchar("template", { length: 60 }).notNull().default(""),
     courseId: integer("course_id"),
-    moduleId: integer("module_id"),
+    sectionId: integer("section_id"),
+    lessonId: integer("lesson_id"),
+    moduleId: integer("module_id"), // ancien modèle
     subject: text("subject").notNull().default(""),
     status: varchar("status", { length: 12 }).notNull(), // envoye | ignore | echec
     reason: varchar("reason", { length: 40 }).notNull().default(""),

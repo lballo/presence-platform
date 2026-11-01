@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../queries/connection";
-import { courseHashtags, courseModuleHashtags, courseModules, courses, hashtags, notionSyncRuns, type Course, type CourseModule } from "../../db/schema";
+import { courseHashtags, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, courses, hashtags, notionSyncRuns, type Course, type CourseLesson, type CourseSection } from "../../db/schema";
 import { env } from "./env";
 import { getBlocks, getPage, listPages, notionMessage, notionReady, type NotionPage, type NotionProperty } from "./notion";
-import { courseContentFromBlocks, courseIssues, moduleContentFromBlocks, moduleIssues, normalizeTag, richTextToPlain } from "./notionBlocks";
+import { courseContentFromBlocks, courseIssues, lessonContentFromBlocks, lessonIssues, normalizeTag, richTextToPlain, sectionContentFromBlocks, sectionIssues } from "./notionBlocks";
 import { storageReady, uploadBuffer, type UploadKind } from "./storage";
 import { testUrlProblem } from "./courseAccess";
-import { SECTIONS, type CourseBlock, type ModuleContent } from "./courseBlocks";
+import { LESSON_RUBRICS, SECTION_RUBRICS, type CourseBlock, type LessonType, type PageContent, type Rubric } from "./courseBlocks";
+import { resumeLegacyProgress } from "./courseResume";
 
 type Status = "brouillon" | "relecture" | "publie";
 
@@ -60,11 +61,18 @@ async function copyBlockFiles(blocks: CourseBlock[], known: Map<string, string>,
   return out;
 }
 
-function knownFiles(content: ModuleContent | undefined): Map<string, string> {
+function knownFiles(content: PageContent | undefined, rubrics: readonly Rubric[]): Map<string, string> {
   const map = new Map<string, string>();
   const walk = (blocks: CourseBlock[]) => { for (const b of blocks) { if ("sourceKey" in b && b.sourceKey) map.set(b.sourceKey, b.url); if ("children" in b && b.children) walk(b.children); } };
-  for (const { key } of SECTIONS) walk(content?.sections?.[key] ?? []);
+  for (const { key } of rubrics) walk(content?.rubrics?.[key] ?? []);
   return map;
+}
+
+async function copyPageFiles(content: PageContent, existing: PageContent | undefined, rubrics: readonly Rubric[]): Promise<string[]> {
+  const issues: string[] = [];
+  const known = knownFiles(existing, rubrics);
+  for (const { key } of rubrics) content.rubrics![key] = await copyBlockFiles(content.rubrics![key] ?? [], known, issues);
+  return issues;
 }
 
 /* ───────────── Hashtags : reliés par nom à la liste de la communauté ───────────── */
@@ -107,25 +115,43 @@ export async function syncCoursePage(page: NotionPage, existing?: Course): Promi
   return row;
 }
 
-export async function syncModulePage(page: NotionPage, course: Pick<Course, "id">, existing?: CourseModule): Promise<CourseModule> {
+export async function syncSectionPage(page: NotionPage, course: Pick<Course, "id">, existing?: CourseSection): Promise<CourseSection> {
   const db = getDb();
-  const content = moduleContentFromBlocks(await getBlocks(page.id));
-  const coachBrief = text(page, "Ce que le coach IA retient");
+  const content = sectionContentFromBlocks(await getBlocks(page.id));
   const intention = text(page, "Intention");
-  const testUrl = url(page, "Test intégré");
-  const copyIssues: string[] = [];
-  const known = knownFiles(existing?.content);
-  for (const { key } of SECTIONS) content.sections![key] = await copyBlockFiles(content.sections![key], known, copyIssues);
+  const copyIssues = await copyPageFiles(content, existing?.content, SECTION_RUBRICS);
   const values = {
-    courseId: course.id, notionPageId: page.id, title: text(page, "Module").slice(0, 200) || "Sans titre", position: num(page, "Ordre") ?? 0, status: statusOf(choice(page, "Statut")),
-    intention, durationMin: num(page, "Durée estimée (min)"), videoUrl: url(page, "Vidéo"), testUrl, coachBrief, content,
-    issues: [...moduleIssues(content, { intention, coachBrief, testProblem: testUrlProblem(testUrl, env.appUrl) }), ...copyIssues],
+    courseId: course.id, notionPageId: page.id, title: text(page, "Section").slice(0, 200) || "Sans titre", position: num(page, "Ordre") ?? 0, status: statusOf(choice(page, "Statut")),
+    intention, content, issues: [...sectionIssues(content, { intention }), ...copyIssues],
     notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
   };
-  const [row] = await db.insert(courseModules).values(values).onConflictDoUpdate({ target: courseModules.notionPageId, set: values }).returning();
+  const [row] = await db.insert(courseSections).values(values).onConflictDoUpdate({ target: courseSections.notionPageId, set: values }).returning();
   const ids = await hashtagIdsFor(labels(page, "Hashtags"));
-  await db.delete(courseModuleHashtags).where(eq(courseModuleHashtags.moduleId, row.id));
-  if (ids.length) await db.insert(courseModuleHashtags).values(ids.map((hashtagId) => ({ moduleId: row.id, hashtagId }))).onConflictDoNothing();
+  await db.delete(courseSectionHashtags).where(eq(courseSectionHashtags.sectionId, row.id));
+  if (ids.length) await db.insert(courseSectionHashtags).values(ids.map((hashtagId) => ({ sectionId: row.id, hashtagId }))).onConflictDoNothing();
+  return row;
+}
+
+const TYPE_OF: Record<string, LessonType> = { "Contenu": "contenu", "Vidéo": "video", "Exercice": "exercice", "Test": "test", "Défi dans le réseau": "defi" };
+
+export async function syncLessonPage(page: NotionPage, section: Pick<CourseSection, "id">, existing?: CourseLesson): Promise<CourseLesson> {
+  const db = getDb();
+  const content = lessonContentFromBlocks(await getBlocks(page.id));
+  const intention = text(page, "Intention");
+  const videoUrl = url(page, "Vidéo");
+  const testUrl = url(page, "Test intégré");
+  const type = TYPE_OF[choice(page, "Type")] ?? "contenu";
+  const copyIssues = await copyPageFiles(content, existing?.content, LESSON_RUBRICS);
+  const values = {
+    sectionId: section.id, notionPageId: page.id, title: text(page, "Leçon").slice(0, 200) || "Sans titre", position: num(page, "Ordre") ?? 0, type, status: statusOf(choice(page, "Statut")),
+    intention, durationMin: num(page, "Durée estimée (min)"), videoUrl, testUrl, content,
+    issues: [...lessonIssues(content, { type, intention, videoUrl, testUrl, testProblem: testUrlProblem(testUrl, env.appUrl) }), ...copyIssues],
+    notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
+  };
+  const [row] = await db.insert(courseLessons).values(values).onConflictDoUpdate({ target: courseLessons.notionPageId, set: values }).returning();
+  const ids = await hashtagIdsFor(labels(page, "Hashtags"));
+  await db.delete(courseLessonHashtags).where(eq(courseLessonHashtags.lessonId, row.id));
+  if (ids.length) await db.insert(courseLessonHashtags).values(ids.map((hashtagId) => ({ lessonId: row.id, hashtagId }))).onConflictDoNothing();
   return row;
 }
 
@@ -134,8 +160,12 @@ export async function refreshCourse(course: Course): Promise<Course> {
   return syncCoursePage(await getPage(course.notionPageId), course);
 }
 
-export async function refreshModule(mod: CourseModule): Promise<CourseModule> {
-  return syncModulePage(await getPage(mod.notionPageId), { id: mod.courseId }, mod);
+export async function refreshSection(section: CourseSection): Promise<CourseSection> {
+  return syncSectionPage(await getPage(section.notionPageId), { id: section.courseId }, section);
+}
+
+export async function refreshLesson(lesson: CourseLesson): Promise<CourseLesson> {
+  return syncLessonPage(await getPage(lesson.notionPageId), { id: lesson.sectionId }, lesson);
 }
 
 /* ───────────── Synchronisation ───────────── */
@@ -175,36 +205,54 @@ async function run({ trigger, full }: { trigger: string; full?: boolean }): Prom
     return { ok: status === "ok", changed, detail };
   };
   try {
-    const [coursePages, modulePages] = [await listPages(env.notionFormations), await listPages(env.notionModules)];
+    const [coursePages, sectionPages, lessonPages] = [await listPages(env.notionFormations), await listPages(env.notionSections), await listPages(env.notionLecons)];
     const knownCourses = new Map((await db.select().from(courses)).map((c) => [c.notionPageId, c]));
-    const knownModules = new Map((await db.select().from(courseModules)).map((m) => [m.notionPageId, m]));
+    const knownSections = new Map((await db.select().from(courseSections)).map((x) => [x.notionPageId, x]));
+    const knownLessons = new Map((await db.select().from(courseLessons)).map((l) => [l.notionPageId, l]));
     const since = lastOk?.startedAt ?? null;
     let changed = 0;
     const notes: string[] = [];
-    const byPage = new Map<string, Pick<Course, "id">>();
+    const isNew = (page: NotionPage, row: { notionEditedAt: Date | null } | undefined) => !row?.notionEditedAt || new Date(page.last_edited_time) > row.notionEditedAt;
+    const courseByPage = new Map<string, Pick<Course, "id">>();
     for (const page of coursePages) {
       const row = knownCourses.get(page.id);
       if (full || needsRead(page, row, since)) {
-        byPage.set(page.id, await syncCoursePage(page, row));
-        if (!row?.notionEditedAt || new Date(page.last_edited_time) > row.notionEditedAt) changed++;
-      } else if (row) byPage.set(page.id, row);
+        courseByPage.set(page.id, await syncCoursePage(page, row));
+        if (isNew(page, row)) changed++;
+      } else if (row) courseByPage.set(page.id, row);
     }
-    for (const page of modulePages) {
+    const sectionByPage = new Map<string, Pick<CourseSection, "id">>();
+    for (const page of sectionPages) {
       const parent = prop(page, "Formation")?.relation?.[0]?.id;
-      const course = parent ? byPage.get(parent) : undefined;
-      const row = knownModules.get(page.id);
-      if (!course) { notes.push(`Module sans formation : « ${text(page, "Module")} »`); continue; }
+      const course = parent ? courseByPage.get(parent) : undefined;
+      const row = knownSections.get(page.id);
+      if (!course) { notes.push(`Section sans formation : « ${text(page, "Section")} »`); continue; }
       if (full || needsRead(page, row, since) || row?.courseId !== course.id) {
-        await syncModulePage(page, course, row);
-        if (!row?.notionEditedAt || new Date(page.last_edited_time) > row.notionEditedAt) changed++;
+        sectionByPage.set(page.id, await syncSectionPage(page, course, row));
+        if (isNew(page, row)) changed++;
+      } else if (row) sectionByPage.set(page.id, row);
+    }
+    for (const page of lessonPages) {
+      const parent = prop(page, "Section")?.relation?.[0]?.id;
+      const section = parent ? sectionByPage.get(parent) : undefined;
+      const row = knownLessons.get(page.id);
+      if (!section) { notes.push(`Leçon sans section : « ${text(page, "Leçon")} »`); continue; }
+      if (full || needsRead(page, row, since) || row?.sectionId !== section.id) {
+        await syncLessonPage(page, section, row);
+        if (isNew(page, row)) changed++;
       }
     }
     // Disparu de Notion : caché, jamais supprimé (la progression et le journal des membres restent)
     const coursesSeen = new Set(coursePages.map((p) => p.id));
-    const modulesSeen = new Set(modulePages.map((p) => p.id));
+    const sectionsSeen = new Set(sectionPages.map((p) => p.id));
+    const lessonsSeen = new Set(lessonPages.map((p) => p.id));
     const now = new Date();
     for (const c of knownCourses.values()) if (!coursesSeen.has(c.notionPageId) && !c.archivedAt) { await db.update(courses).set({ archivedAt: now }).where(eq(courses.id, c.id)); changed++; }
-    for (const m of knownModules.values()) if (!modulesSeen.has(m.notionPageId) && !m.archivedAt) { await db.update(courseModules).set({ archivedAt: now }).where(eq(courseModules.id, m.id)); changed++; }
+    for (const x of knownSections.values()) if (!sectionsSeen.has(x.notionPageId) && !x.archivedAt) { await db.update(courseSections).set({ archivedAt: now }).where(eq(courseSections.id, x.id)); changed++; }
+    for (const l of knownLessons.values()) if (!lessonsSeen.has(l.notionPageId) && !l.archivedAt) { await db.update(courseLessons).set({ archivedAt: now }).where(eq(courseLessons.id, l.id)); changed++; }
+    // Ce que les membres ont fait dans les anciens modules passe sur les leçons du même nom
+    const resume = await resumeLegacyProgress();
+    for (const title of resume.waiting) notes.push(`Progression mise de côté : aucune leçon ne porte le nom « ${title} »`);
     return await finish("ok", changed, notes.join(" · "));
   } catch (e) {
     return finish("erreur", 0, notionMessage(e));

@@ -34,8 +34,8 @@ export default function JournalPage() {
         {entries.map((e) => <EntryCard key={e.id} e={e} />)}
         {tests.map((t) => <TestCard key={t.id} t={t} />)}
         {!group && d?.challenges.map((c) => (
-          <article key={c.moduleId} className="p-card p-4 sm:p-5 flex flex-col gap-1.5">
-            <span className="text-[12.5px] p-muted">{c.moduleTitle} · défi</span>
+          <article key={c.key} className="p-card p-4 sm:p-5 flex flex-col gap-1.5">
+            <span className="text-[12.5px] p-muted">{c.title} · défi</span>
             <span className="flex items-center gap-2 font-medium"><Check size={15} style={{ color: "var(--p-accent-text)" }} /> Défi relevé{c.doneAt ? ` ${parisLongDate(new Date(c.doneAt)).toLowerCase()}` : ""}</span>
             {c.note && <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{c.note}</p>}
           </article>
@@ -50,7 +50,7 @@ function EntryCard({ e }: { e: Journal["entries"][number] }) {
   const share = trpc.courses.shareAnswer.useMutation({ onSuccess: (_r, v) => { utils.courses.journal.invalidate(); toast.success(v.shared ? "Réponse partagée avec Laura" : "Partage repris : cette réponse redevient privée"); }, onError: (x) => toast.error(x.message) });
   return (
     <article className="p-card p-4 sm:p-5 flex flex-col gap-2">
-      <span className="text-[12.5px] p-muted">{e.moduleTitle}{e.moduleId ? "" : " · module retiré"} · {ago(new Date(e.updatedAt))}</span>
+      <span className="text-[12.5px] p-muted">{e.lessonTitle}{e.lessonId ? "" : " · leçon retirée"} · {ago(new Date(e.updatedAt))}</span>
       <span className="font-medium leading-snug">{e.isNote ? "Mes réflexions" : e.question}</span>
       {e.answer === null ? <p className="m-0 text-[14px] p-muted">Cette réponse ne peut plus être lue.</p> : <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{e.answer}</p>}
       <button type="button" className="p-btn-ghost text-[13px] min-h-0 self-start" disabled={share.isPending} onClick={() => share.mutate({ id: e.id, shared: !e.sharedAt })}><Share2 size={13} /> {e.sharedAt ? "Partagée avec Laura · reprendre" : "Partager avec Laura"}</button>
@@ -63,7 +63,7 @@ function TestCard({ t }: { t: Journal["tests"][number] }) {
   const share = trpc.courses.shareTest.useMutation({ onSuccess: (_r, v) => { utils.courses.journal.invalidate(); toast.success(v.shared ? "Résultat partagé avec Laura" : "Partage repris : ce résultat redevient privé"); }, onError: (x) => toast.error(x.message) });
   return (
     <article className="p-card p-4 sm:p-5 flex flex-col gap-2">
-      <span className="text-[12.5px] p-muted">{t.moduleTitle} · test · {ago(new Date(t.passedAt))}</span>
+      <span className="text-[12.5px] p-muted">{t.lessonTitle} · test · {ago(new Date(t.passedAt))}</span>
       {t.result?.label && <span className="serif text-[22px] leading-tight">{t.result.label}</span>}
       {t.result?.summary && <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{t.result.summary}</p>}
       <button type="button" className="p-btn-ghost text-[13px] min-h-0 self-start" disabled={share.isPending} onClick={() => share.mutate({ id: t.id, shared: !t.sharedAt })}><Share2 size={13} /> {t.sharedAt ? "Partagé avec Laura · reprendre" : "Partager avec Laura"}</button>

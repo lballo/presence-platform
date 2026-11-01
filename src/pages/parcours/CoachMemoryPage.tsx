@@ -11,11 +11,11 @@ import { ConfirmButton } from "@/pages/admin/shared";
 
 type State = RouterOutputs["coachMemory"]["state"];
 const RETRACE = "Retrace mon chemin depuis le début de ma formation.";
-const SOURCE = { module: "Ce que vous avez écrit", test: "Résultat de test", defi: "Défi" } as Record<string, string>;
+const SOURCE = { exercice: "Réponse à un exercice", reflexion: "Réflexion", module: "Ce que vous avez écrit", test: "Résultat de test", defi: "Défi" } as Record<string, string>;
 
 /** « Ce que le coach retient de moi » : tout lire, corriger, effacer ou mettre en pause. L'administration n'y a pas accès. */
 export default function CoachMemoryPage() {
-  const q = trpc.coachMemory.state.useQuery(undefined, { refetchInterval: (s) => (s.state.data?.updating ? 3000 : false) });
+  const q = trpc.coachMemory.state.useQuery();
   const [asking, setAsking] = useState(false);
   const s = q.data;
   return (
@@ -28,8 +28,7 @@ export default function CoachMemoryPage() {
         <div className="flex flex-col gap-5 max-w-[800px]">
           <Status s={s} onAsk={() => setAsking(true)} />
           {s.active && <Retrace />}
-          {s.updating && <p className="m-0 text-[14px] p-muted">Le coach met à jour ce qu’il retient de votre dernier module…</p>}
-          {s.items.length === 0 && (s.accepted || s.paused) && <div className="p-soft p-7 text-center p-muted">Le coach n’a encore rien retenu. Cela viendra quand vous aurez terminé un module.</div>}
+          {s.items.length === 0 && (s.accepted || s.paused) && <div className="p-soft p-7 text-center p-muted">Le coach n’a encore rien retenu. Vos réponses, vos tests et vos défis viendront s’y ranger au fil de l’eau.</div>}
           <ul className="list-none m-0 p-0 flex flex-col gap-3">
             {s.items.map((i) => <Item key={i.id} i={i} />)}
           </ul>
@@ -44,7 +43,7 @@ export default function CoachMemoryPage() {
 function Status({ s, onAsk }: { s: State; onAsk: () => void }) {
   const utils = trpc.useUtils();
   const pause = trpc.coachMemory.setPaused.useMutation({ onSuccess: (_r, v) => { utils.coachMemory.invalidate(); toast.success(v.paused ? "Mémoire en pause" : "Mémoire reprise"); }, onError: (e) => toast.error(e.message) });
-  const text = s.active ? "La mémoire est active. Le coach retient l’essentiel après chaque module terminé, et s’en sert dans vos conversations."
+  const text = s.active ? "La mémoire est active. Vos réponses, vos réflexions, vos tests et vos défis y entrent au fil de l’eau, et le coach s’en sert dans vos conversations."
     : s.paused ? "La mémoire est en pause. Le coach ne retient plus rien et ne s’appuie plus sur ce qu’il sait de vous."
     : s.refused ? "Vous avez choisi de ne pas activer la mémoire. Le coach ne garde rien de votre parcours."
     : "La mémoire n’est pas activée. Le coach ne garde rien de votre parcours.";
@@ -85,7 +84,7 @@ function Item({ i }: { i: State["items"][number] }) {
       {editing ? (
         <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); update.mutate({ id: i.id, text }); }}>
           <label className="sr-only" htmlFor={`souvenir-${i.id}`}>Corriger cet élément</label>
-          <textarea id={`souvenir-${i.id}`} className="p-field text-[15px]" rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
+          <textarea id={`souvenir-${i.id}`} className="p-field text-[15px]" rows={3} maxLength={9000} value={text} onChange={(e) => setText(e.target.value)} />
           <span className="flex flex-wrap gap-2"><button type="submit" className="p-btn-primary p-btn-sm" disabled={update.isPending || !text.trim()}>Enregistrer</button><button type="button" className="p-btn-outline p-btn-sm" onClick={() => { setEditing(false); setText(i.text ?? ""); }}>Annuler</button></span>
         </form>
       ) : i.text === null ? <p className="m-0 text-[14px] p-muted">Cet élément ne peut plus être lu.</p> : <p className="m-0 text-[15.5px] leading-relaxed whitespace-pre-line">{i.text}</p>}

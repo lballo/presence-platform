@@ -4,15 +4,15 @@ import { trpc } from "@/providers/trpc";
 import { CoachMascot } from "@/components/CoachMascot";
 import { parisLongDate } from "@/lib/format";
 
-/** Le coach rouge annonce le module de la semaine sur le tableau de bord. */
-export function WeekModule() {
-  const w = trpc.courses.weekModule.useQuery().data;
+/** Le coach rouge annonce la section de la semaine sur le tableau de bord. */
+export function WeekSection() {
+  const w = trpc.courses.weekSection.useQuery().data;
   if (!w) return null;
-  const isModule = w.kind === "module";
-  const href = isModule ? `/parcours/${w.courseId}/module/${w.moduleId}` : `/parcours/${w.courseId}`;
-  const eyebrow = isModule ? "Votre module de la semaine" : w.kind === "next" ? "Votre prochain module" : "Votre formation vous attend";
+  const isSection = w.kind === "section";
+  const href = w.kind === "start" ? `/parcours/${w.courseId}` : `/parcours/${w.courseId}#section-${w.sectionId}`;
+  const eyebrow = isSection ? "Votre section de la semaine" : w.kind === "next" ? "Votre prochaine section" : "Votre formation vous attend";
   const title = w.kind === "start" ? w.courseTitle : w.title;
-  const sub = isModule ? (w.intention || w.courseTitle) : w.kind === "next" ? `Il s’ouvre ${w.opensAt ? parisLongDate(new Date(w.opensAt)).toLowerCase() : "bientôt"}. Bravo pour celui de cette semaine.` : (w.tagline || "Le premier module s’ouvre le jour où vous commencez.");
+  const sub = isSection ? (w.nextLesson ? `Prochaine leçon : ${w.nextLesson.title}` : w.intention || w.courseTitle) : w.kind === "next" ? `Elle s’ouvre ${w.opensAt ? parisLongDate(new Date(w.opensAt)).toLowerCase() : "bientôt"}. Bravo pour celle de cette semaine.` : (w.tagline || "La première section s’ouvre le jour où vous commencez.");
   return (
     <section className="p-pop flex items-end gap-3 sm:gap-4 mb-6" aria-label={eyebrow}>
       <span className="flex-none p-mascot-bob"><CoachMascot size={64} /></span>
@@ -22,7 +22,7 @@ export function WeekModule() {
           <span className="serif text-[clamp(23px,2.8vw,28px)] leading-tight">{title}</span>
           <span className="text-[14px] p-muted leading-snug">{sub}</span>
         </div>
-        <Link to={href} className="p-btn-primary p-btn-sm no-underline flex-none">{isModule ? "Ouvrir mon module" : w.kind === "next" ? "Voir ma formation" : "Découvrir"} <ArrowRight size={15} /></Link>
+        <Link to={href} className="p-btn-primary p-btn-sm no-underline flex-none">{isSection ? "Ouvrir ma section" : w.kind === "next" ? "Voir ma formation" : "Découvrir"} <ArrowRight size={15} /></Link>
       </div>
     </section>
   );

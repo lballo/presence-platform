@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanInline, courseContentFromBlocks, htmlToRichText, moduleContentFromBlocks, moduleIssues, normalizeTag, labelFromTag, richTextToHtml, richTextToPlain, sameBlock, toCourseBlock, toNotionBlock } from "./notionBlocks";
+import { cleanInline, courseContentFromBlocks, htmlToRichText, lessonContentFromBlocks, lessonIssues, sectionContentFromBlocks, sectionIssues, normalizeTag, labelFromTag, richTextToHtml, richTextToPlain, sameBlock, toCourseBlock, toNotionBlock } from "./notionBlocks";
 import { memberBlocks, plainOf } from "./courseBlocks";
 import type { NotionBlock, RichText } from "./notion";
 
@@ -68,46 +68,89 @@ describe("blocs", () => {
   });
 });
 
-describe("découpage d'une page en sections", () => {
-  // La structure réelle d'un module dans la base Notion
+describe("découpage d'une page de leçon", () => {
+  // La structure réelle d'une leçon dans la base Notion
   const page = [
     text("heading_2", "Intention"), text("paragraph", "Identifier ce qui est juste."),
-    text("heading_2", "Objectifs"), text("bulleted_list_item", "À écrire"),
-    text("heading_2", "Contenu"), block("callout", { rich_text: [rt("Texte, images, vidéos, liens externes, emojis.")], icon: { type: "emoji", emoji: "✍️" } }),
-    text("heading_2", "Exercice"), text("paragraph", "Questions de réflexion ; les réponses vont dans le journal privé du membre."), text("bulleted_list_item", "À écrire"),
+    text("heading_2", "Contenu"), text("paragraph", "À écrire : texte, images, vidéos, liens externes, emojis."),
+    text("heading_2", "Exercice"), text("bulleted_list_item", "À écrire"),
     text("heading_2", "Défi dans le réseau"), text("paragraph", "Proposition : publier sa présentation."),
     text("heading_2", "Pour aller plus loin"), text("bulleted_list_item", "À compléter"),
   ];
-  const content = moduleContentFromBlocks(page);
-  it("reconnaît les six sections", () => {
-    expect(Object.keys(content.headings!)).toEqual(["intention", "objectifs", "contenu", "exercice", "defi", "plusLoin"]);
-    expect(content.sections!.exercice).toHaveLength(2);
+  const content = lessonContentFromBlocks(page);
+  const props = { type: "contenu" as const, intention: "Identifier ce qui est juste.", videoUrl: "", testUrl: "" };
+  it("reconnaît les cinq rubriques", () => {
+    expect(Object.keys(content.headings!)).toEqual(["intention", "contenu", "exercice", "defi", "plusLoin"]);
+    expect(content.rubrics!.exercice).toHaveLength(1);
   });
   it("cache les textes provisoires aux membres", () => {
-    expect(memberBlocks(content.sections!.objectifs)).toEqual([]);
-    expect(memberBlocks(content.sections!.contenu)).toEqual([]);
-    expect(memberBlocks(content.sections!.exercice)).toEqual([]);
-    expect(memberBlocks(content.sections!.plusLoin)).toEqual([]);
-    expect(memberBlocks(content.sections!.intention)).toHaveLength(1);
-    expect(memberBlocks(content.sections!.defi)).toHaveLength(1);
+    expect(memberBlocks(content.rubrics!.contenu!)).toEqual([]);
+    expect(memberBlocks(content.rubrics!.exercice!)).toEqual([]);
+    expect(memberBlocks(content.rubrics!.plusLoin!)).toEqual([]);
+    expect(memberBlocks(content.rubrics!.intention!)).toHaveLength(1);
+    expect(memberBlocks(content.rubrics!.defi!)).toHaveLength(1);
+  });
+  it("cache aussi un défi encore à écrire", () => {
+    const c = lessonContentFromBlocks([text("heading_2", "Défi dans le réseau"), text("paragraph", "Proposition : à écrire.")]);
+    expect(memberBlocks(c.rubrics!.defi!)).toEqual([]);
   });
   it("signale ce qui reste à écrire", () => {
-    const issues = moduleIssues(content, { intention: "Identifier ce qui est juste.", coachBrief: "" });
-    expect(issues.some((i) => i.startsWith("Objectifs : texte encore à écrire"))).toBe(true);
+    const issues = lessonIssues(content, props);
+    expect(issues.some((i) => i.startsWith("Contenu : texte encore à écrire"))).toBe(true);
     expect(issues.some((i) => i.includes("Proposition"))).toBe(true);
-    expect(issues.some((i) => i.includes("coach IA retient"))).toBe(true);
     expect(issues.some((i) => i.startsWith("Intention"))).toBe(false);
   });
-  it("signale une intention différente entre le champ et la section", () => {
-    expect(moduleIssues(content, { intention: "Autre chose.", coachBrief: "x" }).some((i) => i.startsWith("Intention"))).toBe(true);
+  it("signale une intention différente entre le champ et la rubrique", () => {
+    expect(lessonIssues(content, { ...props, intention: "Autre chose." }).some((i) => i.startsWith("Intention"))).toBe(true);
   });
-  it("signale une section absente", () => {
-    expect(moduleIssues(moduleContentFromBlocks([text("heading_2", "Intention")]), { intention: "", coachBrief: "x" }).some((i) => i.includes("« Exercice » absente"))).toBe(true);
+  it("signale une rubrique absente", () => {
+    expect(lessonIssues(lessonContentFromBlocks([text("heading_2", "Intention")]), { ...props, intention: "" }).some((i) => i.includes("« Exercice » absente"))).toBe(true);
+  });
+  it("le type de la leçon déclenche une alerte quand il manque ce qu'il annonce", () => {
+    const empty = lessonContentFromBlocks([text("heading_2", "Intention"), text("heading_2", "Contenu"), text("heading_2", "Exercice"), text("heading_2", "Défi dans le réseau"), text("heading_2", "Pour aller plus loin")]);
+    const alert = (type: "contenu" | "video" | "exercice" | "test" | "defi") => lessonIssues(empty, { ...props, type, intention: "" }).filter((i) => i.startsWith("Leçon de type"));
+    expect(alert("video")[0]).toContain("aucun lien de vidéo");
+    expect(alert("test")[0]).toContain("aucun test intégré");
+    expect(alert("exercice")[0]).toContain("aucune question");
+    expect(alert("defi")[0]).toContain("Défi est vide");
+    expect(alert("contenu")[0]).toContain("Contenu est vide");
+    expect(lessonIssues(empty, { ...props, type: "video", intention: "", videoUrl: "https://exemple.org/v" }).filter((i) => i.startsWith("Leçon de type"))).toEqual([]);
+  });
+  it("un titre inconnu reste du contenu de la rubrique en cours", () => {
+    const c = lessonContentFromBlocks([text("heading_2", "Contenu"), text("heading_2", "Une partie à moi"), text("paragraph", "Texte")]);
+    expect(c.rubrics!.contenu).toHaveLength(2);
   });
   it("garde ce qui précède le premier titre sans l'afficher", () => {
-    const c = moduleContentFromBlocks([text("paragraph", "Note de travail"), text("heading_2", "Intention")]);
+    const c = lessonContentFromBlocks([text("paragraph", "Note de travail"), text("heading_2", "Intention")]);
     expect(c.before).toHaveLength(1);
   });
+});
+
+describe("découpage d'une page de section", () => {
+  const page = [
+    text("heading_2", "Intention"), text("paragraph", "À écrire"),
+    text("heading_2", "Objectifs"), text("bulleted_list_item", "À écrire"),
+    text("heading_2", "Leçons"), text("bulleted_list_item", "Faire le point sur son leadership"), text("bulleted_list_item", "S'ancrer dans ses valeurs"),
+  ];
+  const content = sectionContentFromBlocks(page);
+  it("reconnaît ses rubriques et met la liste des leçons à part", () => {
+    expect(Object.keys(content.headings!)).toEqual(["intention", "objectifs", "lecons"]);
+    expect(content.rubrics!.lecons).toHaveLength(2);
+    expect(content.rubrics!.objectifs).toHaveLength(1);
+  });
+  it("le défi est facultatif : son absence n'est pas signalée", () => {
+    expect(sectionIssues(content, { intention: "" }).some((i) => i.includes("Défi"))).toBe(false);
+  });
+  it("ne signale jamais la liste des leçons, tenue par l'application", () => {
+    expect(sectionIssues(sectionContentFromBlocks([text("heading_2", "Intention"), text("heading_2", "Objectifs")]), { intention: "" }).some((i) => i.includes("Leçons"))).toBe(false);
+  });
+  it("lit le défi quand la rubrique existe", () => {
+    const c = sectionContentFromBlocks([...page, text("heading_2", "Défi dans le réseau"), text("paragraph", "Proposez un café.")]);
+    expect(memberBlocks(c.rubrics!.defi!)).toHaveLength(1);
+  });
+});
+
+describe("page de formation", () => {
   it("une formation n'affiche que sa présentation, pas son déroulé", () => {
     const c = courseContentFromBlocks([text("paragraph", "Note"), text("heading_2", "Déroulé"), text("numbered_list_item", "Un"), text("heading_2", "Présentation de la formation"), text("paragraph", "Huit semaines.")]);
     expect(c.description).toHaveLength(1);

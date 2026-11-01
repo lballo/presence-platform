@@ -10,7 +10,7 @@ import { env } from "./env";
  * Le marketing demande un accord : il est désactivé tant que le membre ne l'a pas activé.
  */
 export const EMAIL_CATEGORIES = {
-  formations: { label: "Relances de formation", description: "Un nouveau module ouvert, ou un rappel quand votre formation est en pause.", byDefault: true },
+  formations: { label: "Relances de formation", description: "Une nouvelle section ouverte, ou un rappel quand votre formation est en pause.", byDefault: true },
   evenements: { label: "Relances d’événements", description: "Les rappels liés aux événements du réseau.", byDefault: true },
   marketing: { label: "Actualités et offres", description: "Les nouveautés et les propositions de Laura.", byDefault: false },
 } as const;
@@ -67,7 +67,7 @@ export async function unsubscribeFromLink(m: string | undefined, c: string | und
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** Remplace {{prenom}}, {{module}}, {{formation}}. Une variable inconnue disparaît. */
+/** Remplace {{prenom}}, {{section}}, {{lecon}}, {{formation}}. Une variable inconnue disparaît. */
 export const fillTemplate = (t: string, values: Record<string, string>) => t.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => values[k] ?? "");
 
 export function renderEmail(i: { body: string; cta?: { label: string; href: string }; reason: string; unsubscribeUrl: string }): { html: string; text: string } {

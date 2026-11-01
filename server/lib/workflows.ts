@@ -1,11 +1,11 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "../queries/connection";
-import { courseEnrollments, courseModules, courses, members, moduleProgress, workflowRuns, workflows } from "../../db/schema";
+import { courseEnrollments, courses, members, workflowRuns, workflows } from "../../db/schema";
 import { logActivity } from "./activity";
-import { moduleOpensAt } from "./courseAccess";
+import { memberCourses } from "./courseState";
 import { fillTemplate as fill } from "./email";
 import { notify } from "./notify";
-import { reminderPlan, sendCourseReminder } from "./reminders";
+import { reminderPlan, sendCourseReminder, sectionPath } from "./reminders";
 
 const DAY = 86400000;
 
@@ -31,25 +31,23 @@ export async function runWorkflows(now = new Date()) {
     .innerJoin(members, eq(members.id, courseEnrollments.memberId))
     .where(and(isNull(courseEnrollments.finishedAt), eq(courses.status, "publie"), isNull(courses.archivedAt), eq(members.status, "actif"), isNull(members.deletedAt)));
 
-  const fresh = models.find((m) => m.key === "nouveau_module");
+  const fresh = models.find((m) => m.key === "nouvelle_section");
   if (fresh) {
     counts[fresh.key] = 0;
     for (const { enrollment: e, course, member } of enrollments) {
       if (course.rhythm === "complet" || e.fullAccessAt) continue; // tout est déjà ouvert
-      const mods = await db.select().from(courseModules).where(and(eq(courseModules.courseId, course.id), eq(courseModules.status, "publie"), isNull(courseModules.archivedAt)));
-      for (const m of mods) {
-        if (m.position <= 1) continue; // le premier s'ouvre au démarrage : le membre est déjà là
-        const opensAt = moduleOpensAt(e.startedAt, m.position);
-        // Seulement le module qui vient de s'ouvrir : pas de rattrapage en rafale après une longue absence
-        if (opensAt > now || now.getTime() - opensAt.getTime() > 8 * DAY) continue;
-        const [seen] = await db.select({ openedAt: moduleProgress.openedAt }).from(moduleProgress).where(and(eq(moduleProgress.memberId, e.memberId), eq(moduleProgress.moduleId, m.id))).limit(1);
-        if (seen?.openedAt) continue;
-        if (!(await once(fresh.key, e.memberId, `module:${m.id}`))) continue;
-        const values = { module: m.title, formation: course.title };
-        await notify([e.memberId], { title: fill(fresh.title, values), body: fill(fresh.body, values), href: `/parcours/${course.id}/module/${m.id}` });
-        await logActivity(e.memberId, "module_disponible", { courseId: course.id, moduleId: m.id, label: m.title });
+      const [state] = await memberCourses(member, course.id);
+      for (const s of state?.sections ?? []) {
+        if (s.position <= 1 || !s.opensAt) continue; // la première s'ouvre au démarrage : le membre est déjà là
+        // Seulement la section qui vient de s'ouvrir : pas de rattrapage en rafale après une longue absence
+        if (s.opensAt > now || now.getTime() - s.opensAt.getTime() > 8 * DAY) continue;
+        if (s.opened) continue;
+        if (!(await once(fresh.key, e.memberId, `section:${s.id}`))) continue;
+        const values = { section: s.title, formation: course.title };
+        await notify([e.memberId], { title: fill(fresh.title, values), body: fill(fresh.body, values), href: sectionPath(course.id, s.id) });
+        await logActivity(e.memberId, "section_disponible", { courseId: course.id, sectionId: s.id, label: s.title });
         counts[fresh.key]++;
-        if (fresh.emailEnabled) await sendCourseReminder(member, course, { template: "nouveau_module", moduleId: m.id, moduleTitle: m.title }, { kind: "auto" });
+        if (fresh.emailEnabled) await sendCourseReminder(member, course, { template: "nouvelle_section", sectionId: s.id, sectionTitle: s.title, lessonId: null, lessonTitle: "" }, { kind: "auto" });
       }
     }
   }

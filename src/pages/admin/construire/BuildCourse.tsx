@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowDown, ArrowLeft, ArrowUp, Eye, ExternalLink, FileText, Mail, Pencil, Plus, Trash2, Video } from "lucide-react";
+import { ArrowLeft, ExternalLink, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useUpload } from "@/lib/upload";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import type { CourseBlock } from "../../../../server/lib/courseBlocks";
@@ -11,17 +10,18 @@ import { Badge, Chips, ConfirmButton, Rows, Select, type Column } from "../share
 import { ACCESS_LABEL, fullDate } from "../labels";
 import { BlockEditor, HashtagPicker } from "./BlockEditor";
 import { useFreshNotion } from "./useFreshNotion";
-import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, STATUS_LABEL, notionUrl, statusTone } from "./labels";
+import { Outline } from "./Outline";
+import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, notionUrl, statusTone } from "./labels";
 
 type Course = RouterOutputs["build"]["course"];
-type Tab = "modules" | "reglages" | "participants" | "stats";
+type Tab = "sections" | "reglages" | "participants" | "stats";
 
-/** Une formation dans Construire : ses modules, ses réglages, ses participants et ses chiffres. */
+/** Une formation dans Construire : ses sections et leçons, ses réglages, ses participants et ses chiffres. */
 export default function BuildCourse() {
   const id = Number(useParams().id);
   const q = trpc.build.course.useQuery({ id }, { retry: false });
   const status = trpc.build.status.useQuery();
-  const [tab, setTab] = useState<Tab>("modules");
+  const [tab, setTab] = useState<Tab>("sections");
   useFreshNotion(status.data);
   const [revision, setRevision] = useState(0);
   const back = <Link to="/admin/construire" className="p-btn-outline p-btn-sm no-underline self-start"><ArrowLeft size={15} /> Toutes les formations</Link>;
@@ -38,9 +38,9 @@ export default function BuildCourse() {
         </div>
         <span className="flex flex-wrap items-center gap-2"><CourseActions c={c} /><a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a></span>
       </header>
-      {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses modules le sont.</p>}
-      <Chips value={tab} onChange={setTab} label="Rubriques de la formation" options={[["modules", "Modules", c.modules.length], ["reglages", "Réglages"], ["participants", "Participants", c.participants.length], ["stats", "Statistiques"]]} />
-      {tab === "modules" && <Modules c={c} />}
+      {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses sections et ses leçons le sont.</p>}
+      <Chips value={tab} onChange={setTab} label="Rubriques de la formation" options={[["sections", "Sections", c.sections.length], ["reglages", "Réglages"], ["participants", "Participants", c.participants.length], ["stats", "Statistiques"]]} />
+      {tab === "sections" && <Outline c={c} />}
       {tab === "reglages" && <Settings key={revision} c={c} onSaved={() => setRevision((r) => r + 1)} />}
       {tab === "participants" && <Participants c={c} />}
       {tab === "stats" && <Stats c={c} />}
@@ -53,75 +53,7 @@ function CourseActions({ c }: { c: Course }) {
   const utils = trpc.useUtils();
   const set = trpc.build.setCourseStatus.useMutation({ onSuccess: (_r, v) => { utils.build.invalidate(); toast.success(v.status === "publie" ? "Formation publiée dans Notion et ici" : "Formation dépubliée dans Notion et ici"); }, onError: (e) => toast.error(e.message) });
   if (c.status === "publie") return <ConfirmButton label="Dépublier" question="Les membres ne verront plus cette formation. Leurs réponses restent dans leur journal." confirm="Dépublier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "brouillon" })} />;
-  return <ConfirmButton label="Publier la formation" className="p-btn-primary p-btn-sm" question="Les membres verront cette formation et ses modules publiés." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
-}
-
-function Modules({ c }: { c: Course }) {
-  const utils = trpc.useUtils();
-  const [adding, setAdding] = useState(false);
-  const refresh = () => utils.build.invalidate();
-  const move = trpc.build.moveModule.useMutation({ onSuccess: () => utils.build.course.invalidate({ id: c.id }), onError: (e) => toast.error(e.message) });
-  const setStatus = trpc.build.setModuleStatus.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.status === "publie" ? "Module publié dans Notion et ici" : "Module dépublié dans Notion et ici"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
-  const archive = trpc.build.archiveModule.useMutation({ onSuccess: () => { refresh(); toast.success("Module supprimé, à la corbeille de Notion"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
-  return (
-    <section className="flex flex-col gap-3" aria-label="Modules">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-[14px] p-muted flex-[1_1_260px]">L’ordre fixe la semaine d’ouverture : le module 1 s’ouvre au démarrage, le module 2 une semaine plus tard, et ainsi de suite.</p>
-        <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setAdding(true)}><Plus size={15} /> Ajouter un module</button>
-      </div>
-      {c.modules.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucun module pour l’instant.</div>}
-      <ol className="list-none m-0 p-0 flex flex-col gap-2">
-        {c.modules.map((m, i) => (
-          <li key={m.id} className="p-card p-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="w-9 h-9 rounded-full flex items-center justify-center flex-none font-semibold text-[14px]" style={{ background: "var(--p-surface-2)" }}>{m.position}</span>
-            <Link to={`/admin/construire/${c.id}/module/${m.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
-              <span className="font-medium leading-snug break-words">{m.title}</span>
-              <span className="text-[12.5px] p-muted flex flex-wrap items-center gap-x-2.5">{m.durationMin ? <span>{m.durationMin} min</span> : null}{m.hasVideo && <span className="flex items-center gap-1"><Video size={12} /> vidéo</span>}{m.hasTest && <span className="flex items-center gap-1"><FileText size={12} /> test</span>}{m.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{m.issues.length} point{m.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
-            </Link>
-            <Badge tone={statusTone(m.status)}>{STATUS_LABEL[m.status]}</Badge>
-            <button type="button" className="p-btn-outline p-btn-sm flex-none" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: m.id, status: m.status === "publie" ? "brouillon" : "publie" })}>{m.status === "publie" ? "Dépublier" : "Publier"}</button>
-            <span className="flex items-center gap-0.5 flex-none">
-              <button type="button" aria-label={`Monter ${m.title}`} disabled={i === 0 || move.isPending} className="w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30" onClick={() => move.mutate({ id: m.id, direction: "up" })}><ArrowUp size={16} /></button>
-              <button type="button" aria-label={`Descendre ${m.title}`} disabled={i === c.modules.length - 1 || move.isPending} className="w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30" onClick={() => move.mutate({ id: m.id, direction: "down" })}><ArrowDown size={16} /></button>
-              <Link to={`/admin/construire/${c.id}/apercu/${m.id}`} aria-label={`Aperçu de ${m.title}`} title="Aperçu comme un membre" className="w-9 h-9 flex items-center justify-center rounded-lg p-muted"><Eye size={16} /></Link>
-              <Link to={`/admin/construire/${c.id}/module/${m.id}`} aria-label={`Modifier ${m.title}`} title="Modifier" className="w-9 h-9 flex items-center justify-center rounded-lg p-muted"><Pencil size={16} /></Link>
-            </span>
-            <ConfirmButton label={<Trash2 size={16} />} className="w-9 h-9 flex items-center justify-center rounded-lg p-muted flex-none" question={`Supprimer « ${m.title} » ? Il part à la corbeille de Notion et disparaît pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archive.isPending} onConfirm={() => archive.mutate({ id: m.id })} />
-          </li>
-        ))}
-      </ol>
-      <AddModule c={c} open={adding} onClose={() => setAdding(false)} />
-    </section>
-  );
-}
-
-function AddModule({ c, open, onClose }: { c: Course; open: boolean; onClose: () => void }) {
-  const utils = trpc.useUtils();
-  const navigate = useNavigate();
-  const templates = trpc.build.templates.useQuery(undefined, { enabled: open });
-  const [f, setF] = useState({ title: "", intention: "", source: "structure", copyId: "", templateId: "" });
-  const create = trpc.build.createModule.useMutation({
-    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF({ title: "", intention: "", source: "structure", copyId: "", templateId: "" }); toast.success("Module créé dans Notion, en brouillon"); navigate(`/admin/construire/${c.id}/module/${r.id}`); },
-    onError: (e) => toast.error(e.message),
-  });
-  const options: [string, string][] = [["structure", "La structure à six sections"], ...(c.modules.length ? [["copie", "La copie d’un module existant"] as [string, string]] : []), ...(templates.data?.length ? [["notion", "Un modèle de la base Notion"] as [string, string]] : [])];
-  const ready = f.title.trim() && (f.source !== "copie" || f.copyId) && (f.source !== "notion" || f.templateId);
-  const submit = () => create.mutate({ courseId: c.id, title: f.title, intention: f.intention, source: f.source === "copie" ? { kind: "copie", moduleId: Number(f.copyId) } : f.source === "notion" ? { kind: "notion", templateId: f.templateId } : { kind: "structure" } });
-  return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-[500px]" aria-describedby={undefined}>
-        <DialogTitle className="serif text-[28px] font-normal">Ajouter un module</DialogTitle>
-        <form className="flex flex-col gap-3.5" onSubmit={(e) => { e.preventDefault(); if (ready) submit(); }}>
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Titre</span><input className="p-field" autoFocus value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Intention</span><input className="p-field" value={f.intention} onChange={(e) => setF({ ...f, intention: e.target.value })} /></label>
-          <Select label="Partir de" value={f.source} onChange={(source) => setF({ ...f, source })} options={options} />
-          {f.source === "copie" && <Select label="Module à copier" value={f.copyId} onChange={(copyId) => setF({ ...f, copyId })} options={[["", "Choisir…"], ...c.modules.map((m): [string, string] => [String(m.id), `${m.position}. ${m.title}`])]} />}
-          {f.source === "notion" && <Select label="Modèle" value={f.templateId} onChange={(templateId) => setF({ ...f, templateId })} options={[["", "Choisir…"], ...(templates.data ?? []).map((t): [string, string] => [t.id, t.name])]} />}
-          <span className="flex justify-end gap-2 pt-1"><button type="button" className="p-btn-outline p-btn-sm" onClick={onClose}>Annuler</button><button type="submit" className="p-btn-primary p-btn-sm" disabled={!ready || create.isPending}>{create.isPending ? "Création dans Notion…" : "Créer en brouillon"}</button></span>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+  return <ConfirmButton label="Publier la formation" className="p-btn-primary p-btn-sm" question="Les membres verront cette formation, avec ses sections et leçons publiées." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
 }
 
 function Settings({ c, onSaved }: { c: Course; onSaved: () => void }) {
@@ -167,7 +99,7 @@ function DeleteCourse({ c }: { c: Course }) {
   if (!open) return <button type="button" className="p-btn-ghost self-start" onClick={() => setOpen(true)}><Trash2 size={14} /> Supprimer cette formation</button>;
   return (
     <form className="p-3.5 rounded-xl flex flex-col gap-2.5 text-[14.5px]" style={{ background: "var(--p-accent-soft)" }} onSubmit={(e) => { e.preventDefault(); if (typed === "SUPPRIMER") remove.mutate({ id: c.id }); }}>
-      <label className="flex flex-col gap-1.5"><span>La formation et ses {c.modules.length} modules partent à la corbeille de Notion et disparaissent pour {c.participants.length} participant{c.participants.length > 1 ? "s" : ""}. Leurs réponses restent dans leur journal. Écrivez SUPPRIMER pour confirmer.</span><input className="p-field" value={typed} autoComplete="off" onChange={(e) => setTyped(e.target.value)} /></label>
+      <label className="flex flex-col gap-1.5"><span>La formation, ses {c.sections.length} sections et leurs leçons partent à la corbeille de Notion et disparaissent pour {c.participants.length} participant{c.participants.length > 1 ? "s" : ""}. Leurs réponses restent dans leur journal. Écrivez SUPPRIMER pour confirmer.</span><input className="p-field" value={typed} autoComplete="off" onChange={(e) => setTyped(e.target.value)} /></label>
       <span className="flex flex-wrap gap-2"><button type="submit" className="p-btn-primary p-btn-sm" disabled={typed !== "SUPPRIMER" || remove.isPending}>Supprimer la formation</button><button type="button" className="p-btn-outline p-btn-sm" onClick={() => { setOpen(false); setTyped(""); }}>Annuler</button></span>
     </form>
   );
@@ -211,7 +143,7 @@ function Participants({ c }: { c: Course }) {
   const utils = trpc.useUtils();
   const members = trpc.admin.members.useQuery();
   const [pick, setPick] = useState("");
-  const access = trpc.build.setFullAccess.useMutation({ onSuccess: (_r, v) => { utils.build.course.invalidate({ id: c.id }); setPick(""); toast.success(v.on ? "Accès complet donné : tous les modules sont ouverts" : "Accès complet retiré : retour au calendrier, ses réponses sont conservées"); }, onError: (e) => toast.error(e.message) });
+  const access = trpc.build.setFullAccess.useMutation({ onSuccess: (_r, v) => { utils.build.course.invalidate({ id: c.id }); setPick(""); toast.success(v.on ? "Accès complet donné : toutes les sections sont ouvertes" : "Accès complet retiré : retour au calendrier, ses réponses sont conservées"); }, onError: (e) => toast.error(e.message) });
   const status = trpc.build.status.useQuery();
   const remind = trpc.build.sendReminders.useMutation({
     onSuccess: (r) => {
@@ -227,7 +159,7 @@ function Participants({ c }: { c: Course }) {
   type Row = Course["participants"][number];
   const columns: Column<Row>[] = [
     { key: "name", label: "Membre", cell: (p) => <span className="flex items-center gap-3 min-w-0"><Avatar m={p} size={34} /><span className="flex flex-col min-w-0"><span className="font-semibold truncate">{p.name}</span><span className="text-[12.5px] p-muted">Commencée le {fullDate(p.startedAt)}</span></span></span> },
-    { key: "done", label: "Modules terminés", short: "Terminés", cell: (p) => `${p.done} sur ${p.total}` },
+    { key: "done", label: "Leçons terminées", short: "Terminées", cell: (p) => `${p.done} sur ${p.total}` },
     { key: "last", label: "Dernière activité", short: "Activité", cell: (p) => <span className="flex flex-col"><span>{fullDate(p.lastActivityAt)}</span>{p.lastReminderAt && <span className="text-[12.5px] p-muted">Relance le {fullDate(p.lastReminderAt)}</span>}</span> },
     { key: "state", label: "État", cell: (p) => <span className="flex flex-wrap justify-end md:justify-start gap-1">{p.finishedAt ? <Badge tone="ok">Terminée</Badge> : p.fullAccess ? <Badge tone="wait">Accès complet</Badge> : <Badge>Au calendrier</Badge>}{p.inactive && <Badge tone="alert">Inactif depuis 14 jours</Badge>}{p.unsubscribed && <Badge>Désinscrit·e des e-mails</Badge>}</span> },
   ];
@@ -243,7 +175,7 @@ function Participants({ c }: { c: Course }) {
       <Rows rows={c.participants} columns={columns} keyOf={(p) => p.memberId} empty="Personne n’a encore commencé cette formation." hrefOf={(p) => `/admin/membres/${p.memberId}`}
         actions={(p) => (
           <>
-            {emailReady && p.reminder && !p.unsubscribed && <ConfirmButton label={<><Mail size={14} /> Relancer</>} question={`Envoyer maintenant à ${p.name} : ${p.reminder === "nouveau_module" ? "« Nouveau module disponible »" : "« Votre formation vous attend »"} ?`} confirm="Envoyer" disabled={remind.isPending} onConfirm={() => remind.mutate({ courseId: c.id, memberIds: [p.memberId] })} />}
+            {emailReady && p.reminder && !p.unsubscribed && <ConfirmButton label={<><Mail size={14} /> Relancer</>} question={`Envoyer maintenant à ${p.name} : ${p.reminder === "nouvelle_section" ? "« Nouvelle section disponible »" : "« Votre formation vous attend »"} ?`} confirm="Envoyer" disabled={remind.isPending} onConfirm={() => remind.mutate({ courseId: c.id, memberIds: [p.memberId] })} />}
             {p.fullAccess
               ? <ConfirmButton label="Retirer l’accès complet" question={`Revenir au calendrier pour ${p.name} ? Ses réponses sont conservées.`} confirm="Retirer" disabled={access.isPending} onConfirm={() => access.mutate({ courseId: c.id, memberId: p.memberId, on: false })} />
               : <button type="button" className="p-btn-outline p-btn-sm" disabled={access.isPending} onClick={() => access.mutate({ courseId: c.id, memberId: p.memberId, on: true })}>Donner l’accès complet</button>}
@@ -253,23 +185,34 @@ function Participants({ c }: { c: Course }) {
   );
 }
 
-/** Membres par module et modules où l'on décroche. Uniquement des nombres. */
+/** Membres par section et par leçon, et leçons où l'on décroche. Uniquement des nombres. */
 function Stats({ c }: { c: Course }) {
   const s = c.stats;
-  const worst = Math.max(0, ...s.modules.map((m) => m.stuck));
+  const worst = Math.max(0, ...s.sections.flatMap((x) => x.lessons.map((l) => l.stuck)));
   const scale = Math.max(1, s.enrolled);
   return (
     <section className="flex flex-col gap-4" aria-label="Statistiques">
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {[["Ont commencé", s.enrolled], ["Ont terminé", s.finished], ["En pause depuis 14 jours", s.inactive], ["En accès complet", s.fullAccess]].map(([l, n]) => <div key={l} className="p-card p-4 flex flex-col gap-1"><span className="serif text-[36px] leading-none">{n}</span><span className="text-[13px] p-muted leading-snug">{l}</span></div>)}
       </div>
-      {s.modules.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucun module publié pour l’instant.</div>}
-      <ol className="list-none m-0 p-0 flex flex-col gap-2">
-        {s.modules.map((m) => (
-          <li key={m.id} className="p-card p-3.5 flex flex-col gap-2">
-            <span className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{m.position}. {m.title}</span>{m.stuck > 0 && <span className="text-[13px] font-medium" style={{ color: m.stuck === worst ? "var(--p-accent-text)" : "var(--p-gold)" }}>{m.stuck} décroche{m.stuck > 1 ? "nt" : ""} ici</span>}</span>
-            <Bar label="Ouvert" n={m.opened} total={scale} color="var(--p-gold-bright)" />
-            <Bar label="Terminé" n={m.completed} total={scale} color="var(--p-accent)" />
+      {s.sections.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucune section publiée pour l’instant.</div>}
+      <ol className="list-none m-0 p-0 flex flex-col gap-3">
+        {s.sections.map((x) => (
+          <li key={x.id} className="p-card p-3.5 flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              <span className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{x.position}. {x.title}</span>{x.stuck > 0 && <span className="text-[13px] font-medium" style={{ color: "var(--p-gold)" }}>{x.stuck} décroche{x.stuck > 1 ? "nt" : ""} ici</span>}</span>
+              <Bar label="Ouverte" n={x.opened} total={scale} color="var(--p-gold-bright)" />
+              <Bar label="Terminée" n={x.completed} total={scale} color="var(--p-accent)" />
+            </div>
+            <ul className="list-none m-0 p-0 pl-3 flex flex-col gap-2.5 border-l" style={{ borderColor: "var(--p-line)" }} aria-label={`Leçons de ${x.title}`}>
+              {x.lessons.map((l) => (
+                <li key={l.id} className="flex flex-col gap-1.5">
+                  <span className="flex flex-wrap items-center justify-between gap-2 text-[14.5px]"><span>{l.title}</span>{l.stuck > 0 && <span className="text-[13px] font-medium" style={{ color: l.stuck === worst ? "var(--p-accent-text)" : "var(--p-gold)" }}>{l.stuck} décroche{l.stuck > 1 ? "nt" : ""} ici</span>}</span>
+                  <Bar label="Ouverte" n={l.opened} total={scale} color="var(--p-gold-bright)" />
+                  <Bar label="Terminée" n={l.completed} total={scale} color="var(--p-accent)" />
+                </li>
+              ))}
+            </ul>
           </li>
         ))}
       </ol>

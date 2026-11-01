@@ -35,7 +35,7 @@ export default function BuildHome() {
               <div className="p-4 flex flex-col gap-2 flex-1">
                 <span className="flex flex-wrap items-center gap-1.5"><Badge tone={statusTone(c.status)}>{COURSE_STATUS_LABEL[c.status]}</Badge><Badge>{PUBLIC_LABEL[c.public]}</Badge></span>
                 <span className="serif text-[23px] leading-tight">{c.title}</span>
-                <span className="mt-auto text-[13.5px] p-muted">{c.publishedCount} module{c.publishedCount > 1 ? "s" : ""} publié{c.publishedCount > 1 ? "s" : ""} sur {c.moduleCount} · {c.participants} participant{c.participants > 1 ? "s" : ""}{c.issueCount ? ` · ${c.issueCount} point${c.issueCount > 1 ? "s" : ""} à regarder` : ""}</span>
+                <span className="mt-auto text-[13.5px] p-muted">{c.sectionCount} section{c.sectionCount > 1 ? "s" : ""} · {c.publishedCount} leçon{c.publishedCount > 1 ? "s" : ""} publiée{c.publishedCount > 1 ? "s" : ""} sur {c.lessonCount} · {c.participants} participant{c.participants > 1 ? "s" : ""}{c.issueCount ? ` · ${c.issueCount} point${c.issueCount > 1 ? "s" : ""} à regarder` : ""}</span>
               </div>
             </Link>
           ))}
@@ -74,7 +74,7 @@ function NotionBar() {
         </span>
       </div>
       {!s.privateBoxReady && <p className="m-0 text-[13.5px]" style={{ color: "var(--p-accent-text)" }}>La clé de chiffrement (PRIVATE_DATA_KEY) manque : les membres ne peuvent pas encore écrire dans leur journal.</p>}
-      {!s.aiReady && <p className="m-0 text-[13.5px] p-muted">Sans clé Gemini, le coach retient seulement ce que les membres ont écrit, tel quel.</p>}
+      {!s.aiReady && <p className="m-0 text-[13.5px] p-muted">Sans clé Gemini, le coach répond par un message de secours.</p>}
       {!s.emailReady && <p className="m-0 text-[13.5px] p-muted">L’envoi d’e-mails n’est pas encore configuré (RESEND_API_KEY) : les relances restent des notifications dans l’application.</p>}
     </section>
   );
@@ -126,7 +126,7 @@ function Workflows() {
   return (
     <section className="flex flex-col gap-3" aria-label="Relances automatiques">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col min-w-0 flex-[1_1_300px]"><h2 className="m-0 text-[28px]">Relances automatiques</h2><span className="text-[14px] p-muted">Une notification dans l’application, et un e-mail si vous l’activez. Pour relancer vous-même, passez par les participants d’une formation. Variables : {"{{prenom}}"}, {"{{module}}"}, {"{{formation}}"}.</span></div>
+        <div className="flex flex-col min-w-0 flex-[1_1_300px]"><h2 className="m-0 text-[28px]">Relances automatiques</h2><span className="text-[14px] p-muted">Une notification dans l’application, et un e-mail si vous l’activez. Pour relancer vous-même, passez par les participants d’une formation. Variables : {"{{prenom}}"}, {"{{section}}"}, {"{{lecon}}"}, {"{{formation}}"}.</span></div>
         <button type="button" className="p-btn-outline p-btn-sm" disabled={run.isPending} onClick={() => run.mutate()}>Lancer maintenant</button>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">{flows.data?.map((w) => <FlowCard key={`${w.key}${+new Date(w.updatedAt)}`} w={w} emailReady={!!status.data?.emailReady} />)}</div>
@@ -154,7 +154,7 @@ function FlowCard({ w, emailReady }: { w: Flow; emailReady: boolean }) {
         {w.emailEnabled && !emailReady && <span className="text-[13px]" style={{ color: "var(--p-accent-text)" }}>Activé, mais rien ne partira tant que la clé d’envoi n’est pas configurée.</span>}
         <input className="p-field h-10 py-0 text-[14px]" value={f.emailSubject} aria-label="Objet de l’e-mail" placeholder="Objet" onChange={(e) => setF({ ...f, emailSubject: e.target.value })} />
         <textarea className="p-field text-[14px] leading-relaxed" rows={6} value={f.emailBody} aria-label="Texte de l’e-mail" onChange={(e) => setF({ ...f, emailBody: e.target.value })} />
-        <span className="text-[12.5px] p-muted leading-snug">Le lien vers le module et le lien de désinscription sont ajoutés tout seuls. Activer l’e-mail n’envoie rien à ceux qui ont déjà reçu la notification.</span>
+        <span className="text-[12.5px] p-muted leading-snug">Le lien vers la formation et le lien de désinscription sont ajoutés tout seuls. Activer l’e-mail n’envoie rien à ceux qui ont déjà reçu la notification.</span>
       </fieldset>
       <span className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] p-muted">
         <span>{w.sent} relance{w.sent > 1 ? "s" : ""}{w.lastSent ? ` · dernière le ${dateTime(w.lastSent)}` : ""}</span>

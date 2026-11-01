@@ -6,7 +6,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
 import { AgendaCalendar } from "@/components/events/AgendaCalendar";
 import { FirstSteps } from "@/components/onboarding/FirstSteps";
-import { WeekModule } from "@/components/course/WeekModule";
+import { WeekSection } from "@/components/course/WeekSection";
 import { EmailPreferences } from "@/components/EmailPreferences";
 import { ReplayTour } from "@/components/onboarding/Tour";
 import { Avatar } from "@/components/Avatar";
@@ -44,7 +44,7 @@ export default function Dashboard() {
 
       <PinnedAnnouncements />
 
-      {!editing && <WeekModule />}
+      {!editing && <WeekSection />}
 
       {!editing && <FirstSteps />}
 

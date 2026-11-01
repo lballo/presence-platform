@@ -2,17 +2,17 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../queries/connection";
 import {
-  courseAssignments, courseEnrollments, courseModuleHashtags, courseModules, courses, hashtags, memberTagLinks, moduleProgress,
-  type Course, type CourseModule, type Member,
+  courseAssignments, courseEnrollments, courseLessonHashtags, courseLessons, courseSections, courses, hashtags, lessonProgress, memberTagLinks, sectionProgress,
+  type Course, type CourseLesson, type CourseSection, type Member,
 } from "../../db/schema";
-import { courseIsVisible, isAssigned, moduleIsOpen, moduleOpensAt } from "./courseAccess";
-import { memberBlocks, SECTIONS, emptySections, type Sections } from "./courseBlocks";
+import { courseIsVisible, isAssigned, sectionIsDone, sectionIsOpen, sectionOpensAt } from "./courseAccess";
+import { LESSON_RUBRICS, memberBlocks, type Rubrics } from "./courseBlocks";
 
 const parisDay = (d: Date) => d.toLocaleDateString("fr-FR", { dateStyle: "long", timeZone: "Europe/Paris" });
 
 /**
- * Tout ce qu'un membre peut voir de ses formations : seules les formations et modules publiés,
- * chaque module avec sa date d'ouverture et son état. C'est la seule source des droits de lecture.
+ * Tout ce qu'un membre peut voir de ses formations : une leçon n'est visible que si sa formation, sa section et elle-même
+ * sont publiées, et une section sans leçon publiée n'apparaît pas. C'est la seule source des droits de lecture.
  */
 export async function memberCourses(member: Pick<Member, "id" | "accessType">, courseId?: number) {
   const db = getDb();
@@ -33,51 +33,84 @@ export async function memberCourses(member: Pick<Member, "id" | "accessType">, c
     return courseIsVisible(course, assigned, !!enrollment?.fullAccessAt) ? [{ course, enrollment }] : [];
   });
   if (!visible.length) return [];
-  const mods = await db.select().from(courseModules)
-    .where(and(inArray(courseModules.courseId, visible.map((v) => v.course.id)), eq(courseModules.status, "publie"), isNull(courseModules.archivedAt)))
-    .orderBy(asc(courseModules.position), asc(courseModules.id));
-  const progress = mods.length ? await db.select().from(moduleProgress).where(and(eq(moduleProgress.memberId, member.id), inArray(moduleProgress.moduleId, mods.map((m) => m.id)))) : [];
+  const sections = await db.select().from(courseSections)
+    .where(and(inArray(courseSections.courseId, visible.map((v) => v.course.id)), eq(courseSections.status, "publie"), isNull(courseSections.archivedAt)))
+    .orderBy(asc(courseSections.position), asc(courseSections.id));
+  const lessons = sections.length ? await db.select().from(courseLessons)
+    .where(and(inArray(courseLessons.sectionId, sections.map((s) => s.id)), eq(courseLessons.status, "publie"), isNull(courseLessons.archivedAt)))
+    .orderBy(asc(courseLessons.position), asc(courseLessons.id)) : [];
+  const [sectionRows, lessonRows] = await Promise.all([
+    sections.length ? db.select().from(sectionProgress).where(and(eq(sectionProgress.memberId, member.id), inArray(sectionProgress.sectionId, sections.map((s) => s.id)))) : [],
+    lessons.length ? db.select().from(lessonProgress).where(and(eq(lessonProgress.memberId, member.id), inArray(lessonProgress.lessonId, lessons.map((l) => l.id)))) : [],
+  ]);
   const now = new Date();
   return visible.map(({ course, enrollment }) => {
-    const modules = mods.filter((m) => m.courseId === course.id).map((m) => {
-      const p = progress.find((x) => x.moduleId === m.id);
-      const startedAt = enrollment?.startedAt ?? null;
-      const fullAccess = !!enrollment?.fullAccessAt;
-      return {
-        id: m.id, title: m.title, position: m.position, intention: m.intention, durationMin: m.durationMin, hasTest: !!m.testUrl,
-        opensAt: startedAt && course.rhythm === "hebdo" ? moduleOpensAt(startedAt, m.position) : startedAt,
-        open: moduleIsOpen({ startedAt, position: m.position, rhythm: course.rhythm, fullAccess, openedAt: p?.openedAt, openedViaFullAccess: p?.openedViaFullAccess }, now),
-        opened: !!p?.openedAt, done: !!p?.completedAt,
-      };
+    const startedAt = enrollment?.startedAt ?? null;
+    const fullAccess = !!enrollment?.fullAccessAt;
+    const own = sections.filter((s) => s.courseId === course.id).flatMap((s) => {
+      const p = sectionRows.find((x) => x.sectionId === s.id);
+      const opensAt = startedAt && course.rhythm === "hebdo" ? sectionOpensAt(startedAt, s.position) : startedAt;
+      const open = sectionIsOpen({ startedAt, position: s.position, rhythm: course.rhythm, fullAccess, openedAt: p?.openedAt, openedViaFullAccess: p?.openedViaFullAccess }, now);
+      const list = lessons.filter((l) => l.sectionId === s.id).map((l) => {
+        const lp = lessonRows.find((x) => x.lessonId === l.id);
+        return {
+          id: l.id, title: l.title, position: l.position, type: l.type, intention: l.intention, durationMin: l.durationMin, hasTest: !!l.testUrl, hasVideo: !!l.videoUrl,
+          sectionId: s.id, sectionTitle: s.title, open, opensAt, opened: !!lp?.openedAt, done: !!lp?.completedAt,
+        };
+      });
+      if (!list.length) return []; // une section sans leçon publiée reste invisible
+      return [{
+        id: s.id, title: s.title, position: s.position, intention: s.intention, content: s.content, opensAt, open, opened: !!p?.openedAt,
+        done: sectionIsDone(list), doneCount: list.filter((l) => l.done).length, total: list.length,
+        challengeDoneAt: p?.challengeDoneAt ?? null, challengeNoteEnc: p?.challengeNoteEnc ?? "", lessons: list,
+      }];
     });
-    const done = modules.filter((m) => m.done).length;
-    const next = modules.find((m) => !m.done) ?? null;
-    return { course, enrollment, modules, done, total: modules.length, next };
+    const flat = own.flatMap((s) => s.lessons);
+    const next = flat.find((l) => !l.done) ?? null;
+    return { course, enrollment, sections: own, lessons: flat, done: flat.filter((l) => l.done).length, total: flat.length, next };
   });
 }
 
 export type MemberCourse = Awaited<ReturnType<typeof memberCourses>>[number];
 
-/** Le contenu d'un module tel qu'un membre le lit : ni textes provisoires, ni consigne du coach. */
-export async function moduleView(mod: CourseModule, course: Pick<Course, "id" | "title" | "emoji">) {
-  const tags = await getDb().select({ id: hashtags.id, name: hashtags.name, color: hashtags.color }).from(courseModuleHashtags).innerJoin(hashtags, eq(hashtags.id, courseModuleHashtags.hashtagId)).where(eq(courseModuleHashtags.moduleId, mod.id)).orderBy(asc(hashtags.name));
-  const sections = emptySections();
-  for (const { key } of SECTIONS) sections[key] = memberBlocks(mod.content.sections?.[key] ?? []);
+/** Le contenu d'une leçon tel qu'un membre le lit : sans les textes provisoires. */
+export async function lessonView(lesson: CourseLesson, section: Pick<CourseSection, "id" | "title">, course: Pick<Course, "id" | "title" | "emoji">) {
+  const tags = await getDb().select({ id: hashtags.id, name: hashtags.name, color: hashtags.color }).from(courseLessonHashtags).innerJoin(hashtags, eq(hashtags.id, courseLessonHashtags.hashtagId)).where(eq(courseLessonHashtags.lessonId, lesson.id)).orderBy(asc(hashtags.name));
+  const rubrics: Rubrics = {};
+  for (const { key } of LESSON_RUBRICS) rubrics[key] = memberBlocks(lesson.content.rubrics?.[key] ?? []);
   return {
-    id: mod.id, title: mod.title, position: mod.position, intention: mod.intention, durationMin: mod.durationMin, videoUrl: mod.videoUrl, testUrl: mod.testUrl,
-    course: { id: course.id, title: course.title, emoji: course.emoji }, hashtags: tags, sections: sections as Sections,
+    id: lesson.id, title: lesson.title, position: lesson.position, type: lesson.type, intention: lesson.intention, durationMin: lesson.durationMin, videoUrl: lesson.videoUrl, testUrl: lesson.testUrl,
+    section: { id: section.id, title: section.title }, course: { id: course.id, title: course.title, emoji: course.emoji }, hashtags: tags, rubrics,
   };
 }
 
-/** Le module, si ce membre a le droit de le lire aujourd'hui. Sinon, un refus clair. */
-export async function readableModule(member: Pick<Member, "id" | "accessType">, moduleId: number) {
-  const [mod] = await getDb().select().from(courseModules).where(eq(courseModules.id, moduleId)).limit(1);
-  const refused = () => new TRPCError({ code: "NOT_FOUND", message: "Ce module n’existe pas ou n’est pas accessible." });
-  if (!mod) throw refused();
-  const [state] = await memberCourses(member, mod.courseId);
-  const entry = state?.modules.find((m) => m.id === moduleId);
+const lockedMessage = (what: string, opensAt: Date | null) => (opensAt ? `${what} s’ouvrira le ${parisDay(opensAt)}.` : `${what} n’est pas encore ouverte.`);
+
+/** La leçon, si ce membre a le droit de la lire aujourd'hui. Sinon, un refus clair. */
+export async function readableLesson(member: Pick<Member, "id" | "accessType">, lessonId: number) {
+  const db = getDb();
+  const [lesson] = await db.select().from(courseLessons).where(eq(courseLessons.id, lessonId)).limit(1);
+  const refused = () => new TRPCError({ code: "NOT_FOUND", message: "Cette leçon n’existe pas ou n’est pas accessible." });
+  if (!lesson) throw refused();
+  const [section] = await db.select().from(courseSections).where(eq(courseSections.id, lesson.sectionId)).limit(1);
+  if (!section) throw refused();
+  const [state] = await memberCourses(member, section.courseId);
+  const entry = state?.lessons.find((l) => l.id === lessonId);
   if (!state || !entry) throw refused();
   if (!state.enrollment) throw new TRPCError({ code: "FORBIDDEN", message: "Commencez d’abord cette formation." });
-  if (!entry.open) throw new TRPCError({ code: "FORBIDDEN", message: entry.opensAt ? `Ce module s’ouvrira le ${parisDay(entry.opensAt)}.` : "Ce module n’est pas encore ouvert." });
-  return { mod, state, entry };
+  if (!entry.open) throw new TRPCError({ code: "FORBIDDEN", message: lockedMessage("Cette leçon", entry.opensAt) });
+  return { lesson, section, state, entry };
+}
+
+/** La section, si ce membre peut y agir aujourd'hui (son défi, par exemple). */
+export async function readableSection(member: Pick<Member, "id" | "accessType">, sectionId: number) {
+  const [section] = await getDb().select().from(courseSections).where(eq(courseSections.id, sectionId)).limit(1);
+  const refused = () => new TRPCError({ code: "NOT_FOUND", message: "Cette section n’existe pas ou n’est pas accessible." });
+  if (!section) throw refused();
+  const [state] = await memberCourses(member, section.courseId);
+  const entry = state?.sections.find((s) => s.id === sectionId);
+  if (!state || !entry) throw refused();
+  if (!state.enrollment) throw new TRPCError({ code: "FORBIDDEN", message: "Commencez d’abord cette formation." });
+  if (!entry.open) throw new TRPCError({ code: "FORBIDDEN", message: lockedMessage("Cette section", entry.opensAt) });
+  return { section, state, entry };
 }

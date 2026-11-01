@@ -16,30 +16,41 @@ export type CourseBlock =
   | { id: string; type: "link"; url: string; title: string }
   | { id: string; type: "unknown"; notionType: string };
 
-export const SECTIONS = [
+/** Les rubriques d'une page de leçon, dans l'ordre de la page Notion. */
+export const LESSON_RUBRICS = [
   { key: "intention", title: "Intention" },
-  { key: "objectifs", title: "Objectifs" },
   { key: "contenu", title: "Contenu" },
   { key: "exercice", title: "Exercice" },
   { key: "defi", title: "Défi dans le réseau" },
   { key: "plusLoin", title: "Pour aller plus loin" },
 ] as const;
 
-export type SectionKey = (typeof SECTIONS)[number]["key"];
-export type Sections = Record<SectionKey, CourseBlock[]>;
+/** Les rubriques d'une page de section. « Leçons » est tenue par l'application : ignorée à la lecture, réécrite quand les leçons changent. */
+export const SECTION_RUBRICS = [
+  { key: "intention", title: "Intention" },
+  { key: "objectifs", title: "Objectifs" },
+  { key: "lecons", title: "Leçons" },
+  { key: "defi", title: "Défi dans le réseau" },
+] as const;
 
-export type ModuleContent = {
-  sections?: Sections;
-  headings?: Partial<Record<SectionKey, string>>; // identifiant Notion de chaque titre de section
+export type RubricKey = (typeof LESSON_RUBRICS)[number]["key"] | (typeof SECTION_RUBRICS)[number]["key"];
+export type Rubric = { key: RubricKey; title: string };
+export type Rubrics = Partial<Record<RubricKey, CourseBlock[]>>;
+
+export type PageContent = {
+  rubrics?: Rubrics;
+  headings?: Partial<Record<RubricKey, string>>; // identifiant Notion de chaque titre de rubrique
   before?: CourseBlock[]; // ce qui précède le premier titre : conservé, jamais réécrit
 };
 
 export type CourseContent = {
-  description?: CourseBlock[]; // section « Présentation de la formation »
+  description?: CourseBlock[]; // rubrique « Présentation de la formation »
   descriptionHeading?: string;
 };
 
-export const emptySections = (): Sections => ({ intention: [], objectifs: [], contenu: [], exercice: [], defi: [], plusLoin: [] });
+export const LESSON_TYPES = ["contenu", "video", "exercice", "test", "defi"] as const;
+export type LessonType = (typeof LESSON_TYPES)[number];
+export const LESSON_TYPE_LABEL: Record<LessonType, string> = { contenu: "Contenu", video: "Vidéo", exercice: "Exercice", test: "Test", defi: "Défi dans le réseau" };
 
 /** Texte sans mise en forme, pour comparer ou transmettre au coach. */
 export const plainOf = (html: string) => html.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
@@ -55,5 +66,5 @@ export function memberBlocks(blocks: CourseBlock[]): CourseBlock[] {
     });
 }
 
-/** Une question d'exercice : chaque puce de la section Exercice. */
+/** Une question d'exercice : chaque puce de la rubrique Exercice. */
 export const isQuestion = (b: CourseBlock) => b.type === "bullet" || b.type === "number";

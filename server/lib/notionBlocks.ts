@@ -1,5 +1,5 @@
 import sanitizeHtml from "sanitize-html";
-import { emptySections, plainOf, SECTIONS, type CourseBlock, type CourseContent, type ModuleContent, type SectionKey } from "./courseBlocks";
+import { isQuestion, LESSON_RUBRICS, LESSON_TYPE_LABEL, memberBlocks, plainOf, SECTION_RUBRICS, type CourseBlock, type CourseContent, type LessonType, type PageContent, type Rubric, type RubricKey, type Rubrics } from "./courseBlocks";
 import type { NotionBlock, RichText } from "./notion";
 
 /* ───────────── Texte mis en forme : Notion ↔ HTML ───────────── */
@@ -113,13 +113,13 @@ export function toCourseBlock(raw: NotionBlock): CourseBlock {
   }
 }
 
-/* ───────────── Découpage d'une page en sections ───────────── */
+/* ───────────── Découpage d'une page en rubriques ───────────── */
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
-const SECTION_NAMES: Record<string, SectionKey> = { ...Object.fromEntries(SECTIONS.map((s) => [norm(s.title), s.key])), exercices: "exercice", defi: "defi" };
+const ALIASES: Record<string, RubricKey> = { exercices: "exercice", defi: "defi", lecon: "lecons" };
 
 /** Textes provisoires du modèle : cachés aux membres, signalés dans Construire. */
-const DRAFT_TEXT = [/^a ecrire\b/, /^a completer\b/, /^questions de reflexion\s*;/, /^texte, images, videos, liens externes/];
+const DRAFT_TEXT = [/^a ecrire\b/, /^a completer\b/, /^questions de reflexion\s*;/, /^texte, images, videos, liens externes/, /^proposition\s*:\s*a ecrire\b/];
 const isDraftText = (html: string) => DRAFT_TEXT.some((r) => r.test(norm(plainOf(html))));
 
 function markDraft(b: CourseBlock): CourseBlock {
@@ -128,24 +128,30 @@ function markDraft(b: CourseBlock): CourseBlock {
   return b;
 }
 
-export function moduleContentFromBlocks(raw: NotionBlock[]): ModuleContent {
-  const sections = emptySections();
-  const headings: Partial<Record<SectionKey, string>> = {};
+/** Les titres de niveau 2 reconnus ouvrent une rubrique. Un autre titre reste du contenu de la rubrique en cours. */
+export function pageContentFromBlocks(raw: NotionBlock[], rubrics: readonly Rubric[]): PageContent {
+  const names = new Map<string, RubricKey>(rubrics.map((r) => [norm(r.title), r.key]));
+  for (const [alias, key] of Object.entries(ALIASES)) if (rubrics.some((r) => r.key === key)) names.set(alias, key);
+  const out: Rubrics = Object.fromEntries(rubrics.map((r) => [r.key, []]));
+  const headings: PageContent["headings"] = {};
   const before: CourseBlock[] = [];
-  let current: SectionKey | null = null;
+  let current: RubricKey | null = null;
   for (const r of raw) {
     const b = markDraft(toCourseBlock(r));
-    const key = b.type === "heading" && b.level === 2 ? SECTION_NAMES[norm(plainOf(b.html))] : undefined;
+    const key = b.type === "heading" && b.level === 2 ? names.get(norm(plainOf(b.html))) : undefined;
     if (key && !headings[key]) { current = key; headings[key] = r.id; continue; }
-    if (current) sections[current].push(b);
+    if (current) out[current]!.push(b);
     else before.push(b);
   }
-  return { sections, headings, ...(before.length ? { before } : {}) };
+  return { rubrics: out, headings, ...(before.length ? { before } : {}) };
 }
+
+export const lessonContentFromBlocks = (raw: NotionBlock[]) => pageContentFromBlocks(raw, LESSON_RUBRICS);
+export const sectionContentFromBlocks = (raw: NotionBlock[]) => pageContentFromBlocks(raw, SECTION_RUBRICS);
 
 const DESCRIPTION = norm("Présentation de la formation");
 
-/** La page d'une formation : seule la section « Présentation de la formation » s'affiche, « Déroulé » reste dans Notion. */
+/** La page d'une formation : seule la rubrique « Présentation de la formation » s'affiche, « Déroulé » reste dans Notion. */
 export function courseContentFromBlocks(raw: NotionBlock[]): CourseContent {
   const out: CourseContent = { description: [] };
   let inside = false;
@@ -167,27 +173,45 @@ function unknownTypes(blocks: CourseBlock[]): string[] {
   return blocks.flatMap((b) => (b.type === "unknown" ? [b.notionType] : "children" in b && b.children ? unknownTypes(b.children) : []));
 }
 
-export function moduleIssues(content: ModuleContent, props: { intention: string; coachBrief: string; testProblem?: string | null }): string[] {
+/** Ce que toute page signale : rubriques absentes, textes encore à écrire, blocs non affichés. */
+function pageIssues(content: PageContent, rubrics: readonly Rubric[], optional: readonly RubricKey[], intention: string): string[] {
   const out: string[] = [];
-  for (const { key, title } of SECTIONS) {
-    const blocks = content.sections?.[key] ?? [];
-    if (!content.headings?.[key]) out.push(`Section « ${title} » absente de la page Notion.`);
-    else if (blocks.some((b) => "draft" in b && b.draft)) out.push(`${title} : texte encore à écrire, caché aux membres.`);
-    else if (!blocks.length) out.push(`${title} : section vide.`);
+  for (const { key, title } of rubrics) {
+    if (key === "lecons") continue;
+    const blocks = content.rubrics?.[key] ?? [];
+    if (!content.headings?.[key]) { if (!optional.includes(key)) out.push(`Rubrique « ${title} » absente de la page Notion.`); continue; }
+    if (blocks.some((b) => "draft" in b && b.draft)) out.push(`${title} : texte encore à écrire, caché aux membres.`);
     for (const t of unknownTypes(blocks)) out.push(`${title} : un bloc Notion de type « ${t} » n’est pas affiché aux membres.`);
   }
   if (content.before?.length) out.push("Du contenu précède le premier titre de la page : il n’est pas affiché aux membres.");
-  const section = (content.sections?.intention ?? []).map((b) => ("html" in b ? plainOf(b.html) : "")).join(" ").trim();
-  if (section && props.intention && norm(section) !== norm(props.intention)) out.push("Intention : le champ de la base et la section de la page diffèrent.");
-  if (content.sections?.defi.some((b) => "html" in b && /^proposition\s*:/.test(norm(plainOf(b.html))))) out.push("Défi : le texte commence encore par « Proposition ».");
-  if (!props.coachBrief.trim()) out.push("« Ce que le coach IA retient » est vide : le coach retiendra seulement ce que le membre a écrit.");
+  const rubric = memberBlocks(content.rubrics?.intention ?? []).map((b) => ("html" in b ? plainOf(b.html) : "")).join(" ").trim();
+  if (rubric && intention && norm(rubric) !== norm(intention)) out.push("Intention : le champ de la base et la rubrique de la page diffèrent.");
+  if (content.rubrics?.defi?.some((b) => "html" in b && !("draft" in b && b.draft) && /^proposition\s*:/.test(norm(plainOf(b.html))))) out.push("Défi : le texte commence encore par « Proposition ».");
+  return out;
+}
+
+export function sectionIssues(content: PageContent, props: { intention: string }): string[] {
+  return pageIssues(content, SECTION_RUBRICS, ["defi"], props.intention);
+}
+
+/** Le type d'une leçon sert d'étiquette et d'alerte : il ne change pas ce qu'elle peut contenir. */
+export function lessonIssues(content: PageContent, props: { type: LessonType; intention: string; videoUrl: string; testUrl: string; testProblem?: string | null }): string[] {
+  const out = pageIssues(content, LESSON_RUBRICS, [], props.intention);
+  const shown = (key: RubricKey) => memberBlocks(content.rubrics?.[key] ?? []);
+  const drafted = (key: RubricKey) => (content.rubrics?.[key] ?? []).some((b) => "draft" in b && b.draft);
+  const label = LESSON_TYPE_LABEL[props.type];
+  if (props.type === "contenu" && !shown("contenu").length && !drafted("contenu")) out.push(`Leçon de type ${label} : la rubrique Contenu est vide.`);
+  if (props.type === "video" && !props.videoUrl) out.push(`Leçon de type ${label} : aucun lien de vidéo.`);
+  if (props.type === "test" && !props.testUrl) out.push(`Leçon de type ${label} : aucun test intégré.`);
+  if (props.type === "exercice" && !shown("exercice").some(isQuestion) && !drafted("exercice")) out.push(`Leçon de type ${label} : aucune question (une puce par question).`);
+  if (props.type === "defi" && !shown("defi").length && !drafted("defi")) out.push(`Leçon de type ${label} : la rubrique Défi est vide.`);
   if (props.testProblem) out.push(`Test intégré : ${props.testProblem}`);
   return out;
 }
 
 export function courseIssues(content: CourseContent): string[] {
   const out: string[] = [];
-  if (!content.descriptionHeading) out.push("Section « Présentation de la formation » absente de la page Notion.");
+  if (!content.descriptionHeading) out.push("Rubrique « Présentation de la formation » absente de la page Notion.");
   else if (content.description?.some((b) => "draft" in b && b.draft)) out.push("Présentation de la formation : texte encore à écrire, caché aux membres.");
   return out;
 }
@@ -239,18 +263,23 @@ export const sameKind = (a: CourseBlock, b: CourseBlock) => notionValue(a)?.type
 
 export const heading2 = (title: string) => ({ object: "block", type: "heading_2", heading_2: { rich_text: plainToRichText(title) } });
 
-/** La structure d'un module, identique à celle de la base Notion. */
-export function moduleSkeleton(intention: string): Record<string, unknown>[] {
-  const p = (text: string) => ({ object: "block", type: "paragraph", paragraph: { rich_text: plainToRichText(text) } });
-  const li = (text: string) => ({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: plainToRichText(text) } });
+const paragraph = (text: string) => ({ object: "block", type: "paragraph", paragraph: { rich_text: plainToRichText(text) } });
+export const bullet = (text: string) => ({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: plainToRichText(text) } });
+
+/** La structure d'une leçon, identique à celle de la base Notion. */
+export function lessonSkeleton(intention: string): Record<string, unknown>[] {
   return [
-    heading2("Intention"), p(intention),
-    heading2("Objectifs"), li("À écrire"),
-    heading2("Contenu"), { object: "block", type: "callout", callout: { rich_text: plainToRichText("Texte, images, vidéos, liens externes, emojis."), icon: { type: "emoji", emoji: "✍️" }, color: "gray_background" } },
-    heading2("Exercice"), p("Questions de réflexion ; les réponses vont dans le journal privé du membre."), li("À écrire"),
-    heading2("Défi dans le réseau"), p("Proposition : à écrire."),
-    heading2("Pour aller plus loin"), li("À compléter"),
+    heading2("Intention"), paragraph(intention || "À écrire"),
+    heading2("Contenu"), paragraph("À écrire : texte, images, vidéos, liens externes, emojis."),
+    heading2("Exercice"), bullet("À écrire"),
+    heading2("Défi dans le réseau"), paragraph("Proposition : à écrire."),
+    heading2("Pour aller plus loin"), bullet("À compléter"),
   ];
+}
+
+/** La structure d'une section. Le défi est facultatif : sa rubrique se crée au premier enregistrement. */
+export function sectionSkeleton(intention: string): Record<string, unknown>[] {
+  return [heading2("Intention"), paragraph(intention || "À écrire"), heading2("Objectifs"), bullet("À écrire"), heading2("Leçons")];
 }
 
 /* ───────────── Hashtags ───────────── */

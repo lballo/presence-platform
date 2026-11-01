@@ -5,7 +5,7 @@ import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
   adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, emailPreferences, emailSends, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
-  honeyLedger, invitations, journalEntries, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, reports, swipes, talks, testResults, workflowRuns, type Member,
+  honeyLedger, invitations, journalEntries, lessonProgress, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, reports, sectionProgress, swipes, talks, testResults, workflowRuns, type Member,
 } from "../../db/schema";
 import { logAdmin } from "../lib/adminLog";
 import { accountBlock } from "../lib/permissions";
@@ -92,6 +92,8 @@ async function anonymize(m: Member) {
     db.delete(coachMemory).where(eq(coachMemory.memberId, m.id)),
     db.delete(coachSettings).where(eq(coachSettings.memberId, m.id)),
     db.delete(moduleProgress).where(eq(moduleProgress.memberId, m.id)),
+    db.delete(lessonProgress).where(eq(lessonProgress.memberId, m.id)),
+    db.delete(sectionProgress).where(eq(sectionProgress.memberId, m.id)),
     db.delete(courseEnrollments).where(eq(courseEnrollments.memberId, m.id)),
     db.delete(courseAssignments).where(eq(courseAssignments.memberId, m.id)),
     db.delete(memberTagLinks).where(eq(memberTagLinks.memberId, m.id)),

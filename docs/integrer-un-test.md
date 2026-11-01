@@ -1,14 +1,14 @@
-# Intégrer un test dans un module
+# Intégrer un test dans une leçon
 
 Réseau Présence : https://presence-platform.onrender.com
 
-Vos tests sont des pages HTML autonomes. Le réseau les affiche dans le module et récupère le résultat, à une condition : ajouter quelques lignes à la fin du test.
+Vos tests sont des pages HTML autonomes. Le réseau les affiche dans la leçon et récupère le résultat, à une condition : ajouter quelques lignes à la fin du test.
 
 ## En bref
 
 1. Hébergez la page du test sur **un autre domaine** que le réseau, en `https`.
 2. Ajoutez le code ci-dessous à la page, là où le résultat s'affiche.
-3. Collez l'adresse de la page dans le champ **Test intégré** du module (dans Notion, ou dans `/admin`, onglet Construire).
+3. Collez l'adresse de la page dans le champ **Test intégré** de la leçon (dans Notion, ou dans `/admin`, onglet Construire).
 4. Ouvrez l'**aperçu comme un membre** pour essayer : un message confirme que le résultat est bien reçu.
 
 ## Le code à ajouter
@@ -44,7 +44,7 @@ envoyerResultat({
 | `score` | non | un nombre, ou un texte de 40 caractères |
 | `details` | non | 40 valeurs simples : texte, nombre, vrai ou faux |
 
-Le membre peut refaire le test : chaque résultat s'ajoute à son journal, et le dernier s'affiche dans le module.
+Le membre peut refaire le test : chaque résultat s'ajoute à son journal, et le dernier s'affiche dans la leçon.
 
 ## Hauteur de la page (facultatif)
 
@@ -66,7 +66,7 @@ window.parent.postMessage(
 ## Où va le résultat
 
 - Il est chiffré et rangé dans le journal privé du membre. Personne d'autre ne le lit, sauf si le membre le partage avec vous.
-- Si le membre a accepté la mémoire du coach, le coach retient l'essentiel du résultat quand le module est terminé. Le résultat est alors transmis à Gemini, le service d'IA de Google.
+- Si le membre a accepté la mémoire du coach, le résultat y entre dès qu'il est enregistré. Il est transmis à Gemini, le service d'IA de Google, seulement quand le membre parle au coach.
 - Le journal d'activité indique seulement « Test passé », jamais le résultat.
 
 ## Si le test ne s'affiche pas

@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { parseMemoryItems } from "./coach";
+import { answerMemory, challengeMemory, testMemory } from "./coach";
 
-describe("ce que le service d'IA renvoie pour la mémoire", () => {
-  it("lit le format attendu", () => {
-    expect(parseMemoryItems('[{"source":"test","texte":"Leader bâtisseur"},{"source":"module","texte":"Elle veut diriger sans s’effacer."}]')).toEqual([{ source: "test", text: "Leader bâtisseur" }, { source: "module", text: "Elle veut diriger sans s’effacer." }]);
+describe("ce qui entre dans la mémoire du coach : les mots du membre", () => {
+  it("une réponse garde sa question", () => {
+    expect(answerMemory("Qu’est-ce qui est juste ?", "Dire non plus tôt.")).toBe("À « Qu’est-ce qui est juste ? », a répondu : Dire non plus tôt.");
   });
-  it("accepte une réponse entourée de balises de code", () => {
-    expect(parseMemoryItems('```json\n[{"source":"defi","texte":"Défi relevé"}]\n```')).toHaveLength(1);
+  it("une réflexion libre n'a pas de question", () => {
+    expect(answerMemory("", "Je respire mieux.")).toBe("Réflexion : Je respire mieux.");
   });
-  it("une source inconnue devient le module, un texte vide est ignoré", () => {
-    expect(parseMemoryItems('[{"source":"autre","texte":"A"},{"source":"test","texte":"  "}]')).toEqual([{ source: "module", text: "A" }]);
+  it("un test donne son libellé et son résumé", () => {
+    expect(testMemory(JSON.stringify({ label: "Bâtisseur", summary: "Vous structurez." }))).toBe("Résultat du test : Bâtisseur : Vous structurez.");
   });
-  it("refuse ce qui n'est pas une liste", () => {
-    expect(() => parseMemoryItems('{"a":1}')).toThrow();
-    expect(() => parseMemoryItems("pas du json")).toThrow();
+  it("un test illisible reste tel quel", () => {
+    expect(testMemory("pas du json")).toBe("Résultat du test : pas du json");
   });
-  it("garde au plus huit éléments", () => {
-    expect(parseMemoryItems(JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ source: "module", texte: `t${i}` }))))).toHaveLength(8);
+  it("un défi garde la note si elle existe", () => {
+    expect(challengeMemory("Fondations", "")).toBe("A relevé le défi de « Fondations ».");
+    expect(challengeMemory("Fondations", "C’était fort.")).toBe("A relevé le défi de « Fondations » : C’était fort.");
   });
 });

@@ -5,7 +5,7 @@ beforeAll(() => { vi.stubEnv("PRIVATE_DATA_KEY", Buffer.alloc(32, 9).toString("b
 describe("modèles", () => {
   it("remplace les variables, une inconnue disparaît", async () => {
     const { fillTemplate } = await import("./email");
-    expect(fillTemplate("Bonjour {{prenom}}, {{module}} {{rien}}!", { prenom: "Sofia", module: "Valeurs" })).toBe("Bonjour Sofia, Valeurs !");
+    expect(fillTemplate("Bonjour {{prenom}}, {{section}} {{rien}}!", { prenom: "Sofia", section: "Valeurs" })).toBe("Bonjour Sofia, Valeurs !");
   });
 });
 

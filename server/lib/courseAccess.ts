@@ -1,5 +1,5 @@
 /**
- * Les règles d'accès aux formations et le calendrier d'ouverture des modules.
+ * Les règles d'accès aux formations et le calendrier d'ouverture des sections.
  * Pur : testé dans courseAccess.test.ts.
  */
 type AccessType = "collectif" | "individuel" | "les_deux";
@@ -19,8 +19,8 @@ export function parisMidnight(y: number, m: number, d: number): Date {
   return new Date(wall - offsetAt(wall - offsetAt(wall)));
 }
 
-/** Le module n s'ouvre n−1 semaines après le démarrage, à minuit heure de Paris. Le premier, le jour même. */
-export function moduleOpensAt(startedAt: Date, position: number): Date {
+/** La section n s'ouvre n−1 semaines après le démarrage, à minuit heure de Paris. La première, le jour même. */
+export function sectionOpensAt(startedAt: Date, position: number): Date {
   if (position <= 1) return startedAt;
   const p = parisFields(startedAt);
   const day = new Date(Date.UTC(p.y, p.m - 1, p.d + 7 * (position - 1)));
@@ -37,15 +37,19 @@ export type OpenInput = {
 };
 
 /**
- * Un module est ouvert si sa date est passée, si la formation est en accès complet, ou s'il a déjà été ouvert
- * selon le calendrier : changer l'ordre ne le referme pas. Ouvert seulement grâce à l'accès complet, il se referme avec lui.
+ * Une section est ouverte si sa date est passée, si la formation est en accès complet, ou si elle a déjà été ouverte
+ * selon le calendrier : changer l'ordre ne la referme pas. Ouverte seulement grâce à l'accès complet, elle se referme avec lui.
+ * Toutes les leçons d'une section s'ouvrent ensemble.
  */
-export function moduleIsOpen(i: OpenInput, now = new Date()): boolean {
+export function sectionIsOpen(i: OpenInput, now = new Date()): boolean {
   if (!i.startedAt) return false;
   if (i.rhythm === "complet" || i.fullAccess) return true;
-  if (moduleOpensAt(i.startedAt, i.position) <= now) return true;
+  if (sectionOpensAt(i.startedAt, i.position) <= now) return true;
   return !!i.openedAt && !i.openedViaFullAccess;
 }
+
+/** Une section est terminée quand toutes ses leçons publiées le sont. */
+export const sectionIsDone = (lessons: { done: boolean }[]) => lessons.length > 0 && lessons.every((l) => l.done);
 
 export type Assignment = { memberId: number | null; accessType: AccessType | null; tagId: number | null };
 

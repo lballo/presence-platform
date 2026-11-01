@@ -24,7 +24,8 @@ export const env = {
   notionToken: process.env.NOTION_TOKEN ?? "",
   notionApiBase: (process.env.NOTION_API_BASE ?? "https://api.notion.com").replace(/\/$/, ""),
   notionFormations: process.env.NOTION_FORMATIONS_SOURCE ?? "0e9a7241-e511-48be-8b84-4c3646e46048",
-  notionModules: process.env.NOTION_MODULES_SOURCE ?? "be28ef82-c56e-4c06-9a6c-d8927fbd9fde",
+  notionSections: process.env.NOTION_SECTIONS_SOURCE ?? "be28ef82-c56e-4c06-9a6c-d8927fbd9fde",
+  notionLecons: process.env.NOTION_LECONS_SOURCE ?? "967c97ab-f4a2-44dc-92ba-0736348024e8",
   // Clé de chiffrement du journal, des résultats de tests et de la mémoire du coach (32 octets en base64)
   privateDataKey: process.env.PRIVATE_DATA_KEY ?? "",
   geminiApiBase: (process.env.GEMINI_API_BASE ?? "https://generativelanguage.googleapis.com").replace(/\/$/, ""),

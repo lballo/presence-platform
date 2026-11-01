@@ -7,12 +7,12 @@ import { parisLongDate } from "@/lib/format";
 
 type Card = RouterOutputs["courses"]["list"][number];
 
-/** Mes formations, côte à côte : couverture, titre, progression, prochain module. */
+/** Mes formations, côte à côte : couverture, titre, progression, prochaine leçon. */
 export default function Parcours() {
   const list = trpc.courses.list.useQuery();
   return (
     <>
-      <PageHeader eyebrow="Mon parcours" title="Mes formations" intro="Un module s’ouvre chaque semaine. Avancez à votre rythme : tout ce que vous écrivez reste dans votre journal privé." />
+      <PageHeader eyebrow="Mon parcours" title="Mes formations" intro="Une section s’ouvre chaque semaine. Avancez à votre rythme : tout ce que vous écrivez reste dans votre journal privé." />
       <div className="flex flex-wrap gap-2 mb-6">
         <Link to="/parcours/journal" className="p-chip no-underline"><BookOpen size={15} /> Mon journal</Link>
         <Link to="/parcours/coach" className="p-chip no-underline"><span className="flex-none"><CoachMascot size={18} /></span> Ce que le coach retient de moi</Link>
@@ -39,11 +39,11 @@ function CourseCard({ c }: { c: Card }) {
         <div className="mt-auto flex flex-col gap-2 pt-2">
           {c.startedAt ? (
             <>
-              <span className="flex items-center justify-between text-[13px] p-muted"><span>{c.done} module{c.done > 1 ? "s" : ""} sur {c.total}</span><span>{pct} %</span></span>
+              <span className="flex items-center justify-between text-[13px] p-muted"><span>{c.done} leçon{c.done > 1 ? "s" : ""} sur {c.total}</span><span>{pct} %</span></span>
               <span className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--p-track)" }} role="img" aria-label={`Progression : ${pct} %`}><span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--p-accent)" }} /></span>
               <Next c={c} />
             </>
-          ) : <span className="flex items-center justify-between text-[14.5px] font-medium" style={{ color: "var(--p-accent-text)" }}>{c.total} modules · Commencer <ArrowRight size={16} /></span>}
+          ) : !c.total ? <span className="text-[14px] p-muted">Les sections arrivent bientôt.</span> : <span className="flex items-center justify-between text-[14.5px] font-medium" style={{ color: "var(--p-accent-text)" }}>{c.sectionCount} section{c.sectionCount > 1 ? "s" : ""} · {c.total} leçon{c.total > 1 ? "s" : ""} · Commencer <ArrowRight size={16} /></span>}
         </div>
       </div>
     </Link>
@@ -51,7 +51,8 @@ function CourseCard({ c }: { c: Card }) {
 }
 
 function Next({ c }: { c: Card }) {
+  if (!c.total) return <span className="text-[14px] p-muted">Les sections arrivent bientôt.</span>;
   if (!c.next) return <span className="flex items-center gap-2 text-[14px] font-medium"><Check size={15} style={{ color: "var(--p-accent-text)" }} /> Formation terminée</span>;
-  if (c.next.open) return <span className="text-[14px]"><span className="p-muted">Ce module : </span><span className="font-medium">{c.next.title}</span></span>;
-  return <span className="text-[14px] flex items-start gap-1.5"><Lock size={14} className="flex-none mt-1 p-faint" /><span><span className="p-muted">Prochain module, {c.next.opensAt ? parisLongDate(new Date(c.next.opensAt)).toLowerCase() : "bientôt"} : </span><span className="font-medium">{c.next.title}</span></span></span>;
+  if (c.next.open) return <span className="text-[14px]"><span className="p-muted">Prochaine leçon : </span><span className="font-medium">{c.next.title}</span></span>;
+  return <span className="text-[14px] flex items-start gap-1.5"><Lock size={14} className="flex-none mt-1 p-faint" /><span><span className="p-muted">Prochaine leçon, {c.next.opensAt ? parisLongDate(new Date(c.next.opensAt)).toLowerCase() : "bientôt"} : </span><span className="font-medium">{c.next.title}</span></span></span>;
 }

@@ -21,9 +21,11 @@ import {
   messages,
   forumReplies,
   courses,
-  courseModules,
+  courseSections,
+  courseLessons,
   courseHashtags,
-  courseModuleHashtags,
+  courseSectionHashtags,
+  courseLessonHashtags,
 } from "./schema";
 
 export const membersRelations = relations(members, ({ many }) => ({
@@ -130,13 +132,19 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
 }));
 
 export const coursesRelations = relations(courses, ({ many }) => ({
-  modules: many(courseModules),
+  sections: many(courseSections),
   hashtags: many(courseHashtags),
 }));
 
-export const courseModulesRelations = relations(courseModules, ({ one, many }) => ({
-  course: one(courses, { fields: [courseModules.courseId], references: [courses.id] }),
-  hashtags: many(courseModuleHashtags),
+export const courseSectionsRelations = relations(courseSections, ({ one, many }) => ({
+  course: one(courses, { fields: [courseSections.courseId], references: [courses.id] }),
+  lessons: many(courseLessons),
+  hashtags: many(courseSectionHashtags),
+}));
+
+export const courseLessonsRelations = relations(courseLessons, ({ one, many }) => ({
+  section: one(courseSections, { fields: [courseLessons.sectionId], references: [courseSections.id] }),
+  hashtags: many(courseLessonHashtags),
 }));
 
 export const courseHashtagsRelations = relations(courseHashtags, ({ one }) => ({
@@ -144,7 +152,13 @@ export const courseHashtagsRelations = relations(courseHashtags, ({ one }) => ({
   hashtag: one(hashtags, { fields: [courseHashtags.hashtagId], references: [hashtags.id] }),
 }));
 
-export const courseModuleHashtagsRelations = relations(courseModuleHashtags, ({ one }) => ({
-  module: one(courseModules, { fields: [courseModuleHashtags.moduleId], references: [courseModules.id] }),
-  hashtag: one(hashtags, { fields: [courseModuleHashtags.hashtagId], references: [hashtags.id] }),
+export const courseSectionHashtagsRelations = relations(courseSectionHashtags, ({ one }) => ({
+  section: one(courseSections, { fields: [courseSectionHashtags.sectionId], references: [courseSections.id] }),
+  hashtag: one(hashtags, { fields: [courseSectionHashtags.hashtagId], references: [hashtags.id] }),
 }));
+
+export const courseLessonHashtagsRelations = relations(courseLessonHashtags, ({ one }) => ({
+  lesson: one(courseLessons, { fields: [courseLessonHashtags.lessonId], references: [courseLessons.id] }),
+  hashtag: one(hashtags, { fields: [courseLessonHashtags.hashtagId], references: [hashtags.id] }),
+}));
+

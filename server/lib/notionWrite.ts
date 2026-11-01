@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { env } from "./env";
 import { appendBlocks, createPage, deleteBlock, getDataSource, getPage, integrationId, notionMessage, notionReady, updateBlock, type NotionBlock, type NotionPage } from "./notion";
-import { blockPatch, heading2, labelFromTag, moduleSkeleton, normalizeTag, plainToRichText, sameBlock, sameKind, toNotionBlock } from "./notionBlocks";
-import { SECTIONS, type CourseBlock, type ModuleContent, type Sections } from "./courseBlocks";
+import { blockPatch, bullet, heading2, labelFromTag, lessonSkeleton, normalizeTag, plainToRichText, sameBlock, sameKind, sectionSkeleton, toNotionBlock } from "./notionBlocks";
+import { LESSON_RUBRICS, LESSON_TYPE_LABEL, plainOf, SECTION_RUBRICS, type CourseBlock, type LessonType, type PageContent, type Rubric, type RubricKey, type Rubrics } from "./courseBlocks";
 
 /** Chaque enregistrement de Construire écrit d'abord dans Notion, puis relit la page. */
 export function assertNotionReady() {
@@ -39,32 +39,47 @@ async function notionLabels(dataSourceId: string, names: string[]): Promise<{ na
   return names.map((n) => ({ name: byNorm.get(normalizeTag(n)) ?? labelFromTag(n) }));
 }
 
-export type ModuleProps = { title: string; position: number; status: "brouillon" | "relecture" | "publie"; intention: string; durationMin: number | null; videoUrl: string; testUrl: string; coachBrief: string; hashtags: string[] };
-export const MODULE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publié" } as const;
+type Status = "brouillon" | "relecture" | "publie";
+export const SECTION_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publié" } as const;
+export const LESSON_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publiée" } as const;
 export const COURSE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publiée" } as const;
 
-export async function moduleProperties(p: ModuleProps) {
+export type SectionProps = { title: string; position: number; status: Status; intention: string; hashtags: string[] };
+
+export async function sectionProperties(p: SectionProps) {
   return {
-    Module: { title: plainToRichText(p.title) },
+    Section: { title: plainToRichText(p.title) },
     Ordre: { number: p.position },
-    Statut: { status: { name: MODULE_STATUS[p.status] } },
+    Statut: { status: { name: SECTION_STATUS[p.status] } },
+    Intention: richProp(p.intention),
+    Hashtags: { multi_select: await notionLabels(env.notionSections, p.hashtags) },
+  };
+}
+
+export type LessonProps = { title: string; position: number; type: LessonType; status: Status; intention: string; durationMin: number | null; videoUrl: string; testUrl: string; hashtags: string[] };
+
+export async function lessonProperties(p: LessonProps) {
+  return {
+    "Leçon": { title: plainToRichText(p.title) },
+    Ordre: { number: p.position },
+    Type: { select: { name: LESSON_TYPE_LABEL[p.type] } },
+    Statut: { status: { name: LESSON_STATUS[p.status] } },
     Intention: richProp(p.intention),
     "Durée estimée (min)": { number: p.durationMin },
     "Vidéo": { url: p.videoUrl || null },
     "Test intégré": { url: p.testUrl || null },
-    "Ce que le coach IA retient": richProp(p.coachBrief),
-    Hashtags: { multi_select: await notionLabels(env.notionModules, p.hashtags) },
+    Hashtags: { multi_select: await notionLabels(env.notionLecons, p.hashtags) },
   };
 }
 
-export type CourseProps = { title: string; tagline: string; coverUrl: string; public: "tous" | "attribution"; rhythm: "hebdo" | "complet"; status: "brouillon" | "relecture" | "publie"; position: number; hashtags: string[] };
+export type CourseProps = { title: string; tagline: string; coverUrl: string; public: "tous" | "attribution"; rhythm: "hebdo" | "complet"; status: Status; position: number; hashtags: string[] };
 
 export async function courseProperties(p: CourseProps, opts: { coverChanged: boolean }) {
   return {
     Formation: { title: plainToRichText(p.title) },
     Accroche: richProp(p.tagline),
     Public: { select: { name: p.public === "attribution" ? "Sur attribution" : "Tous les membres" } },
-    Rythme: { select: { name: p.rhythm === "complet" ? "Accès complet" : "Un module par semaine" } },
+    Rythme: { select: { name: p.rhythm === "complet" ? "Accès complet" : "Une section par semaine" } },
     Statut: { status: { name: COURSE_STATUS[p.status] } },
     "Ordre d'affichage": { number: p.position },
     Hashtags: { multi_select: await notionLabels(env.notionFormations, p.hashtags) },
@@ -128,17 +143,18 @@ export async function writeList(pageId: string, oldList: CourseBlock[], wanted: 
   return after === "start" ? undefined : after;
 }
 
-/** Écrit les sections d'un module. Une section absente de la page est créée à sa place. */
-export async function writeSections(pageId: string, old: ModuleContent, sections: Sections) {
+/** Écrit les rubriques d'une page. Une rubrique absente de la page est créée à sa place. La liste « Leçons » n'est pas touchée ici. */
+export async function writeRubrics(pageId: string, old: PageContent, wanted: Rubrics, rubrics: readonly Rubric[]) {
   const lastOf = (blocks: CourseBlock[] | undefined) => blocks?.[blocks.length - 1]?.id;
   let cursor: string | "start" = lastOf(old.before) ?? "start";
-  for (const { key, title } of SECTIONS) {
-    const oldList = old.sections?.[key] ?? [];
-    const wanted = sections[key] ?? [];
+  for (const { key, title } of rubrics) {
+    const oldList = old.rubrics?.[key] ?? [];
+    if (key === "lecons") { cursor = lastOf(oldList) ?? old.headings?.lecons ?? cursor; continue; }
+    const list = wanted[key] ?? [];
     let heading = old.headings?.[key];
-    if (!heading && !wanted.length) continue;
+    if (!heading && !list.length) continue;
     if (!heading) heading = (await appendBlocks(pageId, [heading2(title)], cursor))[0].id;
-    cursor = (await writeList(pageId, oldList, wanted, heading)) ?? heading;
+    cursor = (await writeList(pageId, oldList, list, heading)) ?? heading;
   }
 }
 
@@ -147,22 +163,55 @@ async function appendAll(pageId: string, blocks: unknown[]) {
   for (let i = 0; i < blocks.length; i += BATCH) await appendBlocks(pageId, blocks.slice(i, i + BATCH));
 }
 
-/** Les blocs d'un module copié : titres de sections compris. */
-function copiedBlocks(content: ModuleContent): unknown[] {
-  return SECTIONS.flatMap(({ key, title }) => [heading2(title), ...(content.sections?.[key] ?? []).map((b) => toNotionBlock(b)).filter(Boolean)]);
+/** Les blocs d'une page copiée : titres de rubriques compris. Une rubrique sans titre dans l'original ne se crée pas. */
+function copiedBlocks(content: PageContent, rubrics: readonly Rubric[], lessonTitles: string[] = []): unknown[] {
+  return rubrics.flatMap(({ key, title }) => {
+    if (key === "lecons") return [heading2(title), ...lessonTitles.map(bullet)];
+    if (!content.headings?.[key]) return [];
+    return [heading2(title), ...(content.rubrics?.[key] ?? []).map((b) => toNotionBlock(b)).filter(Boolean)];
+  });
 }
 
-export type ModuleSource = { kind: "structure" } | { kind: "copie"; content: ModuleContent } | { kind: "notion"; templateId: string };
+export type PageSource = { kind: "structure" } | { kind: "copie"; content: PageContent; lessonTitles?: string[] } | { kind: "notion"; templateId: string };
 
-export async function createModulePage(p: ModuleProps & { coursePageId: string }, source: ModuleSource): Promise<NotionPage> {
+export async function createSectionPage(p: SectionProps & { coursePageId: string }, source: PageSource): Promise<NotionPage> {
+  const page = await createPage({ dataSourceId: env.notionSections, properties: { ...(await sectionProperties(p)), Formation: { relation: [{ id: p.coursePageId }] } } });
+  if (source.kind === "copie") await appendAll(page.id, copiedBlocks(source.content, SECTION_RUBRICS, source.lessonTitles));
+  else await appendAll(page.id, sectionSkeleton(p.intention));
+  return page;
+}
+
+export async function createLessonPage(p: LessonProps & { sectionPageId: string }, source: PageSource): Promise<NotionPage> {
   const page = await createPage({
-    dataSourceId: env.notionModules,
-    properties: { ...(await moduleProperties(p)), Formation: { relation: [{ id: p.coursePageId }] } },
+    dataSourceId: env.notionLecons,
+    properties: { ...(await lessonProperties(p)), Section: { relation: [{ id: p.sectionPageId }] } },
     ...(source.kind === "notion" ? { templateId: source.templateId } : {}),
   });
-  if (source.kind === "structure") await appendAll(page.id, moduleSkeleton(p.intention));
-  if (source.kind === "copie") await appendAll(page.id, copiedBlocks(source.content));
+  if (source.kind === "structure") await appendAll(page.id, lessonSkeleton(p.intention));
+  if (source.kind === "copie") await appendAll(page.id, copiedBlocks(source.content, LESSON_RUBRICS));
   return page;
+}
+
+/**
+ * La liste « Leçons » d'une page de section, tenue par l'application : réécrite quand ses leçons changent.
+ * Rien n'est écrit si elle est déjà à jour. Renvoie true si la page a changé.
+ */
+export async function writeLessonList(pageId: string, content: PageContent, titles: string[]): Promise<boolean> {
+  const oldList = (content.rubrics?.lecons ?? []).filter((b) => b.type !== "unknown");
+  const current = oldList.map((b) => ("html" in b ? plainOf(b.html) : ""));
+  if (content.headings?.lecons && current.length === titles.length && current.every((t, i) => t === titles[i])) return false;
+  for (const b of oldList) await deleteBlock(b.id);
+  let heading = content.headings?.lecons;
+  if (!heading) {
+    const lastOf = (key: RubricKey) => content.rubrics?.[key]?.at(-1)?.id ?? content.headings?.[key];
+    heading = (await appendBlocks(pageId, [heading2("Leçons")], lastOf("objectifs") ?? lastOf("intention")))[0].id;
+  }
+  let after = heading;
+  for (let i = 0; i < titles.length; i += BATCH) {
+    const made = await appendBlocks(pageId, titles.slice(i, i + BATCH).map(bullet), after);
+    after = made[made.length - 1]?.id ?? after;
+  }
+  return true;
 }
 
 export async function createCoursePage(p: CourseProps & { description: string }): Promise<NotionPage> {

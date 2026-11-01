@@ -3,11 +3,12 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
-import { courseEnrollments, courseModuleHashtags, courseModules, journalEntries, members, moduleProgress, testResults } from "../../db/schema";
+import { courseEnrollments, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, journalEntries, lessonProgress, members, sectionProgress, testResults } from "../../db/schema";
 import { logActivity, touchEnrollment } from "../lib/activity";
-import { consentNeeded, memoryActive, memorySettings, rememberModule } from "../lib/coachMemory";
+import { answerMemory, challengeMemory, testMemory } from "../lib/coach";
+import { consentNeeded, forget, memoryLabel, memoryOrigin, memorySettings, remember } from "../lib/coachMemory";
 import { isQuestion, memberBlocks, plainOf, type CourseBlock } from "../lib/courseBlocks";
-import { memberCourses, moduleView, readableModule } from "../lib/courseState";
+import { lessonView, memberCourses, readableLesson, readableSection } from "../lib/courseState";
 import { notify } from "../lib/notify";
 import { open, seal } from "../lib/privateBox";
 
@@ -31,31 +32,38 @@ const resultSchema = z.object({
 });
 
 export const coursesRouter = createRouter({
-  /** Mes formations, côte à côte. */
+  /** Mes formations, côte à côte, avec la prochaine leçon. */
   list: courseProc.query(async ({ ctx }) => {
     const rows = await memberCourses(ctx.member);
-    return rows.map(({ course, enrollment, done, total, next }) => ({
+    return rows.map(({ course, enrollment, sections, done, total, next }) => ({
       id: course.id, title: course.title, tagline: course.tagline, emoji: course.emoji, coverUrl: course.coverUrl, rhythm: course.rhythm,
-      startedAt: enrollment?.startedAt ?? null, fullAccess: !!enrollment?.fullAccessAt, finishedAt: enrollment?.finishedAt ?? null, done, total,
-      next: next ? { id: next.id, title: next.title, position: next.position, open: next.open, opensAt: next.opensAt } : null,
+      startedAt: enrollment?.startedAt ?? null, fullAccess: !!enrollment?.fullAccessAt, finishedAt: enrollment?.finishedAt ?? null, done, total, sectionCount: sections.length,
+      next: next ? { id: next.id, title: next.title, sectionTitle: next.sectionTitle, open: next.open, opensAt: next.opensAt } : null,
     }));
   }),
 
-  /** Une formation : sa présentation et ses modules, y compris ceux à venir, avec leur date. */
+  /** Une formation : sa présentation et ses sections, y compris celles à venir, avec leur date. */
   course: courseProc.input(z.object({ id: z.number().int() })).query(async ({ ctx, input }) => {
     const [state] = await memberCourses(ctx.member, input.id);
     if (!state) throw new TRPCError({ code: "NOT_FOUND", message: "Cette formation n’existe pas ou n’est pas accessible." });
-    const { course, enrollment, modules, done, total, next } = state;
+    const { course, enrollment, sections, done, total, next } = state;
     const settings = await memorySettings(ctx.memberId);
     return {
       id: course.id, title: course.title, tagline: course.tagline, emoji: course.emoji, coverUrl: course.coverUrl, rhythm: course.rhythm,
       description: memberBlocks(course.content.description ?? []),
       startedAt: enrollment?.startedAt ?? null, fullAccess: !!enrollment?.fullAccessAt, finishedAt: enrollment?.finishedAt ?? null,
-      modules, done, total, nextId: next?.id ?? null, consentNeeded: consentNeeded(settings),
+      // Objectifs et défi seulement quand la section est ouverte
+      sections: sections.map(({ content, challengeNoteEnc, ...s }) => ({
+        ...s,
+        objectifs: s.open ? memberBlocks(content.rubrics?.objectifs ?? []) : [],
+        defi: s.open ? memberBlocks(content.rubrics?.defi ?? []) : [],
+        challengeNote: s.open && challengeNoteEnc ? (open(ctx.memberId, challengeNoteEnc) ?? "") : "",
+      })),
+      done, total, nextId: next?.id ?? null, consentNeeded: consentNeeded(settings),
     };
   }),
 
-  /** Commencer : le premier module s'ouvre aujourd'hui, puis un nouveau module chaque semaine. */
+  /** Commencer : la première section s'ouvre aujourd'hui, puis une nouvelle section chaque semaine. */
   start: courseProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
     const [state] = await memberCourses(ctx.member, input.id);
     if (!state) throw new TRPCError({ code: "NOT_FOUND", message: "Cette formation n’est pas accessible." });
@@ -65,18 +73,19 @@ export const coursesRouter = createRouter({
     return { ok: true };
   }),
 
-  /** La lecture d'un module, avec mes réponses. */
-  module: courseProc.input(z.object({ id: z.number().int() })).query(async ({ ctx, input }) => {
+  /** La lecture d'une leçon, avec mes réponses. */
+  lesson: courseProc.input(z.object({ id: z.number().int() })).query(async ({ ctx, input }) => {
     const db = getDb();
-    const { mod, state } = await readableModule(ctx.member, input.id);
+    const { lesson, section, state } = await readableLesson(ctx.member, input.id);
     const [view, answers, tests, [progress]] = await Promise.all([
-      moduleView(mod, state.course),
-      db.select().from(journalEntries).where(and(eq(journalEntries.memberId, ctx.memberId), eq(journalEntries.moduleId, mod.id))),
-      db.select().from(testResults).where(and(eq(testResults.memberId, ctx.memberId), eq(testResults.moduleId, mod.id))).orderBy(desc(testResults.passedAt)),
-      db.select().from(moduleProgress).where(and(eq(moduleProgress.memberId, ctx.memberId), eq(moduleProgress.moduleId, mod.id))).limit(1),
+      lessonView(lesson, section, state.course),
+      db.select().from(journalEntries).where(and(eq(journalEntries.memberId, ctx.memberId), eq(journalEntries.lessonId, lesson.id))),
+      db.select().from(testResults).where(and(eq(testResults.memberId, ctx.memberId), eq(testResults.lessonId, lesson.id))).orderBy(desc(testResults.passedAt)),
+      db.select().from(lessonProgress).where(and(eq(lessonProgress.memberId, ctx.memberId), eq(lessonProgress.lessonId, lesson.id))).limit(1),
     ]);
-    const index = state.modules.findIndex((m) => m.id === mod.id);
-    const next = state.modules[index + 1];
+    const index = state.lessons.findIndex((l) => l.id === lesson.id);
+    const next = state.lessons[index + 1];
+    const prev = state.lessons[index - 1];
     return {
       ...view,
       preview: false,
@@ -85,41 +94,54 @@ export const coursesRouter = createRouter({
       challengeDoneAt: progress?.challengeDoneAt ?? null,
       challengeNote: progress?.challengeNoteEnc ? (open(ctx.memberId, progress.challengeNoteEnc) ?? "") : "",
       completedAt: progress?.completedAt ?? null,
-      next: next ? { id: next.id, title: next.title, open: next.open, opensAt: next.opensAt } : null,
-      prev: index > 0 ? { id: state.modules[index - 1].id, title: state.modules[index - 1].title } : null,
+      next: next ? { id: next.id, title: next.title, open: next.open, opensAt: next.opensAt, sectionTitle: next.sectionTitle } : null,
+      prev: prev ? { id: prev.id, title: prev.title } : null,
     };
   }),
 
-  /** Module ouvert : inscrit une fois au journal d'activité. */
+  /** Une ancienne adresse de module : la leçon qui l'a reprise, s'il y en a une. */
+  legacyLesson: courseProc.input(z.object({ moduleId: z.number().int() })).query(async ({ input }) => {
+    const [row] = await getDb().select({ id: courseLessons.id }).from(courseLessons).where(and(eq(courseLessons.legacyModuleId, input.moduleId), isNull(courseLessons.archivedAt))).limit(1);
+    return { lessonId: row?.id ?? null };
+  }),
+
+  /** Leçon ouverte : inscrite une fois au journal d'activité. La section est ouverte avec elle. */
   markOpened: courseProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    const { mod, entry, state } = await readableModule(ctx.member, input.id);
+    const { lesson, section, entry, state } = await readableLesson(ctx.member, input.id);
     const onCalendar = state.course.rhythm === "complet" || (!!entry.opensAt && entry.opensAt <= new Date());
-    const [row] = await db.insert(moduleProgress).values({ memberId: ctx.memberId, moduleId: mod.id, openedAt: new Date(), openedViaFullAccess: !onCalendar }).onConflictDoNothing().returning();
+    await db.insert(sectionProgress).values({ memberId: ctx.memberId, sectionId: section.id, openedAt: new Date(), openedViaFullAccess: !onCalendar }).onConflictDoNothing();
+    const [row] = await db.insert(lessonProgress).values({ memberId: ctx.memberId, lessonId: lesson.id, openedAt: new Date() }).onConflictDoNothing().returning();
     if (!row) return { first: false };
-    await logActivity(ctx.memberId, "module_ouvert", { courseId: mod.courseId, moduleId: mod.id, label: mod.title });
-    await touchEnrollment(ctx.memberId, mod.courseId);
+    await logActivity(ctx.memberId, "lecon_ouverte", { courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, label: lesson.title });
+    await touchEnrollment(ctx.memberId, section.courseId);
     return { first: true };
   }),
 
-  /** Une réponse dans mon journal privé. Vide : la réponse est retirée. */
+  /** Une réponse dans mon journal privé. Vide : la réponse est retirée. Avec l'accord du membre, elle entre dans la mémoire du coach. */
   saveAnswer: courseProc
-    .input(z.object({ moduleId: z.number().int(), questionId: z.string().min(1).max(64), answer: z.string().max(8000) }))
+    .input(z.object({ lessonId: z.number().int(), questionId: z.string().min(1).max(64), answer: z.string().max(8000) }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const { mod, state } = await readableModule(ctx.member, input.moduleId);
-      const question = input.questionId === NOTE ? null : flatten(mod.content.sections?.exercice ?? []).find((b) => b.id === input.questionId && isQuestion(b));
-      if (input.questionId !== NOTE && !question) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette question n’existe plus dans le module." });
-      const where = and(eq(journalEntries.memberId, ctx.memberId), eq(journalEntries.moduleId, mod.id), eq(journalEntries.questionId, input.questionId));
+      const { lesson, section, state } = await readableLesson(ctx.member, input.lessonId);
+      const question = input.questionId === NOTE ? null : flatten(lesson.content.rubrics?.exercice ?? []).find((b) => b.id === input.questionId && isQuestion(b));
+      if (input.questionId !== NOTE && !question) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette question n’existe plus dans la leçon." });
+      const where = and(eq(journalEntries.memberId, ctx.memberId), eq(journalEntries.lessonId, lesson.id), eq(journalEntries.questionId, input.questionId));
       const answer = input.answer.trim();
-      if (!answer) { await db.delete(journalEntries).where(where); await touchEnrollment(ctx.memberId, mod.courseId); return { id: null }; }
+      if (!answer) {
+        const removed = await db.delete(journalEntries).where(where).returning({ id: journalEntries.id });
+        for (const r of removed) await forget(ctx.memberId, memoryOrigin.answer(r.id));
+        await touchEnrollment(ctx.memberId, section.courseId);
+        return { id: null };
+      }
       const answerEnc = seal(ctx.memberId, answer);
       const questionText = question && "html" in question ? plainOf(question.html) : "";
       const [row] = await db.insert(journalEntries)
-        .values({ memberId: ctx.memberId, moduleId: mod.id, courseTitle: state.course.title, moduleTitle: mod.title, questionId: input.questionId, questionText, answerEnc })
-        .onConflictDoUpdate({ target: [journalEntries.memberId, journalEntries.moduleId, journalEntries.questionId], set: { answerEnc, questionText, courseTitle: state.course.title, moduleTitle: mod.title, updatedAt: new Date() } })
+        .values({ memberId: ctx.memberId, lessonId: lesson.id, courseTitle: state.course.title, lessonTitle: lesson.title, questionId: input.questionId, questionText, answerEnc })
+        .onConflictDoUpdate({ target: [journalEntries.memberId, journalEntries.lessonId, journalEntries.questionId], set: { answerEnc, questionText, courseTitle: state.course.title, lessonTitle: lesson.title, updatedAt: new Date() } })
         .returning({ id: journalEntries.id });
-      await touchEnrollment(ctx.memberId, mod.courseId);
+      await remember(ctx.memberId, { origin: memoryOrigin.answer(row.id), source: questionText ? "exercice" : "reflexion", sourceLabel: memoryLabel(section.title, lesson.title), courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, text: answerMemory(questionText, answer) });
+      await touchEnrollment(ctx.memberId, section.courseId);
       return { id: row.id };
     }),
 
@@ -138,99 +160,134 @@ export const coursesRouter = createRouter({
     return { ok: true };
   }),
 
-  /** Le défi dans le réseau : relevé ou non, avec une note facultative. */
-  saveChallenge: courseProc.input(z.object({ moduleId: z.number().int(), done: z.boolean(), note: z.string().max(4000).default("") })).mutation(async ({ ctx, input }) => {
+  /** Le défi d'une leçon : relevé ou non, avec une note facultative. */
+  saveChallenge: courseProc.input(z.object({ lessonId: z.number().int(), done: z.boolean(), note: z.string().max(4000).default("") })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    const { mod } = await readableModule(ctx.member, input.moduleId);
+    const { lesson, section } = await readableLesson(ctx.member, input.lessonId);
     const note = input.note.trim();
     const set = { challengeDoneAt: input.done ? new Date() : null, challengeNoteEnc: input.done && note ? seal(ctx.memberId, note) : "" };
-    const [before] = await db.select({ done: moduleProgress.challengeDoneAt }).from(moduleProgress).where(and(eq(moduleProgress.memberId, ctx.memberId), eq(moduleProgress.moduleId, mod.id))).limit(1);
-    await db.insert(moduleProgress).values({ memberId: ctx.memberId, moduleId: mod.id, openedAt: new Date(), ...set }).onConflictDoUpdate({ target: [moduleProgress.memberId, moduleProgress.moduleId], set });
-    if (input.done && !before?.done) await logActivity(ctx.memberId, "defi_releve", { courseId: mod.courseId, moduleId: mod.id, label: mod.title });
-    await touchEnrollment(ctx.memberId, mod.courseId);
+    const [before] = await db.select({ done: lessonProgress.challengeDoneAt }).from(lessonProgress).where(and(eq(lessonProgress.memberId, ctx.memberId), eq(lessonProgress.lessonId, lesson.id))).limit(1);
+    await db.insert(lessonProgress).values({ memberId: ctx.memberId, lessonId: lesson.id, openedAt: new Date(), ...set }).onConflictDoUpdate({ target: [lessonProgress.memberId, lessonProgress.lessonId], set });
+    if (input.done && !before?.done) await logActivity(ctx.memberId, "defi_releve", { courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, label: lesson.title });
+    const origin = memoryOrigin.lessonChallenge(lesson.id);
+    if (input.done) await remember(ctx.memberId, { origin, source: "defi", sourceLabel: memoryLabel(section.title, lesson.title), courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, text: challengeMemory(lesson.title, note) });
+    else await forget(ctx.memberId, origin);
+    await touchEnrollment(ctx.memberId, section.courseId);
+    return { ok: true };
+  }),
+
+  /** Le défi d'une section : facultatif, il ne compte pas pour terminer la section. */
+  saveSectionChallenge: courseProc.input(z.object({ sectionId: z.number().int(), done: z.boolean(), note: z.string().max(4000).default("") })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const { section, entry } = await readableSection(ctx.member, input.sectionId);
+    const note = input.note.trim();
+    const set = { challengeDoneAt: input.done ? new Date() : null, challengeNoteEnc: input.done && note ? seal(ctx.memberId, note) : "" };
+    await db.insert(sectionProgress).values({ memberId: ctx.memberId, sectionId: section.id, ...set }).onConflictDoUpdate({ target: [sectionProgress.memberId, sectionProgress.sectionId], set });
+    if (input.done && !entry.challengeDoneAt) await logActivity(ctx.memberId, "defi_releve", { courseId: section.courseId, sectionId: section.id, label: section.title });
+    const origin = memoryOrigin.sectionChallenge(section.id);
+    if (input.done) await remember(ctx.memberId, { origin, source: "defi", sourceLabel: memoryLabel(section.title, ""), courseId: section.courseId, sectionId: section.id, text: challengeMemory(section.title, note) });
+    else await forget(ctx.memberId, origin);
+    await touchEnrollment(ctx.memberId, section.courseId);
     return { ok: true };
   }),
 
   /** Le résultat d'un test intégré, reçu par la page. L'interface a déjà vérifié son origine. */
-  saveTestResult: courseProc.input(z.object({ moduleId: z.number().int(), result: resultSchema })).mutation(async ({ ctx, input }) => {
+  saveTestResult: courseProc.input(z.object({ lessonId: z.number().int(), result: resultSchema })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    const { mod, state } = await readableModule(ctx.member, input.moduleId);
-    if (!mod.testUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Ce module n’a pas de test." });
-    const [row] = await db.insert(testResults).values({ memberId: ctx.memberId, moduleId: mod.id, courseTitle: state.course.title, moduleTitle: mod.title, resultEnc: seal(ctx.memberId, JSON.stringify(input.result)) }).returning({ id: testResults.id });
-    await logActivity(ctx.memberId, "test_passe", { courseId: mod.courseId, moduleId: mod.id, label: mod.title });
-    await touchEnrollment(ctx.memberId, mod.courseId);
+    const { lesson, section, state } = await readableLesson(ctx.member, input.lessonId);
+    if (!lesson.testUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette leçon n’a pas de test." });
+    const raw = JSON.stringify(input.result);
+    const [row] = await db.insert(testResults).values({ memberId: ctx.memberId, lessonId: lesson.id, courseTitle: state.course.title, lessonTitle: lesson.title, resultEnc: seal(ctx.memberId, raw) }).returning({ id: testResults.id });
+    await logActivity(ctx.memberId, "test_passe", { courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, label: lesson.title });
+    await remember(ctx.memberId, { origin: memoryOrigin.test(row.id), source: "test", sourceLabel: memoryLabel(section.title, lesson.title), courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, text: testMemory(raw) });
+    await touchEnrollment(ctx.memberId, section.courseId);
     return { id: row.id };
   }),
 
-  /** « J'ai terminé » : c'est ce geste qui met à jour la mémoire du coach, si le membre l'a acceptée. */
-  complete: courseProc.input(z.object({ moduleId: z.number().int(), done: z.boolean() })).mutation(async ({ ctx, input }) => {
+  /** « J'ai terminé » : une section est terminée quand toutes ses leçons publiées le sont, la formation quand toutes ses sections le sont. */
+  complete: courseProc.input(z.object({ lessonId: z.number().int(), done: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    const { mod, state } = await readableModule(ctx.member, input.moduleId);
-    const [before] = await db.select().from(moduleProgress).where(and(eq(moduleProgress.memberId, ctx.memberId), eq(moduleProgress.moduleId, mod.id))).limit(1);
+    const { lesson, section, state } = await readableLesson(ctx.member, input.lessonId);
+    const [before] = await db.select().from(lessonProgress).where(and(eq(lessonProgress.memberId, ctx.memberId), eq(lessonProgress.lessonId, lesson.id))).limit(1);
     const firstTime = input.done && !before?.completedAt;
     const set = { completedAt: input.done ? (before?.completedAt ?? new Date()) : null };
-    await db.insert(moduleProgress).values({ memberId: ctx.memberId, moduleId: mod.id, openedAt: new Date(), ...set }).onConflictDoUpdate({ target: [moduleProgress.memberId, moduleProgress.moduleId], set });
-    await touchEnrollment(ctx.memberId, mod.courseId);
-    if (firstTime) await logActivity(ctx.memberId, "module_termine", { courseId: mod.courseId, moduleId: mod.id, label: mod.title });
-    // La formation est finie quand tous ses modules publiés le sont
-    const doneIds = new Set(state.modules.filter((m) => m.done).map((m) => m.id));
-    if (input.done) doneIds.add(mod.id); else doneIds.delete(mod.id);
-    const finished = state.modules.length > 0 && state.modules.every((m) => doneIds.has(m.id));
-    if (finished && !state.enrollment?.finishedAt) await logActivity(ctx.memberId, "formation_terminee", { courseId: mod.courseId, label: state.course.title });
-    await db.update(courseEnrollments).set({ finishedAt: finished ? (state.enrollment?.finishedAt ?? new Date()) : null }).where(and(eq(courseEnrollments.memberId, ctx.memberId), eq(courseEnrollments.courseId, mod.courseId)));
-    // En arrière-plan : la page n'attend pas le service d'IA. Une seule fois par module.
-    const settings = await memorySettings(ctx.memberId);
-    if (firstTime && memoryActive(settings) && before?.memoryStatus !== "fait") {
-      await db.update(moduleProgress).set({ memoryStatus: "en_attente" }).where(and(eq(moduleProgress.memberId, ctx.memberId), eq(moduleProgress.moduleId, mod.id)));
-      void rememberModule(ctx.memberId, mod.id);
+    await db.insert(lessonProgress).values({ memberId: ctx.memberId, lessonId: lesson.id, openedAt: new Date(), ...set }).onConflictDoUpdate({ target: [lessonProgress.memberId, lessonProgress.lessonId], set });
+    await touchEnrollment(ctx.memberId, section.courseId);
+    if (firstTime) await logActivity(ctx.memberId, "lecon_terminee", { courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, label: lesson.title });
+    const doneIds = new Set(state.lessons.filter((l) => l.done).map((l) => l.id));
+    if (input.done) doneIds.add(lesson.id); else doneIds.delete(lesson.id);
+    const entry = state.sections.find((s) => s.id === section.id);
+    const sectionDone = !!entry && entry.lessons.every((l) => doneIds.has(l.id));
+    if (sectionDone !== entry?.done) {
+      await db.insert(sectionProgress).values({ memberId: ctx.memberId, sectionId: section.id, openedAt: new Date(), completedAt: sectionDone ? new Date() : null }).onConflictDoUpdate({ target: [sectionProgress.memberId, sectionProgress.sectionId], set: { completedAt: sectionDone ? new Date() : null } });
+      if (sectionDone) await logActivity(ctx.memberId, "section_terminee", { courseId: section.courseId, sectionId: section.id, label: section.title });
     }
-    return { finished };
+    const finished = state.lessons.length > 0 && state.lessons.every((l) => doneIds.has(l.id));
+    if (finished && !state.enrollment?.finishedAt) await logActivity(ctx.memberId, "formation_terminee", { courseId: section.courseId, label: state.course.title });
+    await db.update(courseEnrollments).set({ finishedAt: finished ? (state.enrollment?.finishedAt ?? new Date()) : null }).where(and(eq(courseEnrollments.memberId, ctx.memberId), eq(courseEnrollments.courseId, section.courseId)));
+    return { finished, sectionDone };
   }),
 
   /** Tout mon journal : réponses, réflexions, résultats de tests et notes de défis. Visible de moi seul·e. */
   journal: courseProc.query(async ({ ctx }) => {
     const db = getDb();
-    const [entries, tests, challenges] = await Promise.all([
+    const [entries, tests, lessonChallenges, sectionChallenges] = await Promise.all([
       db.select().from(journalEntries).where(eq(journalEntries.memberId, ctx.memberId)).orderBy(desc(journalEntries.updatedAt)),
       db.select().from(testResults).where(eq(testResults.memberId, ctx.memberId)).orderBy(desc(testResults.passedAt)),
-      db.select({ moduleId: moduleProgress.moduleId, note: moduleProgress.challengeNoteEnc, doneAt: moduleProgress.challengeDoneAt, title: courseModules.title, courseId: courseModules.courseId }).from(moduleProgress).innerJoin(courseModules, eq(courseModules.id, moduleProgress.moduleId)).where(and(eq(moduleProgress.memberId, ctx.memberId))),
+      db.select({ lessonId: lessonProgress.lessonId, note: lessonProgress.challengeNoteEnc, doneAt: lessonProgress.challengeDoneAt, title: courseLessons.title }).from(lessonProgress).innerJoin(courseLessons, eq(courseLessons.id, lessonProgress.lessonId)).where(eq(lessonProgress.memberId, ctx.memberId)),
+      db.select({ sectionId: sectionProgress.sectionId, note: sectionProgress.challengeNoteEnc, doneAt: sectionProgress.challengeDoneAt, title: courseSections.title }).from(sectionProgress).innerJoin(courseSections, eq(courseSections.id, sectionProgress.sectionId)).where(eq(sectionProgress.memberId, ctx.memberId)),
     ]);
     return {
-      entries: entries.map((e) => ({ id: e.id, moduleId: e.moduleId, courseTitle: e.courseTitle, moduleTitle: e.moduleTitle, question: e.questionText, isNote: e.questionId === NOTE, answer: open(ctx.memberId, e.answerEnc), sharedAt: e.sharedAt, updatedAt: e.updatedAt })),
-      tests: tests.map((t) => ({ id: t.id, moduleId: t.moduleId, courseTitle: t.courseTitle, moduleTitle: t.moduleTitle, result: parseResult(open(ctx.memberId, t.resultEnc)), sharedAt: t.sharedAt, passedAt: t.passedAt })),
-      challenges: challenges.filter((c) => c.doneAt).map((c) => ({ moduleId: c.moduleId, moduleTitle: c.title, courseId: c.courseId, doneAt: c.doneAt, note: c.note ? open(ctx.memberId, c.note) : "" })),
+      entries: entries.map((e) => ({ id: e.id, lessonId: e.lessonId, courseTitle: e.courseTitle, lessonTitle: e.lessonTitle, question: e.questionText, isNote: e.questionId === NOTE, answer: open(ctx.memberId, e.answerEnc), sharedAt: e.sharedAt, updatedAt: e.updatedAt })),
+      tests: tests.map((t) => ({ id: t.id, lessonId: t.lessonId, courseTitle: t.courseTitle, lessonTitle: t.lessonTitle, result: parseResult(open(ctx.memberId, t.resultEnc)), sharedAt: t.sharedAt, passedAt: t.passedAt })),
+      challenges: [
+        ...lessonChallenges.filter((c) => c.doneAt).map((c) => ({ key: `lecon-${c.lessonId}`, title: c.title, doneAt: c.doneAt, note: c.note ? open(ctx.memberId, c.note) : "" })),
+        ...sectionChallenges.filter((c) => c.doneAt).map((c) => ({ key: `section-${c.sectionId}`, title: c.title, doneAt: c.doneAt, note: c.note ? open(ctx.memberId, c.note) : "" })),
+      ],
     };
   }),
 
-  /** Le coach annonce le module de la semaine sur le tableau de bord. */
-  weekModule: courseProc.query(async ({ ctx }) => {
+  /** Le coach annonce la section de la semaine sur le tableau de bord. */
+  weekSection: courseProc.query(async ({ ctx }) => {
     const rows = await memberCourses(ctx.member);
-    let best: { courseId: number; courseTitle: string; moduleId: number; title: string; position: number; intention: string; fresh: boolean; opensAt: Date | null } | null = null;
+    let best: { courseId: number; courseTitle: string; sectionId: number; title: string; intention: string; fresh: boolean; opensAt: Date | null; nextLesson: { id: number; title: string } | null } | null = null;
     for (const c of rows) {
       if (!c.enrollment) continue;
-      // Le dernier module ouvert et pas encore terminé : le plus récent passe devant
-      const open = [...c.modules].reverse().find((m) => m.open && !m.done);
-      if (open && (!best || (open.opensAt ?? new Date(0)) > (best.opensAt ?? new Date(0)))) best = { courseId: c.course.id, courseTitle: c.course.title, moduleId: open.id, title: open.title, position: open.position, intention: open.intention, fresh: !open.opened, opensAt: open.opensAt };
+      // La dernière section ouverte et pas encore terminée : la plus récente passe devant
+      const current = [...c.sections].reverse().find((s) => s.open && !s.done);
+      if (current && (!best || (current.opensAt ?? new Date(0)) > (best.opensAt ?? new Date(0)))) {
+        const lesson = current.lessons.find((l) => !l.done);
+        best = { courseId: c.course.id, courseTitle: c.course.title, sectionId: current.id, title: current.title, intention: current.intention, fresh: !current.opened, opensAt: current.opensAt, nextLesson: lesson ? { id: lesson.id, title: lesson.title } : null };
+      }
     }
-    if (best) return { kind: "module" as const, ...best };
+    if (best) return { kind: "section" as const, ...best };
     // Tout ce qui est ouvert est terminé : le coach annonce la suite
-    const coming = rows.flatMap((c) => (c.enrollment && c.next && !c.next.open ? [{ courseId: c.course.id, courseTitle: c.course.title, title: c.next.title, opensAt: c.next.opensAt }] : [])).sort((x, y) => +(x.opensAt ?? 0) - +(y.opensAt ?? 0))[0];
+    const coming = rows.flatMap((c) => {
+      const s = c.enrollment ? c.sections.find((x) => !x.open) : undefined;
+      return s ? [{ courseId: c.course.id, courseTitle: c.course.title, sectionId: s.id, title: s.title, opensAt: s.opensAt }] : [];
+    }).sort((x, y) => +(x.opensAt ?? 0) - +(y.opensAt ?? 0))[0];
     if (coming) return { kind: "next" as const, ...coming };
     const waiting = rows.find((c) => !c.enrollment);
     if (waiting && waiting.total > 0) return { kind: "start" as const, courseId: waiting.course.id, courseTitle: waiting.course.title, tagline: waiting.course.tagline };
     return null;
   }),
 
-  /** Les modules ouverts qui portent ce hashtag : le panneau les montre avec les publications du forum. */
+  /** Les leçons et sections ouvertes qui portent ce hashtag : le panneau les montre avec les publications du forum. */
   byHashtag: courseProc.input(z.object({ hashtagId: z.number().int() })).query(async ({ ctx, input }) => {
     const db = getDb();
-    const links = await db.select({ moduleId: courseModuleHashtags.moduleId }).from(courseModuleHashtags).where(eq(courseModuleHashtags.hashtagId, input.hashtagId));
-    if (!links.length) return [];
-    const ids = new Set(links.map((l) => l.moduleId));
+    const [lessonLinks, sectionLinks] = await Promise.all([
+      db.select({ id: courseLessonHashtags.lessonId }).from(courseLessonHashtags).where(eq(courseLessonHashtags.hashtagId, input.hashtagId)),
+      db.select({ id: courseSectionHashtags.sectionId }).from(courseSectionHashtags).where(eq(courseSectionHashtags.hashtagId, input.hashtagId)),
+    ]);
+    if (!lessonLinks.length && !sectionLinks.length) return [];
+    const lessonIds = new Set(lessonLinks.map((l) => l.id));
+    const sectionIds = new Set(sectionLinks.map((l) => l.id));
     const rows = await memberCourses(ctx.member);
-    return rows.flatMap((c) => c.modules.filter((m) => ids.has(m.id) && m.open).map((m) => ({ id: m.id, title: m.title, courseId: c.course.id, courseTitle: c.course.title })));
+    return rows.flatMap((c) => [
+      ...c.sections.filter((s) => sectionIds.has(s.id) && s.open).map((s) => ({ key: `section-${s.id}`, title: s.title, courseTitle: c.course.title, href: `/parcours/${c.course.id}#section-${s.id}` })),
+      ...c.lessons.filter((l) => lessonIds.has(l.id) && l.open).map((l) => ({ key: `lecon-${l.id}`, title: l.title, courseTitle: c.course.title, href: `/parcours/${c.course.id}/lecon/${l.id}` })),
+    ]);
   }),
-
 });
 
 export type TestResult = { label?: string; summary?: string; score?: number | string | null; details?: Record<string, string | number | boolean> };

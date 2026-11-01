@@ -57,7 +57,7 @@ Bouton : Compris
 - Messagerie : Écrivez directement à un membre. Votre premier message rapporte 10 miels.
 - Annuaire : L'annuaire du réseau. Cherchez un parcours, une ville, une envie.
 - Talk Show : Les talks des membres. Regardez, inspirez-vous, et proposez le vôtre.
-- Mon parcours : Vos formations. Un module s'ouvre chaque semaine, et vos réponses restent dans votre journal privé.
+- Mon parcours : Vos formations. Une section s'ouvre chaque semaine, et vos réponses restent dans votre journal privé.
 
 ## Animations du miel
 

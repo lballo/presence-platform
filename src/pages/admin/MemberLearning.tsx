@@ -14,7 +14,7 @@ export function MemberLearning({ memberId, name }: { memberId: number; name: str
   const tags = trpc.build.tags.useQuery();
   const [newTag, setNewTag] = useState("");
   const refresh = () => { utils.build.memberFile.invalidate({ memberId }); utils.build.tags.invalidate(); };
-  const access = trpc.build.setFullAccess.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.on ? "Accès complet donné : tous les modules sont ouverts" : "Accès complet retiré : retour au calendrier, ses réponses sont conservées"); }, onError: (e) => toast.error(e.message) });
+  const access = trpc.build.setFullAccess.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.on ? "Accès complet donné : toutes les sections sont ouvertes" : "Accès complet retiré : retour au calendrier, ses réponses sont conservées"); }, onError: (e) => toast.error(e.message) });
   const setTag = trpc.build.setMemberTag.useMutation({ onSuccess: refresh, onError: (e) => toast.error(e.message) });
   const createTag = trpc.build.createTag.useMutation({ onSuccess: (t) => { setNewTag(""); setTag.mutate({ memberId, tagId: t.id, on: true }); }, onError: (e) => toast.error(e.message) });
   const status = trpc.build.status.useQuery();
@@ -37,7 +37,7 @@ export function MemberLearning({ memberId, name }: { memberId: number; name: str
             <li key={c.id} className="py-2.5 border-t first:border-t-0 flex flex-wrap items-center gap-x-3 gap-y-2" style={{ borderColor: "var(--p-line)" }}>
               <Link to={`/admin/construire/${c.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
                 <span className="font-medium leading-snug">{c.title}</span>
-                <span className="text-[13px] p-muted">{c.startedAt ? `Commencée le ${fullDate(c.startedAt)} · ${c.done} module${c.done > 1 ? "s" : ""} sur ${c.total}` : "Pas commencée"}{c.status !== "publie" ? " · pas encore publiée" : ""}</span>
+                <span className="text-[13px] p-muted">{c.startedAt ? `Commencée le ${fullDate(c.startedAt)} · ${c.done} leçon${c.done > 1 ? "s" : ""} sur ${c.total}` : "Pas commencée"}{c.status !== "publie" ? " · pas encore publiée" : ""}</span>
               </Link>
               {c.finishedAt && <Badge tone="ok">Terminée</Badge>}
               {status.data?.emailReady && c.startedAt && !c.finishedAt && <ConfirmButton label={<><Mail size={14} /> Relancer</>} question={`Envoyer maintenant une relance par e-mail à ${name} pour cette formation ?`} confirm="Envoyer" disabled={remind.isPending} onConfirm={() => remind.mutate({ courseId: c.id, memberIds: [memberId] })} />}
@@ -76,8 +76,8 @@ export function MemberLearning({ memberId, name }: { memberId: number; name: str
         <h3 className="m-0 text-[22px]">Partagé avec vous</h3>
         <p className="m-0 text-[13.5px] p-muted">Le journal, les tests et la mémoire du coach sont privés. Vous ne voyez ici que ce que cette personne a choisi de vous montrer.</p>
         {sharedCount === 0 && <p className="m-0 text-[14px] p-muted">Rien de partagé pour l’instant.</p>}
-        {s?.entries.map((e) => <div key={`e${e.id}`} className="p-soft p-3.5 flex flex-col gap-1"><span className="text-[12.5px] p-muted">{e.moduleTitle} · journal</span>{e.question && <span className="font-medium">{e.question}</span>}<p className="m-0 text-[15px] whitespace-pre-line">{e.answer}</p></div>)}
-        {s?.tests.map((t) => <div key={`t${t.id}`} className="p-soft p-3.5 flex flex-col gap-1"><span className="text-[12.5px] p-muted">{t.moduleTitle} · test</span>{t.result?.label && <span className="font-medium">{t.result.label}</span>}<p className="m-0 text-[15px] whitespace-pre-line">{t.result?.summary}</p></div>)}
+        {s?.entries.map((e) => <div key={`e${e.id}`} className="p-soft p-3.5 flex flex-col gap-1"><span className="text-[12.5px] p-muted">{e.lessonTitle} · journal</span>{e.question && <span className="font-medium">{e.question}</span>}<p className="m-0 text-[15px] whitespace-pre-line">{e.answer}</p></div>)}
+        {s?.tests.map((t) => <div key={`t${t.id}`} className="p-soft p-3.5 flex flex-col gap-1"><span className="text-[12.5px] p-muted">{t.lessonTitle} · test</span>{t.result?.label && <span className="font-medium">{t.result.label}</span>}<p className="m-0 text-[15px] whitespace-pre-line">{t.result?.summary}</p></div>)}
         {s?.memory.map((m) => <div key={`m${m.id}`} className="p-soft p-3.5 flex flex-col gap-1"><span className="text-[12.5px] p-muted">{m.sourceLabel} · mémoire du coach</span><p className="m-0 text-[15px] whitespace-pre-line">{m.text}</p></div>)}
       </section>
 
