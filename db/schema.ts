@@ -877,6 +877,9 @@ export const workflows = pgTable("workflows", {
   title: text("title").notNull(),
   body: text("body").notNull().default(""),
   delayDays: integer("delay_days").notNull().default(0),
+  emailEnabled: boolean("email_enabled").notNull().default(false), // l'envoi automatique par e-mail s'active ici
+  emailSubject: text("email_subject").notNull().default(""),
+  emailBody: text("email_body").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -890,4 +893,37 @@ export const workflowRuns = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({ once: uniqueIndex("workflow_runs_workflow_key_member_id_ref_key").on(t.workflowKey, t.memberId, t.ref) })
+);
+
+// Relances par e-mail : une ligne de préférence seulement si le membre a choisi (server/lib/email.ts)
+export const emailPreferences = pgTable(
+  "email_preferences",
+  {
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 30 }).notNull(),
+    enabled: boolean("enabled").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.category] }) })
+);
+
+// Chaque envoi, ou chaque envoi écarté et pourquoi. Jamais l'adresse, jamais de contenu privé.
+export const emailSends = pgTable(
+  "email_sends",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 30 }).notNull(),
+    kind: varchar("kind", { length: 12 }).notNull(), // manuel | auto | essai
+    template: varchar("template", { length: 60 }).notNull().default(""),
+    courseId: integer("course_id"),
+    moduleId: integer("module_id"),
+    subject: text("subject").notNull().default(""),
+    status: varchar("status", { length: 12 }).notNull(), // envoye | ignore | echec
+    reason: varchar("reason", { length: 40 }).notNull().default(""),
+    providerId: varchar("provider_id", { length: 100 }).notNull().default(""),
+    sentBy: integer("sent_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ memberIdx: index("email_sends_member_idx").on(t.memberId, t.createdAt), courseIdx: index("email_sends_course_idx").on(t.courseId, t.memberId, t.createdAt) })
 );

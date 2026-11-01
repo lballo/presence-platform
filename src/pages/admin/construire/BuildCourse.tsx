@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowDown, ArrowLeft, ArrowUp, Eye, ExternalLink, FileText, Pencil, Plus, Video } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Eye, ExternalLink, FileText, Mail, Pencil, Plus, Trash2, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,7 @@ import type { CourseBlock } from "../../../../server/lib/courseBlocks";
 import { Badge, Chips, ConfirmButton, Rows, Select, type Column } from "../shared";
 import { ACCESS_LABEL, fullDate } from "../labels";
 import { BlockEditor, HashtagPicker } from "./BlockEditor";
+import { useFreshNotion } from "./useFreshNotion";
 import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, STATUS_LABEL, notionUrl, statusTone } from "./labels";
 
 type Course = RouterOutputs["build"]["course"];
@@ -19,7 +20,9 @@ type Tab = "modules" | "reglages" | "participants" | "stats";
 export default function BuildCourse() {
   const id = Number(useParams().id);
   const q = trpc.build.course.useQuery({ id }, { retry: false });
+  const status = trpc.build.status.useQuery();
   const [tab, setTab] = useState<Tab>("modules");
+  useFreshNotion(status.data);
   const [revision, setRevision] = useState(0);
   const back = <Link to="/admin/construire" className="p-btn-outline p-btn-sm no-underline self-start"><ArrowLeft size={15} /> Toutes les formations</Link>;
   if (q.isLoading) return <p className="p-muted text-center py-10 m-0">Chargement…</p>;
@@ -33,7 +36,7 @@ export default function BuildCourse() {
           <h2 className="m-0 text-[32px] leading-tight break-words">{c.emoji ? `${c.emoji} ` : ""}{c.title}</h2>
           <span className="flex flex-wrap items-center gap-1.5"><Badge tone={statusTone(c.status)}>{COURSE_STATUS_LABEL[c.status]}</Badge><Badge>{PUBLIC_LABEL[c.public]}</Badge><Badge>{RHYTHM_LABEL[c.rhythm]}</Badge></span>
         </div>
-        <a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a>
+        <span className="flex flex-wrap items-center gap-2"><CourseActions c={c} /><a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a></span>
       </header>
       {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses modules le sont.</p>}
       <Chips value={tab} onChange={setTab} label="Rubriques de la formation" options={[["modules", "Modules", c.modules.length], ["reglages", "Réglages"], ["participants", "Participants", c.participants.length], ["stats", "Statistiques"]]} />
@@ -45,10 +48,21 @@ export default function BuildCourse() {
   );
 }
 
+/** Publier ou dépublier en un clic : le statut change d'abord dans Notion. */
+function CourseActions({ c }: { c: Course }) {
+  const utils = trpc.useUtils();
+  const set = trpc.build.setCourseStatus.useMutation({ onSuccess: (_r, v) => { utils.build.invalidate(); toast.success(v.status === "publie" ? "Formation publiée dans Notion et ici" : "Formation dépubliée dans Notion et ici"); }, onError: (e) => toast.error(e.message) });
+  if (c.status === "publie") return <ConfirmButton label="Dépublier" question="Les membres ne verront plus cette formation. Leurs réponses restent dans leur journal." confirm="Dépublier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "brouillon" })} />;
+  return <ConfirmButton label="Publier la formation" className="p-btn-primary p-btn-sm" question="Les membres verront cette formation et ses modules publiés." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
+}
+
 function Modules({ c }: { c: Course }) {
   const utils = trpc.useUtils();
   const [adding, setAdding] = useState(false);
+  const refresh = () => utils.build.invalidate();
   const move = trpc.build.moveModule.useMutation({ onSuccess: () => utils.build.course.invalidate({ id: c.id }), onError: (e) => toast.error(e.message) });
+  const setStatus = trpc.build.setModuleStatus.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.status === "publie" ? "Module publié dans Notion et ici" : "Module dépublié dans Notion et ici"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  const archive = trpc.build.archiveModule.useMutation({ onSuccess: () => { refresh(); toast.success("Module supprimé, à la corbeille de Notion"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   return (
     <section className="flex flex-col gap-3" aria-label="Modules">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -65,12 +79,14 @@ function Modules({ c }: { c: Course }) {
               <span className="text-[12.5px] p-muted flex flex-wrap items-center gap-x-2.5">{m.durationMin ? <span>{m.durationMin} min</span> : null}{m.hasVideo && <span className="flex items-center gap-1"><Video size={12} /> vidéo</span>}{m.hasTest && <span className="flex items-center gap-1"><FileText size={12} /> test</span>}{m.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{m.issues.length} point{m.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
             </Link>
             <Badge tone={statusTone(m.status)}>{STATUS_LABEL[m.status]}</Badge>
+            <button type="button" className="p-btn-outline p-btn-sm flex-none" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: m.id, status: m.status === "publie" ? "brouillon" : "publie" })}>{m.status === "publie" ? "Dépublier" : "Publier"}</button>
             <span className="flex items-center gap-0.5 flex-none">
               <button type="button" aria-label={`Monter ${m.title}`} disabled={i === 0 || move.isPending} className="w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30" onClick={() => move.mutate({ id: m.id, direction: "up" })}><ArrowUp size={16} /></button>
               <button type="button" aria-label={`Descendre ${m.title}`} disabled={i === c.modules.length - 1 || move.isPending} className="w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30" onClick={() => move.mutate({ id: m.id, direction: "down" })}><ArrowDown size={16} /></button>
               <Link to={`/admin/construire/${c.id}/apercu/${m.id}`} aria-label={`Aperçu de ${m.title}`} title="Aperçu comme un membre" className="w-9 h-9 flex items-center justify-center rounded-lg p-muted"><Eye size={16} /></Link>
               <Link to={`/admin/construire/${c.id}/module/${m.id}`} aria-label={`Modifier ${m.title}`} title="Modifier" className="w-9 h-9 flex items-center justify-center rounded-lg p-muted"><Pencil size={16} /></Link>
             </span>
+            <ConfirmButton label={<Trash2 size={16} />} className="w-9 h-9 flex items-center justify-center rounded-lg p-muted flex-none" question={`Supprimer « ${m.title} » ? Il part à la corbeille de Notion et disparaît pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archive.isPending} onConfirm={() => archive.mutate({ id: m.id })} />
           </li>
         ))}
       </ol>
@@ -137,7 +153,23 @@ function Settings({ c, onSaved }: { c: Course; onSaved: () => void }) {
         <button type="button" className="p-btn-primary p-btn-sm self-start" disabled={!f.title.trim() || save.isPending} onClick={() => save.mutate({ id: c.id, ...f, description: f.description as never })}>{save.isPending ? "Écriture dans Notion…" : "Enregistrer"}</button>
       </section>
       {c.public === "attribution" && <Assignments c={c} />}
+      <DeleteCourse c={c} />
     </div>
+  );
+}
+
+function DeleteCourse({ c }: { c: Course }) {
+  const utils = trpc.useUtils();
+  const navigate = useNavigate();
+  const [typed, setTyped] = useState("");
+  const [open, setOpen] = useState(false);
+  const remove = trpc.build.archiveCourse.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Formation supprimée, à la corbeille de Notion"); navigate("/admin/construire"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  if (!open) return <button type="button" className="p-btn-ghost self-start" onClick={() => setOpen(true)}><Trash2 size={14} /> Supprimer cette formation</button>;
+  return (
+    <form className="p-3.5 rounded-xl flex flex-col gap-2.5 text-[14.5px]" style={{ background: "var(--p-accent-soft)" }} onSubmit={(e) => { e.preventDefault(); if (typed === "SUPPRIMER") remove.mutate({ id: c.id }); }}>
+      <label className="flex flex-col gap-1.5"><span>La formation et ses {c.modules.length} modules partent à la corbeille de Notion et disparaissent pour {c.participants.length} participant{c.participants.length > 1 ? "s" : ""}. Leurs réponses restent dans leur journal. Écrivez SUPPRIMER pour confirmer.</span><input className="p-field" value={typed} autoComplete="off" onChange={(e) => setTyped(e.target.value)} /></label>
+      <span className="flex flex-wrap gap-2"><button type="submit" className="p-btn-primary p-btn-sm" disabled={typed !== "SUPPRIMER" || remove.isPending}>Supprimer la formation</button><button type="button" className="p-btn-outline p-btn-sm" onClick={() => { setOpen(false); setTyped(""); }}>Annuler</button></span>
+    </form>
   );
 }
 
@@ -180,13 +212,24 @@ function Participants({ c }: { c: Course }) {
   const members = trpc.admin.members.useQuery();
   const [pick, setPick] = useState("");
   const access = trpc.build.setFullAccess.useMutation({ onSuccess: (_r, v) => { utils.build.course.invalidate({ id: c.id }); setPick(""); toast.success(v.on ? "Accès complet donné : tous les modules sont ouverts" : "Accès complet retiré : retour au calendrier, ses réponses sont conservées"); }, onError: (e) => toast.error(e.message) });
+  const status = trpc.build.status.useQuery();
+  const remind = trpc.build.sendReminders.useMutation({
+    onSuccess: (r) => {
+      utils.build.course.invalidate({ id: c.id });
+      const skipped = r.results.filter((x) => x.status !== "envoye");
+      if (r.sent) toast.success(`${r.sent} relance${r.sent > 1 ? "s" : ""} envoyée${r.sent > 1 ? "s" : ""} par e-mail`);
+      for (const x of skipped.slice(0, 5)) toast.info(`${x.name} : ${x.reasonLabel}`, { duration: 7000 });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const emailReady = !!status.data?.emailReady;
+  const inactive = c.participants.filter((p) => p.inactive && p.reminder && !p.unsubscribed);
   type Row = Course["participants"][number];
   const columns: Column<Row>[] = [
-    { key: "name", label: "Membre", cell: (p) => <span className="flex items-center gap-3 min-w-0"><Avatar m={p} size={34} /><span className="font-semibold truncate">{p.name}</span></span> },
-    { key: "started", label: "Commencée le", short: "Début", cell: (p) => fullDate(p.startedAt) },
+    { key: "name", label: "Membre", cell: (p) => <span className="flex items-center gap-3 min-w-0"><Avatar m={p} size={34} /><span className="flex flex-col min-w-0"><span className="font-semibold truncate">{p.name}</span><span className="text-[12.5px] p-muted">Commencée le {fullDate(p.startedAt)}</span></span></span> },
     { key: "done", label: "Modules terminés", short: "Terminés", cell: (p) => `${p.done} sur ${p.total}` },
-    { key: "last", label: "Dernière activité", short: "Activité", cell: (p) => fullDate(p.lastActivityAt) },
-    { key: "state", label: "État", cell: (p) => (p.finishedAt ? <Badge tone="ok">Terminée</Badge> : p.fullAccess ? <Badge tone="wait">Accès complet</Badge> : <Badge>Au calendrier</Badge>) },
+    { key: "last", label: "Dernière activité", short: "Activité", cell: (p) => <span className="flex flex-col"><span>{fullDate(p.lastActivityAt)}</span>{p.lastReminderAt && <span className="text-[12.5px] p-muted">Relance le {fullDate(p.lastReminderAt)}</span>}</span> },
+    { key: "state", label: "État", cell: (p) => <span className="flex flex-wrap justify-end md:justify-start gap-1">{p.finishedAt ? <Badge tone="ok">Terminée</Badge> : p.fullAccess ? <Badge tone="wait">Accès complet</Badge> : <Badge>Au calendrier</Badge>}{p.inactive && <Badge tone="alert">Inactif depuis 14 jours</Badge>}{p.unsubscribed && <Badge>Désinscrit·e des e-mails</Badge>}</span> },
   ];
   const others = (members.data ?? []).filter((m) => m.state !== "supprime" && !c.participants.some((p) => p.memberId === m.id));
   return (
@@ -195,10 +238,17 @@ function Participants({ c }: { c: Course }) {
         <Select label="Donner l’accès complet à un autre membre" value={pick} onChange={setPick} options={[["", "Choisir…"], ...others.map((m): [string, string] => [String(m.id), m.name])]} />
         <button type="button" className="p-btn-outline p-btn-sm h-[46px]" disabled={!pick || access.isPending} onClick={() => access.mutate({ courseId: c.id, memberId: Number(pick), on: true })}>Donner l’accès complet</button>
       </div>
+      {!emailReady && <p className="m-0 text-[13.5px] p-muted">L’envoi d’e-mails n’est pas encore configuré : les boutons de relance s’activeront avec la clé d’envoi.</p>}
+      {emailReady && inactive.length > 0 && <div className="flex flex-wrap items-center gap-2"><ConfirmButton label={<><Mail size={14} /> Relancer par e-mail {inactive.length > 1 ? `les ${inactive.length} personnes inactives` : "la personne inactive"}</>} question={`Envoyer maintenant un e-mail à ${inactive.length} personne${inactive.length > 1 ? "s" : ""} sans activité depuis 14 jours ?`} confirm="Envoyer" disabled={remind.isPending} onConfirm={() => remind.mutate({ courseId: c.id, memberIds: inactive.map((p) => p.memberId) })} /></div>}
       <Rows rows={c.participants} columns={columns} keyOf={(p) => p.memberId} empty="Personne n’a encore commencé cette formation." hrefOf={(p) => `/admin/membres/${p.memberId}`}
-        actions={(p) => p.fullAccess
-          ? <ConfirmButton label="Retirer l’accès complet" question={`Revenir au calendrier pour ${p.name} ? Ses réponses sont conservées.`} confirm="Retirer" disabled={access.isPending} onConfirm={() => access.mutate({ courseId: c.id, memberId: p.memberId, on: false })} />
-          : <button type="button" className="p-btn-outline p-btn-sm" disabled={access.isPending} onClick={() => access.mutate({ courseId: c.id, memberId: p.memberId, on: true })}>Donner l’accès complet</button>} />
+        actions={(p) => (
+          <>
+            {emailReady && p.reminder && !p.unsubscribed && <ConfirmButton label={<><Mail size={14} /> Relancer</>} question={`Envoyer maintenant à ${p.name} : ${p.reminder === "nouveau_module" ? "« Nouveau module disponible »" : "« Votre formation vous attend »"} ?`} confirm="Envoyer" disabled={remind.isPending} onConfirm={() => remind.mutate({ courseId: c.id, memberIds: [p.memberId] })} />}
+            {p.fullAccess
+              ? <ConfirmButton label="Retirer l’accès complet" question={`Revenir au calendrier pour ${p.name} ? Ses réponses sont conservées.`} confirm="Retirer" disabled={access.isPending} onConfirm={() => access.mutate({ courseId: c.id, memberId: p.memberId, on: false })} />
+              : <button type="button" className="p-btn-outline p-btn-sm" disabled={access.isPending} onClick={() => access.mutate({ courseId: c.id, memberId: p.memberId, on: true })}>Donner l’accès complet</button>}
+          </>
+        )} />
     </section>
   );
 }

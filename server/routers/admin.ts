@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
-  adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
+  adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, emailPreferences, emailSends, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
   honeyLedger, invitations, journalEntries, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, reports, swipes, talks, testResults, workflowRuns, type Member,
 } from "../../db/schema";
 import { logAdmin } from "../lib/adminLog";
@@ -97,6 +97,8 @@ async function anonymize(m: Member) {
     db.delete(memberTagLinks).where(eq(memberTagLinks.memberId, m.id)),
     db.delete(memberActivity).where(eq(memberActivity.memberId, m.id)),
     db.delete(workflowRuns).where(eq(workflowRuns.memberId, m.id)),
+    db.delete(emailPreferences).where(eq(emailPreferences.memberId, m.id)),
+    db.delete(emailSends).where(eq(emailSends.memberId, m.id)),
   ]);
 }
 

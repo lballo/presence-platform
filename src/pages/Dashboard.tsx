@@ -7,6 +7,7 @@ import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
 import { AgendaCalendar } from "@/components/events/AgendaCalendar";
 import { FirstSteps } from "@/components/onboarding/FirstSteps";
 import { WeekModule } from "@/components/course/WeekModule";
+import { EmailPreferences } from "@/components/EmailPreferences";
 import { ReplayTour } from "@/components/onboarding/Tour";
 import { Avatar } from "@/components/Avatar";
 import { useUpload } from "@/lib/upload";
@@ -26,6 +27,11 @@ export default function Dashboard() {
   const editing = editingProfile || askedProfile;
   const setEditing = (on: boolean) => { setEditingProfile(on); if (!on && askedProfile) setParams({}, { replace: true }); window.scrollTo(0, 0); };
   useEffect(() => { if (askedProfile) window.scrollTo(0, 0); }, [askedProfile]);
+  useEffect(() => {
+    if (window.location.hash !== "#mes-emails") return;
+    const t = window.setTimeout(() => document.getElementById("mes-emails")?.scrollIntoView(), 500);
+    return () => window.clearTimeout(t);
+  }, []);
   const today = new Date();
 
   return (
@@ -69,6 +75,8 @@ export default function Dashboard() {
       </section>
 
       <MiracleRoutine />
+
+      <EmailPreferences />
     </>
   );
 }

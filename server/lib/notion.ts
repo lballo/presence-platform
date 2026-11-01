@@ -88,6 +88,7 @@ export type NotionProperty = {
 export type NotionPage = {
   id: string;
   last_edited_time: string;
+  last_edited_by?: { id: string };
   in_trash?: boolean;
   icon?: { type: string; emoji?: string } | null;
   cover?: FileRef | null;
@@ -112,6 +113,13 @@ export async function listPages(dataSourceId: string): Promise<NotionPage[]> {
 }
 
 export const getPage = (id: string) => call<NotionPage>("GET", `/pages/${id}`);
+
+let botId: Promise<string> | null = null;
+/** L'identifiant de l'intégration : pour reconnaître ses propres écritures. */
+export function integrationId(): Promise<string> {
+  botId ??= call<{ id: string }>("GET", "/users/me").then((u) => u.id).catch((e: unknown) => { botId = null; throw e; });
+  return botId;
+}
 
 /** Ces blocs ont leur propre vie dans Notion : on ne descend pas dedans. */
 const OPAQUE = new Set(["child_page", "child_database", "synced_block", "column_list", "table", "unsupported"]);

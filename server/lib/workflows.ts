@@ -3,10 +3,11 @@ import { getDb } from "../queries/connection";
 import { courseEnrollments, courseModules, courses, members, moduleProgress, workflowRuns, workflows } from "../../db/schema";
 import { logActivity } from "./activity";
 import { moduleOpensAt } from "./courseAccess";
+import { fillTemplate as fill } from "./email";
 import { notify } from "./notify";
+import { reminderPlan, sendCourseReminder } from "./reminders";
 
 const DAY = 86400000;
-const fill = (t: string, values: Record<string, string>) => t.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => values[k] ?? "");
 
 /** Une relance ne part qu'une fois pour un même objet. Renvoie true si elle vient d'être enregistrée. */
 async function once(workflowKey: string, memberId: number, ref: string): Promise<boolean> {
@@ -15,7 +16,8 @@ async function once(workflowKey: string, memberId: number, ref: string): Promise
 }
 
 /**
- * Les modèles de relance. Rien n'est envoyé hors de l'application : une notification dans la cloche.
+ * Les modèles de relance : une notification dans la cloche, et un e-mail si l'administration a activé l'envoi automatique.
+ * Activer l'e-mail ne rattrape pas les relances déjà parties : pas d'envoi en rafale.
  * Appelé régulièrement (server/lib/scheduler.ts) et depuis l'onglet Construire.
  */
 export async function runWorkflows(now = new Date()) {
@@ -23,7 +25,7 @@ export async function runWorkflows(now = new Date()) {
   const models = await db.select().from(workflows).where(eq(workflows.active, true));
   const counts: Record<string, number> = {};
   const enrollments = await db
-    .select({ enrollment: courseEnrollments, course: courses })
+    .select({ enrollment: courseEnrollments, course: courses, member: members })
     .from(courseEnrollments)
     .innerJoin(courses, eq(courses.id, courseEnrollments.courseId))
     .innerJoin(members, eq(members.id, courseEnrollments.memberId))
@@ -32,7 +34,7 @@ export async function runWorkflows(now = new Date()) {
   const fresh = models.find((m) => m.key === "nouveau_module");
   if (fresh) {
     counts[fresh.key] = 0;
-    for (const { enrollment: e, course } of enrollments) {
+    for (const { enrollment: e, course, member } of enrollments) {
       if (course.rhythm === "complet" || e.fullAccessAt) continue; // tout est déjà ouvert
       const mods = await db.select().from(courseModules).where(and(eq(courseModules.courseId, course.id), eq(courseModules.status, "publie"), isNull(courseModules.archivedAt)));
       for (const m of mods) {
@@ -47,6 +49,7 @@ export async function runWorkflows(now = new Date()) {
         await notify([e.memberId], { title: fill(fresh.title, values), body: fill(fresh.body, values), href: `/parcours/${course.id}/module/${m.id}` });
         await logActivity(e.memberId, "module_disponible", { courseId: course.id, moduleId: m.id, label: m.title });
         counts[fresh.key]++;
+        if (fresh.emailEnabled) await sendCourseReminder(member, course, { template: "nouveau_module", moduleId: m.id, moduleTitle: m.title }, { kind: "auto" });
       }
     }
   }
@@ -55,7 +58,7 @@ export async function runWorkflows(now = new Date()) {
   if (pause) {
     counts[pause.key] = 0;
     const limit = new Date(now.getTime() - pause.delayDays * DAY);
-    for (const { enrollment: e, course } of enrollments) {
+    for (const { enrollment: e, course, member } of enrollments) {
       if (e.lastActivityAt > limit) continue;
       // Une relance par période d'inactivité : reprendre puis s'arrêter à nouveau en redéclenche une
       if (!(await once(pause.key, e.memberId, `pause:${course.id}:${e.lastActivityAt.toISOString().slice(0, 10)}`))) continue;
@@ -63,6 +66,10 @@ export async function runWorkflows(now = new Date()) {
       await notify([e.memberId], { title: fill(pause.title, values), body: fill(pause.body, values), href: `/parcours/${course.id}` });
       await logActivity(e.memberId, "formation_en_pause", { courseId: course.id, label: course.title });
       counts[pause.key]++;
+      if (pause.emailEnabled) {
+        const plan = await reminderPlan(member, course.id);
+        if (plan) await sendCourseReminder(member, course, { ...plan, template: "formation_pause" }, { kind: "auto" });
+      }
     }
   }
   return counts;

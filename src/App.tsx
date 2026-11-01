@@ -40,6 +40,7 @@ import MotDePasseOublie from "@/pages/auth/MotDePasseOublie";
 import ChoisirMotDePasse from "@/pages/auth/ChoisirMotDePasse";
 import Invitation from "@/pages/auth/Invitation";
 import AccesTermine from "@/pages/auth/AccesTermine";
+import Desinscription from "@/pages/auth/Desinscription";
 
 export default function App() {
   return (
@@ -51,6 +52,7 @@ export default function App() {
       <Route path="/choisir-mot-de-passe" element={<ChoisirMotDePasse />} />
       <Route path="/invitation/:token" element={<Invitation />} />
       <Route path="/acces-termine" element={<AccesTermine />} />
+      <Route path="/desinscription" element={<Desinscription />} />
       <Route element={<OnboardingGate />}>
         <Route path="/e/:slug" element={<EventPage />} />
         <Route path="/e/:slug/confirmation" element={<EventPage />} />

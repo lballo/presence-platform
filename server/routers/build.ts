@@ -4,8 +4,8 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
-  coachMemory, courseAssignments, courseEnrollments, courseHashtags, courseModuleHashtags, courseModules, courses, hashtags, journalEntries, memberActivity, memberTagLinks, memberTags,
-  members, moduleProgress, testResults, workflows, type Course, type CourseModule,
+  coachMemory, courseAssignments, courseEnrollments, courseHashtags, courseModuleHashtags, courseModules, courses, emailSends, hashtags, journalEntries, memberActivity, memberTagLinks, memberTags,
+  members, moduleProgress, testResults, workflows, type Course, type CourseModule, type Member,
 } from "../../db/schema";
 import { ACTIVITY_LABEL, logActivity } from "../lib/activity";
 import { processPendingMemories } from "../lib/coachMemory";
@@ -13,13 +13,15 @@ import { logAdmin } from "../lib/adminLog";
 import { testUrlProblem } from "../lib/courseAccess";
 import { emptySections, SECTIONS, type CourseBlock, type ModuleContent, type Sections } from "../lib/courseBlocks";
 import { moduleView } from "../lib/courseState";
+import { EMAIL_CATEGORIES, emailReady, fillTemplate, memberPreferences } from "../lib/email";
 import { env } from "../lib/env";
 import { appendBlocks, getPage, listTemplates, notionReady, updatePage } from "../lib/notion";
 import { cleanInline, heading2 } from "../lib/notionBlocks";
 import { lastSync, refreshCourse, refreshModule, syncAll, syncCoursePage, syncModulePage, syncRunning } from "../lib/notionSync";
-import { asTrpcError, assertNotionReady, assertUnchanged, courseProperties, createCoursePage, createModulePage, moduleProperties, writeList, writeSections } from "../lib/notionWrite";
+import { asTrpcError, assertNotionReady, assertUnchanged, COURSE_STATUS, courseProperties, createCoursePage, createModulePage, MODULE_STATUS, moduleProperties, writeList, writeSections } from "../lib/notionWrite";
 import { notify } from "../lib/notify";
 import { open, privateBoxReady } from "../lib/privateBox";
+import { reminderPlan, sendCourseReminder, sendMemberEmail, SKIP_LABEL } from "../lib/reminders";
 import { isOurImage, storageReady } from "../lib/storage";
 import { runWorkflows, workflowOverview } from "../lib/workflows";
 import { parseResult } from "./courses";
@@ -139,11 +141,31 @@ async function participants(courseId: number) {
   const rows = await db.select({ e: courseEnrollments, m: members }).from(courseEnrollments).innerJoin(members, eq(members.id, courseEnrollments.memberId)).where(eq(courseEnrollments.courseId, courseId)).orderBy(desc(courseEnrollments.startedAt));
   const mods = await db.select({ id: courseModules.id }).from(courseModules).where(and(eq(courseModules.courseId, courseId), eq(courseModules.status, "publie"), isNull(courseModules.archivedAt)));
   const progress = mods.length && rows.length ? await db.select().from(moduleProgress).where(and(inArray(moduleProgress.moduleId, mods.map((m) => m.id)), inArray(moduleProgress.memberId, rows.map((r) => r.e.memberId)))) : [];
-  return rows.map(({ e, m }) => ({
+  const sends = rows.length ? await db.select({ memberId: emailSends.memberId, at: emailSends.createdAt }).from(emailSends).where(and(eq(emailSends.courseId, courseId), eq(emailSends.status, "envoye"), inArray(emailSends.memberId, rows.map((r) => r.e.memberId)))).orderBy(desc(emailSends.createdAt)) : [];
+  const now = Date.now();
+  return Promise.all(rows.map(async ({ e, m }) => ({
     memberId: m.id, name: fullName(m), photoUrl: m.photoUrl, initials: `${m.firstName[0] ?? ""}${m.lastName[0] ?? ""}`.toUpperCase(),
     startedAt: e.startedAt, lastActivityAt: e.lastActivityAt, finishedAt: e.finishedAt, fullAccess: !!e.fullAccessAt,
     done: progress.filter((p) => p.memberId === m.id && p.completedAt).length, total: mods.length,
-  }));
+    inactive: !e.finishedAt && now - e.lastActivityAt.getTime() >= 14 * DAY,
+    lastReminderAt: sends.find((x) => x.memberId === m.id)?.at ?? null,
+    unsubscribed: !(await memberPreferences(m.id)).formations,
+    reminder: (await reminderPlan(m, courseId))?.template ?? null,
+  })));
+}
+
+/** Relancer par e-mail, après le clic de l'administration. Chaque personne écartée l'est pour une raison affichée. */
+async function remind(actor: Member, courseId: number, memberIds: number[]) {
+  const course = await requireCourse(courseId);
+  const people = memberIds.length ? await getDb().select().from(members).where(inArray(members.id, memberIds)) : [];
+  const results = [];
+  for (const m of people) {
+    const plan = await reminderPlan(m, courseId);
+    const r = plan ? await sendCourseReminder(m, course, plan, { kind: "manuel", sentBy: actor.id }) : { status: "ignore" as const, reason: "a_jour" };
+    results.push({ memberId: m.id, name: fullName(m), status: r.status, reason: r.reason, reasonLabel: SKIP_LABEL[r.reason] ?? "" });
+    if (r.status === "envoye") await logAdmin(actor, { action: "Relance envoyée par e-mail", targetType: "membre", targetId: m.id, label: fullName(m), detail: course.title });
+  }
+  return { sent: results.filter((r) => r.status === "envoye").length, results };
 }
 
 /** Donner ou retirer l'accès complet : réversible, le journal et les réponses restent. */
@@ -165,7 +187,7 @@ async function setFullAccess(actor: Parameters<typeof logAdmin>[0], courseId: nu
 export const buildRouter = createRouter({
   /** L'état de la liaison avec Notion. */
   status: buildProc.query(async () => ({
-    notionReady: notionReady(), storageReady: storageReady(), privateBoxReady: privateBoxReady(), aiReady: !!env.geminiApiKey,
+    notionReady: notionReady(), storageReady: storageReady(), privateBoxReady: privateBoxReady(), aiReady: !!env.geminiApiKey, emailReady: emailReady(),
     running: syncRunning(), lastSync: await lastSync(),
   })),
 
@@ -347,6 +369,49 @@ export const buildRouter = createRouter({
     return { ok: true };
   }),
 
+  /** Publier ou dépublier un module en un clic : le statut change dans Notion, puis la page est relue. */
+  setModuleStatus: buildProc.input(z.object({ id: z.number().int(), status: statusSchema })).mutation(async ({ ctx, input }) => {
+    assertNotionReady();
+    const m = await requireModule(input.id);
+    try {
+      await assertUnchanged(m.notionPageId, m.notionEditedAt);
+      await updatePage(m.notionPageId, { properties: { Statut: { status: { name: MODULE_STATUS[input.status] } } } });
+      await refreshModule(m);
+    } catch (e) { throw asTrpcError(e); }
+    await logAdmin(ctx.member, { action: input.status === "publie" ? "Module publié" : "Module dépublié", targetType: "module", targetId: m.id, label: m.title });
+    return { ok: true };
+  }),
+
+  setCourseStatus: buildProc.input(z.object({ id: z.number().int(), status: statusSchema })).mutation(async ({ ctx, input }) => {
+    assertNotionReady();
+    const c = await requireCourse(input.id);
+    try {
+      await assertUnchanged(c.notionPageId, c.notionEditedAt);
+      await updatePage(c.notionPageId, { properties: { Statut: { status: { name: COURSE_STATUS[input.status] } } } });
+      await refreshCourse(c);
+    } catch (e) { throw asTrpcError(e); }
+    await logAdmin(ctx.member, { action: input.status === "publie" ? "Formation publiée" : "Formation dépubliée", targetType: "formation", targetId: c.id, label: c.title });
+    return { ok: true };
+  }),
+
+  /** Supprimer une formation : elle et ses modules vont à la corbeille de Notion. Le journal des membres reste. */
+  archiveCourse: buildProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+    assertNotionReady();
+    const c = await requireCourse(input.id);
+    const mods = await getDb().select().from(courseModules).where(and(eq(courseModules.courseId, c.id), isNull(courseModules.archivedAt)));
+    const now = new Date();
+    try {
+      for (const m of mods) {
+        await updatePage(m.notionPageId, { in_trash: true });
+        await getDb().update(courseModules).set({ archivedAt: now }).where(eq(courseModules.id, m.id));
+      }
+      await updatePage(c.notionPageId, { in_trash: true });
+    } catch (e) { throw asTrpcError(e); }
+    await getDb().update(courses).set({ archivedAt: now }).where(eq(courses.id, c.id));
+    await logAdmin(ctx.member, { action: "Formation supprimée", targetType: "formation", targetId: c.id, label: c.title, detail: `${mods.length} module(s) à la corbeille de Notion` });
+    return { ok: true };
+  }),
+
   /** Aperçu comme un membre : même affichage, quel que soit le statut, sans rien enregistrer. */
   preview: buildProc.input(z.object({ id: z.number().int() })).query(async ({ input }) => {
     const m = await requireModule(input.id);
@@ -418,6 +483,7 @@ export const buildRouter = createRouter({
     ]);
     const mods = await db.select({ id: courseModules.id, courseId: courseModules.courseId }).from(courseModules).where(and(eq(courseModules.status, "publie"), isNull(courseModules.archivedAt)));
     const progress = await db.select({ moduleId: moduleProgress.moduleId }).from(moduleProgress).where(and(eq(moduleProgress.memberId, input.memberId), isNotNull(moduleProgress.completedAt)));
+    const [prefs, sends] = await Promise.all([memberPreferences(input.memberId), db.select().from(emailSends).where(eq(emailSends.memberId, input.memberId)).orderBy(desc(emailSends.createdAt)).limit(10)]);
     return {
       courses: list.map((c) => {
         const e = enrollments.find((x) => x.courseId === c.id);
@@ -426,6 +492,8 @@ export const buildRouter = createRouter({
       }),
       tags,
       activity: activity.map((a) => ({ id: a.id, type: a.type, typeLabel: ACTIVITY_LABEL[a.type] ?? a.type, label: a.label, at: a.createdAt })),
+      emailPrefs: Object.entries(prefs).map(([key, enabled]) => ({ key, label: EMAIL_CATEGORIES[key as keyof typeof EMAIL_CATEGORIES].label, enabled })),
+      emailSends: sends.map((x) => ({ id: x.id, subject: x.subject, status: x.status, reasonLabel: SKIP_LABEL[x.reason] ?? "", kind: x.kind, at: x.createdAt })),
     };
   }),
 
@@ -448,11 +516,28 @@ export const buildRouter = createRouter({
 
   workflows: buildProc.query(() => workflowOverview()),
 
-  updateWorkflow: buildProc.input(z.object({ key: z.string().max(60), active: z.boolean(), title: z.string().trim().min(1).max(200), body: z.string().trim().max(600) })).mutation(async ({ ctx, input }) => {
-    const [row] = await getDb().update(workflows).set({ active: input.active, title: input.title, body: input.body, updatedAt: new Date() }).where(eq(workflows.key, input.key)).returning();
-    if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Modèle introuvable." });
-    await logAdmin(ctx.member, { action: "Relance modifiée", targetType: "relance", label: row.name, detail: input.active ? "Active" : "Désactivée" });
-    return { ok: true };
+  updateWorkflow: buildProc
+    .input(z.object({ key: z.string().max(60), active: z.boolean(), title: z.string().trim().min(1).max(200), body: z.string().trim().max(600), emailEnabled: z.boolean(), emailSubject: z.string().trim().min(1, "Indiquez l’objet de l’e-mail.").max(200), emailBody: z.string().trim().min(1, "Écrivez le texte de l’e-mail.").max(4000) }))
+    .mutation(async ({ ctx, input }) => {
+      const { key, ...set } = input;
+      const [row] = await getDb().update(workflows).set({ ...set, updatedAt: new Date() }).where(eq(workflows.key, key)).returning();
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Modèle introuvable." });
+      await logAdmin(ctx.member, { action: "Relance modifiée", targetType: "relance", label: row.name, detail: `Notification ${input.active ? "active" : "désactivée"} · e-mail automatique ${input.emailEnabled ? "actif" : "désactivé"}` });
+      return { ok: true };
+    }),
+
+  /** Relancer par e-mail un ou plusieurs participants, au clic. */
+  sendReminders: buildProc.input(z.object({ courseId: z.number().int(), memberIds: z.array(z.number().int()).min(1).max(500) })).mutation(({ ctx, input }) => remind(ctx.member, input.courseId, input.memberIds)),
+
+  /** Recevoir soi-même un exemple d'un modèle, pour le relire ou vérifier que l'envoi fonctionne. */
+  sendTestEmail: buildProc.input(z.object({ key: z.string().max(60) })).mutation(async ({ ctx, input }) => {
+    const [model] = await getDb().select().from(workflows).where(eq(workflows.key, input.key)).limit(1);
+    if (!model) throw new TRPCError({ code: "NOT_FOUND", message: "Modèle introuvable." });
+    if (!emailReady()) throw new TRPCError({ code: "PRECONDITION_FAILED", message: SKIP_LABEL.sans_cle });
+    const values = { prenom: ctx.member.firstName, module: "Exemple de module", formation: "Exemple de formation" };
+    const r = await sendMemberEmail(ctx.member, { category: "formations", kind: "essai", template: model.key, subject: `[Essai] ${fillTemplate(model.emailSubject, values)}`, body: fillTemplate(model.emailBody, values), cta: { label: "Voir mes formations", href: `${env.appUrl}/parcours` } });
+    if (r.status !== "envoye") throw new TRPCError({ code: "BAD_GATEWAY", message: SKIP_LABEL[r.reason] ?? "L’envoi a échoué." });
+    return { to: ctx.member.email };
   }),
 
   /** Lancer le travail régulier sans attendre : mémoires en attente, puis relances. */

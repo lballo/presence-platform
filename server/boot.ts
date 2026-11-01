@@ -23,6 +23,7 @@ app.get("/api/health", async (c) => {
     MEMBERSHIP_URL: !!env.membershipUrl,
     NOTION_TOKEN: !!env.notionToken,
     PRIVATE_DATA_KEY: !!env.privateDataKey,
+    RESEND_API_KEY: !!env.resendApiKey,
     runtime: process.env.VERCEL ? "vercel" : process.env.RENDER ? "render" : "node",
   };
   if (!env.databaseUrl) return c.json({ ok: false, error: "DATABASE_URL manquante", config }, 500);
@@ -43,6 +44,13 @@ app.get("/api/config", (c) => c.json({ supabaseUrl: env.supabaseUrl, supabaseAno
 app.onError((err, c) => {
   console.error(err);
   return c.json({ error: err.message }, 500);
+});
+
+// Désinscription en un clic depuis la messagerie (en-tête List-Unsubscribe-Post) : sans compte, le lien signé suffit.
+app.post("/api/email/desinscription", async (c) => {
+  const { unsubscribeFromLink } = await import("./lib/email");
+  const ok = await unsubscribeFromLink(c.req.query("m"), c.req.query("c"), c.req.query("t"));
+  return ok ? c.text("Désinscription enregistrée.") : c.text("Lien invalide.", 400);
 });
 
 app.use("/api/trpc/*", async (c) =>

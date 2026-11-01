@@ -34,6 +34,7 @@ npm run dev                 # http://localhost:3000
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Connexion des membres (obligatoires), invitations, et envoi des vidéos dans Supabase Storage. |
 | `NOTION_TOKEN` | Clé de l'intégration interne Notion, connectée à la seule page « Formations Présence » (droits : lecture, modification, insertion). Sans elle : rien ne se synchronise, Construire le signale. |
 | `PRIVATE_DATA_KEY` | Clé de chiffrement du journal, des résultats de tests et de la mémoire du coach : `openssl rand -base64 32`. À garder aussi en lieu sûr, car sans elle ces contenus deviennent illisibles. Sans cette variable, les membres ne peuvent pas écrire dans leur journal. |
+| `RESEND_API_KEY` | Envoi des relances par e-mail, domaine `lauraballo.com` vérifié chez Resend. Sans elle : notifications dans l'application seulement. |
 | `CALENDLY_URL` | Lien de réservation des séances de coaching (bandeau du tableau de bord) |
 | `CALENDLY_EXPLO_URL` | Lien « Réserver votre session exploratoire » (membres non accompagnés) |
 
@@ -131,7 +132,8 @@ Connectées à Notion (espace « Formations Présence », bases Formations et Mo
 - **Données privées** : chiffrées par `server/lib/privateBox.ts`, chaque texte lié à son membre. L'administration ne lit que ce qui est partagé (`build.memberShared`). Le journal d'activité ne contient aucun texte de membre.
 - **Coach** : après un module terminé, `server/lib/coachMemory.ts` retient l'essentiel en suivant « Ce que le coach IA retient », si le membre a accepté (`COACH_CONSENT`, version gardée avec l'accord). Un élément effacé ne revient pas. Les conversations du coach (`coach_messages`) ne sont pas chiffrées.
 - **Tests intégrés** : pages HTML sur un autre domaine, résultat par `postMessage`, tout message d'une autre origine est ignoré. Voir [docs/integrer-un-test.md](docs/integrer-un-test.md).
-- **Relances** : `server/lib/workflows.ts`, modèles « Nouveau module disponible » et « Formation en pause depuis 14 jours », notifications dans l'application uniquement.
+- **Relances** : `server/lib/workflows.ts`, modèles « Nouveau module disponible » et « Formation en pause depuis 14 jours » : notification dans l'application, et e-mail automatique si l'administration l'active. Relance manuelle depuis les participants ou la fiche d'un membre (`server/lib/reminders.ts`), jamais deux en 24 heures pour une même formation.
+- **E-mails** : `server/lib/email.ts`, envoi par l'API de Resend, car l'offre gratuite de Render bloque le SMTP. Chaque membre choisit ses catégories (`EMAIL_CATEGORIES` : formations, événements, marketing) dans son tableau de bord ; le marketing est désactivé par défaut. Chaque e-mail porte un lien signé de désinscription (`/desinscription`) et l'en-tête de désinscription en un clic. Tout nouvel envoi de relance doit passer par `sendMemberEmail`, qui respecte ces choix et laisse une trace dans `email_sends`.
 
 ## Profils
 

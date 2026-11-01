@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { env } from "./env";
-import { appendBlocks, createPage, deleteBlock, getDataSource, getPage, notionMessage, notionReady, updateBlock, type NotionBlock, type NotionPage } from "./notion";
+import { appendBlocks, createPage, deleteBlock, getDataSource, getPage, integrationId, notionMessage, notionReady, updateBlock, type NotionBlock, type NotionPage } from "./notion";
 import { blockPatch, heading2, labelFromTag, moduleSkeleton, normalizeTag, plainToRichText, sameBlock, sameKind, toNotionBlock } from "./notionBlocks";
 import { SECTIONS, type CourseBlock, type ModuleContent, type Sections } from "./courseBlocks";
 
@@ -14,10 +14,13 @@ export function asTrpcError(e: unknown): TRPCError {
   return new TRPCError({ code: "BAD_GATEWAY", message: notionMessage(e) });
 }
 
-/** Notion a changé depuis la dernière synchronisation : on n'écrase pas, on invite à synchroniser. */
+/**
+ * Quelqu'un a changé cette page dans Notion depuis la dernière synchronisation : on n'écrase pas, on invite à synchroniser.
+ * Une date plus récente laissée par nos propres écritures n'est pas un conflit.
+ */
 export async function assertUnchanged(pageId: string, knownEditedAt: Date | null): Promise<NotionPage> {
   const page = await getPage(pageId);
-  if (knownEditedAt && new Date(page.last_edited_time) > knownEditedAt) {
+  if (knownEditedAt && new Date(page.last_edited_time) > knownEditedAt && page.last_edited_by?.id !== (await integrationId())) {
     throw new TRPCError({ code: "CONFLICT", message: "Cette page a changé dans Notion depuis la dernière synchronisation. Cliquez sur « Synchroniser maintenant », puis reprenez votre modification." });
   }
   return page;
@@ -37,8 +40,8 @@ async function notionLabels(dataSourceId: string, names: string[]): Promise<{ na
 }
 
 export type ModuleProps = { title: string; position: number; status: "brouillon" | "relecture" | "publie"; intention: string; durationMin: number | null; videoUrl: string; testUrl: string; coachBrief: string; hashtags: string[] };
-const MODULE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publié" } as const;
-const COURSE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publiée" } as const;
+export const MODULE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publié" } as const;
+export const COURSE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publiée" } as const;
 
 export async function moduleProperties(p: ModuleProps) {
   return {

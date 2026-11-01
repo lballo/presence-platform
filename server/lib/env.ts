@@ -28,6 +28,11 @@ export const env = {
   // Clé de chiffrement du journal, des résultats de tests et de la mémoire du coach (32 octets en base64)
   privateDataKey: process.env.PRIVATE_DATA_KEY ?? "",
   geminiApiBase: (process.env.GEMINI_API_BASE ?? "https://generativelanguage.googleapis.com").replace(/\/$/, ""),
+  // Relances par e-mail : l'offre gratuite de Render bloque le SMTP, l'envoi passe donc par l'API de Resend
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  emailApiBase: (process.env.EMAIL_API_BASE ?? "https://api.resend.com").replace(/\/$/, ""),
+  emailFrom: process.env.EMAIL_FROM ?? "Laura Ballo <contact@lauraballo.com>",
+  emailReplyTo: process.env.EMAIL_REPLY_TO ?? "contact@lauraballo.com",
   calendlyUrl: process.env.CALENDLY_URL ?? "",
   calendlyExploUrl: process.env.CALENDLY_EXPLO_URL ?? "",
 };

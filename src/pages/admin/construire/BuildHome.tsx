@@ -8,6 +8,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Badge, Select } from "../shared";
 import { dateTime } from "../labels";
 import { HashtagPicker } from "./BlockEditor";
+import { useFreshNotion } from "./useFreshNotion";
 import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, statusTone } from "./labels";
 
 type Flow = RouterOutputs["build"]["workflows"][number];
@@ -17,6 +18,7 @@ export default function BuildHome() {
   const list = trpc.build.courses.useQuery();
   const status = trpc.build.status.useQuery();
   const [creating, setCreating] = useState(false);
+  useFreshNotion(status.data);
   return (
     <div className="flex flex-col gap-6">
       <NotionBar />
@@ -73,6 +75,7 @@ function NotionBar() {
       </div>
       {!s.privateBoxReady && <p className="m-0 text-[13.5px]" style={{ color: "var(--p-accent-text)" }}>La clé de chiffrement (PRIVATE_DATA_KEY) manque : les membres ne peuvent pas encore écrire dans leur journal.</p>}
       {!s.aiReady && <p className="m-0 text-[13.5px] p-muted">Sans clé Gemini, le coach retient seulement ce que les membres ont écrit, tel quel.</p>}
+      {!s.emailReady && <p className="m-0 text-[13.5px] p-muted">L’envoi d’e-mails n’est pas encore configuré (RESEND_API_KEY) : les relances restent des notifications dans l’application.</p>}
     </section>
   );
 }
@@ -115,6 +118,7 @@ function CreateCourse({ open, onClose }: { open: boolean; onClose: () => void })
 function Workflows() {
   const utils = trpc.useUtils();
   const flows = trpc.build.workflows.useQuery();
+  const status = trpc.build.status.useQuery();
   const run = trpc.build.runWorkflows.useMutation({
     onSuccess: (r) => { utils.build.workflows.invalidate(); const n = Object.values(r).reduce((a, b) => a + b, 0); toast.success(n ? `${n} relance${n > 1 ? "s" : ""} envoyée${n > 1 ? "s" : ""}` : "Aucune relance à envoyer pour l’instant"); },
     onError: (e) => toast.error(e.message),
@@ -122,28 +126,43 @@ function Workflows() {
   return (
     <section className="flex flex-col gap-3" aria-label="Relances automatiques">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col"><h2 className="m-0 text-[28px]">Relances automatiques</h2><span className="text-[14px] p-muted">Des notifications dans l’application, jamais d’e-mail. Variables : {"{{module}}"}, {"{{formation}}"}.</span></div>
+        <div className="flex flex-col min-w-0 flex-[1_1_300px]"><h2 className="m-0 text-[28px]">Relances automatiques</h2><span className="text-[14px] p-muted">Une notification dans l’application, et un e-mail si vous l’activez. Pour relancer vous-même, passez par les participants d’une formation. Variables : {"{{prenom}}"}, {"{{module}}"}, {"{{formation}}"}.</span></div>
         <button type="button" className="p-btn-outline p-btn-sm" disabled={run.isPending} onClick={() => run.mutate()}>Lancer maintenant</button>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">{flows.data?.map((w) => <FlowCard key={`${w.key}${+new Date(w.updatedAt)}`} w={w} />)}</div>
+      <div className="grid gap-3 lg:grid-cols-2">{flows.data?.map((w) => <FlowCard key={`${w.key}${+new Date(w.updatedAt)}`} w={w} emailReady={!!status.data?.emailReady} />)}</div>
     </section>
   );
 }
 
-function FlowCard({ w }: { w: Flow }) {
+function FlowCard({ w, emailReady }: { w: Flow; emailReady: boolean }) {
   const utils = trpc.useUtils();
-  const [f, setF] = useState({ title: w.title, body: w.body });
+  const [f, setF] = useState({ title: w.title, body: w.body, emailSubject: w.emailSubject, emailBody: w.emailBody });
   const save = trpc.build.updateWorkflow.useMutation({ onSuccess: () => { utils.build.workflows.invalidate(); toast.success("Relance enregistrée"); }, onError: (e) => toast.error(e.message) });
-  const dirty = f.title !== w.title || f.body !== w.body;
+  const essai = trpc.build.sendTestEmail.useMutation({ onSuccess: (r) => toast.success(`E-mail d’essai envoyé à ${r.to}`), onError: (e) => toast.error(e.message) });
+  const dirty = f.title !== w.title || f.body !== w.body || f.emailSubject !== w.emailSubject || f.emailBody !== w.emailBody;
+  const saveWith = (p: { active?: boolean; emailEnabled?: boolean }) => save.mutate({ key: w.key, active: w.active, emailEnabled: w.emailEnabled, ...f, ...p });
   return (
-    <article className="p-card p-4 flex flex-col gap-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <span className="flex flex-col gap-0.5 min-w-0"><span className="font-semibold">{w.name}</span><span className="text-[13px] p-muted leading-snug">{w.description}</span></span>
-        <label className="flex items-center gap-1.5 text-[13px] flex-none cursor-pointer"><input type="checkbox" checked={w.active} disabled={save.isPending} className="w-[18px] h-[18px]" style={{ accentColor: "var(--p-accent)" }} onChange={(e) => save.mutate({ key: w.key, active: e.target.checked, title: f.title, body: f.body })} /> Active</label>
-      </div>
-      <label className="flex flex-col gap-1 text-[12.5px] p-muted"><span>Titre de la notification</span><input className="p-field h-10 py-0 text-[14px]" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
-      <label className="flex flex-col gap-1 text-[12.5px] p-muted"><span>Texte</span><input className="p-field h-10 py-0 text-[14px]" value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} /></label>
-      <span className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] p-muted"><span>{w.sent} envoyée{w.sent > 1 ? "s" : ""}{w.lastSent ? ` · dernière le ${dateTime(w.lastSent)}` : ""}</span>{dirty && <button type="button" className="p-btn-primary p-btn-sm" disabled={save.isPending} onClick={() => save.mutate({ key: w.key, active: w.active, title: f.title, body: f.body })}>Enregistrer</button>}</span>
+    <article className="p-card p-4 flex flex-col gap-3">
+      <span className="flex flex-col gap-0.5 min-w-0"><span className="font-semibold">{w.name}</span><span className="text-[13px] p-muted leading-snug">{w.description}</span></span>
+      <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
+        <label className="flex items-center justify-between gap-3 text-[14px] font-medium cursor-pointer">Notification dans l’application<input type="checkbox" checked={w.active} disabled={save.isPending} className="w-[18px] h-[18px] flex-none" style={{ accentColor: "var(--p-accent)" }} onChange={(e) => saveWith({ active: e.target.checked })} /></label>
+        <input className="p-field h-10 py-0 text-[14px]" value={f.title} aria-label="Titre de la notification" onChange={(e) => setF({ ...f, title: e.target.value })} />
+        <input className="p-field h-10 py-0 text-[14px]" value={f.body} aria-label="Texte de la notification" onChange={(e) => setF({ ...f, body: e.target.value })} />
+      </fieldset>
+      <fieldset className="m-0 p-0 pt-3 border-0 border-t flex flex-col gap-2" style={{ borderColor: "var(--p-line)" }}>
+        <label className="flex items-center justify-between gap-3 text-[14px] font-medium cursor-pointer">Envoyer aussi par e-mail, automatiquement<input type="checkbox" checked={w.emailEnabled} disabled={save.isPending || !w.active} className="w-[18px] h-[18px] flex-none" style={{ accentColor: "var(--p-accent)" }} onChange={(e) => saveWith({ emailEnabled: e.target.checked })} /></label>
+        {w.emailEnabled && !emailReady && <span className="text-[13px]" style={{ color: "var(--p-accent-text)" }}>Activé, mais rien ne partira tant que la clé d’envoi n’est pas configurée.</span>}
+        <input className="p-field h-10 py-0 text-[14px]" value={f.emailSubject} aria-label="Objet de l’e-mail" placeholder="Objet" onChange={(e) => setF({ ...f, emailSubject: e.target.value })} />
+        <textarea className="p-field text-[14px] leading-relaxed" rows={6} value={f.emailBody} aria-label="Texte de l’e-mail" onChange={(e) => setF({ ...f, emailBody: e.target.value })} />
+        <span className="text-[12.5px] p-muted leading-snug">Le lien vers le module et le lien de désinscription sont ajoutés tout seuls. Activer l’e-mail n’envoie rien à ceux qui ont déjà reçu la notification.</span>
+      </fieldset>
+      <span className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] p-muted">
+        <span>{w.sent} relance{w.sent > 1 ? "s" : ""}{w.lastSent ? ` · dernière le ${dateTime(w.lastSent)}` : ""}</span>
+        <span className="flex flex-wrap gap-2">
+          <button type="button" className="p-btn-outline p-btn-sm" disabled={essai.isPending || dirty || !emailReady} title={dirty ? "Enregistrez d’abord" : undefined} onClick={() => essai.mutate({ key: w.key })}>M’envoyer un essai</button>
+          {dirty && <button type="button" className="p-btn-primary p-btn-sm" disabled={save.isPending} onClick={() => saveWith({})}>Enregistrer</button>}
+        </span>
+      </span>
     </article>
   );
 }

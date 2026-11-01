@@ -33,6 +33,8 @@ services:
         sync: false
       - key: PRIVATE_DATA_KEY
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
       - key: CALENDLY_URL
         sync: false
       - key: CALENDLY_EXPLO_URL

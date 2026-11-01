@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
+import { Mail } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { Badge, ConfirmButton } from "./shared";
@@ -16,6 +17,11 @@ export function MemberLearning({ memberId, name }: { memberId: number; name: str
   const access = trpc.build.setFullAccess.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.on ? "Accès complet donné : tous les modules sont ouverts" : "Accès complet retiré : retour au calendrier, ses réponses sont conservées"); }, onError: (e) => toast.error(e.message) });
   const setTag = trpc.build.setMemberTag.useMutation({ onSuccess: refresh, onError: (e) => toast.error(e.message) });
   const createTag = trpc.build.createTag.useMutation({ onSuccess: (t) => { setNewTag(""); setTag.mutate({ memberId, tagId: t.id, on: true }); }, onError: (e) => toast.error(e.message) });
+  const status = trpc.build.status.useQuery();
+  const remind = trpc.build.sendReminders.useMutation({
+    onSuccess: (r) => { refresh(); const x = r.results[0]; if (x?.status === "envoye") toast.success("Relance envoyée par e-mail"); else if (x) toast.info(x.reasonLabel, { duration: 7000 }); },
+    onError: (e) => toast.error(e.message),
+  });
   const d = file.data;
   if (!d) return null;
   const mine = new Set(d.tags.map((t) => t.id));
@@ -34,12 +40,24 @@ export function MemberLearning({ memberId, name }: { memberId: number; name: str
                 <span className="text-[13px] p-muted">{c.startedAt ? `Commencée le ${fullDate(c.startedAt)} · ${c.done} module${c.done > 1 ? "s" : ""} sur ${c.total}` : "Pas commencée"}{c.status !== "publie" ? " · pas encore publiée" : ""}</span>
               </Link>
               {c.finishedAt && <Badge tone="ok">Terminée</Badge>}
+              {status.data?.emailReady && c.startedAt && !c.finishedAt && <ConfirmButton label={<><Mail size={14} /> Relancer</>} question={`Envoyer maintenant une relance par e-mail à ${name} pour cette formation ?`} confirm="Envoyer" disabled={remind.isPending} onConfirm={() => remind.mutate({ courseId: c.id, memberIds: [memberId] })} />}
               {c.fullAccess
                 ? <ConfirmButton label="Retirer l’accès complet" question={`Revenir au calendrier pour ${name} ? Ses réponses sont conservées.`} confirm="Retirer" disabled={access.isPending} onConfirm={() => access.mutate({ courseId: c.id, memberId, on: false })} />
                 : <button type="button" className="p-btn-outline p-btn-sm" disabled={access.isPending} onClick={() => access.mutate({ courseId: c.id, memberId, on: true })}>Donner l’accès complet</button>}
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="p-card p-4 sm:p-5 flex flex-col gap-2.5" aria-label="E-mails">
+        <h3 className="m-0 text-[22px]">E-mails</h3>
+        <div className="flex flex-wrap gap-1.5">{d.emailPrefs.map((p) => <Badge key={p.key} tone={p.enabled ? "ok" : "calm"}>{p.label} : {p.enabled ? "oui" : "non"}</Badge>)}</div>
+        <p className="m-0 text-[13.5px] p-muted">C’est le choix de cette personne, depuis son tableau de bord ou le lien de ses e-mails.</p>
+        {d.emailSends.length > 0 && (
+          <ul className="list-none m-0 p-0 flex flex-col">
+            {d.emailSends.map((x) => <li key={x.id} className="py-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-[14px]"><span className="min-w-0 break-words"><span className="font-medium">{x.status === "envoye" ? "Envoyé" : x.status === "echec" ? "Échec" : "Écarté"}</span><span className="p-muted"> · {x.subject}{x.reasonLabel ? ` · ${x.reasonLabel}` : ""}</span></span><span className="text-[12.5px] p-faint flex-none">{dateTime(x.at)}</span></li>)}
+          </ul>
+        )}
       </section>
 
       <section className="p-card p-4 sm:p-5 flex flex-col gap-2.5" aria-label="Étiquettes">

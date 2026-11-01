@@ -15,6 +15,7 @@ export const ACTIVITY_LABEL: Record<string, string> = {
   module_disponible: "Nouveau module disponible",
   acces_complet_donne: "Accès complet donné",
   acces_complet_retire: "Accès complet retiré",
+  relance_email: "Relance envoyée par e-mail",
 };
 
 export async function logActivity(memberId: number, type: keyof typeof ACTIVITY_LABEL, info: { courseId?: number | null; moduleId?: number | null; label?: string } = {}) {

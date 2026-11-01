@@ -34,9 +34,11 @@ function Editor({ m, onSaved }: { m: Mod; onSaved: () => void }) {
   const save = trpc.build.saveModule.useMutation({
     // Relecture : les blocs reçoivent leur identifiant Notion, un second enregistrement ne les recrée pas
     onSuccess: async () => { setDirty(false); await utils.build.invalidate(); onSaved(); toast.success("Enregistré dans Notion"); },
-    onError: (e) => toast.error(e.message, { duration: 8000 }),
+    onError: (e) => { if (e.data?.code === "CONFLICT") setConflict(true); else toast.error(e.message, { duration: 8000 }); },
   });
-  const archive = trpc.build.archiveModule.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Module retiré, à la corbeille de Notion"); navigate(`/admin/construire/${m.courseId}`); }, onError: (e) => toast.error(e.message) });
+  const [conflict, setConflict] = useState(false);
+  const sync = trpc.build.syncNow.useMutation({ onSuccess: async () => { setConflict(false); setDirty(false); await utils.build.invalidate(); onSaved(); toast.success("Repris depuis Notion"); }, onError: (e) => toast.error(e.message) });
+  const archive = trpc.build.archiveModule.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Module supprimé, à la corbeille de Notion"); navigate(`/admin/construire/${m.courseId}`); }, onError: (e) => toast.error(e.message) });
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -58,6 +60,12 @@ function Editor({ m, onSaved }: { m: Mod; onSaved: () => void }) {
           <summary className="cursor-pointer font-medium">{m.issues.length} point{m.issues.length > 1 ? "s" : ""} à regarder</summary>
           <ul className="m-0 mt-2 pl-5 list-disc flex flex-col gap-1">{m.issues.map((i) => <li key={i}>{i}</li>)}</ul>
         </details>
+      )}
+      {conflict && (
+        <div role="alert" className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-[14.5px]" style={{ background: "var(--p-accent-soft)" }}>
+          <span className="flex-[1_1_280px]">Cette page a changé dans Notion pendant que vous la modifiiez. Rien n’a été écrasé. Reprendre la version de Notion efface vos modifications non enregistrées ici.</span>
+          <button type="button" className="p-btn-primary p-btn-sm" disabled={sync.isPending} onClick={() => sync.mutate({ full: false })}>Reprendre la version de Notion</button>
+        </div>
       )}
       <section className="p-card p-4 sm:p-5 flex flex-col gap-3.5" aria-label="Fiche du module">
         <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => set({ title: e.target.value })} /></label>
@@ -83,7 +91,7 @@ function Editor({ m, onSaved }: { m: Mod; onSaved: () => void }) {
         </section>
       ))}
       <div className="flex justify-end">
-        <ConfirmButton label="Retirer ce module" question="Mettre ce module à la corbeille de Notion ? Il disparaît pour les membres, leurs réponses restent dans leur journal." confirm="Retirer" danger disabled={archive.isPending} onConfirm={() => archive.mutate({ id: m.id })} />
+        <ConfirmButton label="Supprimer ce module" question="Mettre ce module à la corbeille de Notion ? Il disparaît pour les membres, leurs réponses restent dans leur journal." confirm="Supprimer" danger disabled={archive.isPending} onConfirm={() => archive.mutate({ id: m.id })} />
       </div>
       <div className="sticky bottom-[72px] lg:bottom-3 z-20 p-card p-2.5 pl-4 mr-[66px] lg:mr-[78px] flex items-center justify-between gap-3 shadow-lg">
         <span className="text-[13.5px] p-muted min-w-0 leading-snug">{dirty ? "Modifications non enregistrées." : "Tout est enregistré dans Notion."}</span>

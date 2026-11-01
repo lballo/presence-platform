@@ -20,6 +20,7 @@ import { reportsRouter } from "./routers/reports";
 import { coursesRouter } from "./routers/courses";
 import { coachMemoryRouter } from "./routers/coachMemory";
 import { buildRouter } from "./routers/build";
+import { emailPrefsRouter } from "./routers/emailPrefs";
 
 export const appRouter = createRouter({
   ping: publicProc.query(() => ({ ok: true, ts: Date.now() })),
@@ -44,6 +45,7 @@ export const appRouter = createRouter({
   courses: coursesRouter,
   coachMemory: coachMemoryRouter,
   build: buildRouter,
+  emailPrefs: emailPrefsRouter,
 });
 
 export type AppRouter = typeof appRouter;
