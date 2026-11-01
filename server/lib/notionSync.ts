@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { courseHashtags, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, courses, hashtags, notionSyncRuns, type Course, type CourseLesson, type CourseSection } from "../../db/schema";
 import { env } from "./env";
@@ -88,7 +88,11 @@ async function hashtagIdsFor(names: string[]): Promise<number[]> {
 
 /* ───────────── Lecture d'une page ───────────── */
 
-export async function syncCoursePage(page: NotionPage, existing?: Course): Promise<Course> {
+/**
+ * `readAt` : la synchronisation a lu cette page à ce moment-là. Si Construire y a écrit depuis, notre lecture est plus ancienne :
+ * la copie ne bouge pas. Sans cela, déplacer ou publier pendant une synchronisation serait annulé quelques secondes plus tard.
+ */
+export async function syncCoursePage(page: NotionPage, existing?: Course, readAt?: Date): Promise<Course> {
   const db = getDb();
   const content = courseContentFromBlocks(await getBlocks(page.id));
   const issues = courseIssues(content);
@@ -108,24 +112,26 @@ export async function syncCoursePage(page: NotionPage, existing?: Course): Promi
     rhythm: choice(page, "Rythme") === "Accès complet" ? ("complet" as const) : ("hebdo" as const), status: statusOf(choice(page, "Statut")),
     position: num(page, "Ordre d'affichage") ?? 0, content, issues, notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
   };
-  const [row] = await db.insert(courses).values(values).onConflictDoUpdate({ target: courses.notionPageId, set: values }).returning();
+  const [row] = await db.insert(courses).values(values).onConflictDoUpdate({ target: courses.notionPageId, set: values, ...(readAt ? { setWhere: lte(courses.updatedAt, readAt) } : {}) }).returning();
+  if (!row) return (await db.select().from(courses).where(eq(courses.notionPageId, page.id)))[0];
   const ids = await hashtagIdsFor(labels(page, "Hashtags"));
   await db.delete(courseHashtags).where(eq(courseHashtags.courseId, row.id));
   if (ids.length) await db.insert(courseHashtags).values(ids.map((hashtagId) => ({ courseId: row.id, hashtagId }))).onConflictDoNothing();
   return row;
 }
 
-export async function syncSectionPage(page: NotionPage, course: Pick<Course, "id">, existing?: CourseSection): Promise<CourseSection> {
+export async function syncSectionPage(page: NotionPage, course: Pick<Course, "id">, existing?: CourseSection, readAt?: Date): Promise<CourseSection> {
   const db = getDb();
   const content = sectionContentFromBlocks(await getBlocks(page.id));
   const intention = text(page, "Intention");
   const copyIssues = await copyPageFiles(content, existing?.content, SECTION_RUBRICS);
   const values = {
-    courseId: course.id, notionPageId: page.id, title: text(page, "Section").slice(0, 200) || "Sans titre", position: num(page, "Ordre") ?? 0, status: statusOf(choice(page, "Statut")),
+    courseId: course.id, notionPageId: page.id, title: text(page, "Section").slice(0, 200) || "Sans titre", position: num(page, "Ordre") ?? 0,
     intention, content, issues: [...sectionIssues(content, { intention }), ...copyIssues],
     notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
   };
-  const [row] = await db.insert(courseSections).values(values).onConflictDoUpdate({ target: courseSections.notionPageId, set: values }).returning();
+  const [row] = await db.insert(courseSections).values(values).onConflictDoUpdate({ target: courseSections.notionPageId, set: values, ...(readAt ? { setWhere: lte(courseSections.updatedAt, readAt) } : {}) }).returning();
+  if (!row) return (await db.select().from(courseSections).where(eq(courseSections.notionPageId, page.id)))[0];
   const ids = await hashtagIdsFor(labels(page, "Hashtags"));
   await db.delete(courseSectionHashtags).where(eq(courseSectionHashtags.sectionId, row.id));
   if (ids.length) await db.insert(courseSectionHashtags).values(ids.map((hashtagId) => ({ sectionId: row.id, hashtagId }))).onConflictDoNothing();
@@ -134,7 +140,7 @@ export async function syncSectionPage(page: NotionPage, course: Pick<Course, "id
 
 const TYPE_OF: Record<string, LessonType> = { "Contenu": "contenu", "Vidéo": "video", "Exercice": "exercice", "Test": "test", "Défi dans le réseau": "defi" };
 
-export async function syncLessonPage(page: NotionPage, section: Pick<CourseSection, "id">, existing?: CourseLesson): Promise<CourseLesson> {
+export async function syncLessonPage(page: NotionPage, section: Pick<CourseSection, "id">, existing?: CourseLesson, readAt?: Date): Promise<CourseLesson> {
   const db = getDb();
   const content = lessonContentFromBlocks(await getBlocks(page.id));
   const intention = text(page, "Intention");
@@ -148,7 +154,8 @@ export async function syncLessonPage(page: NotionPage, section: Pick<CourseSecti
     issues: [...lessonIssues(content, { type, intention, videoUrl, testUrl, testProblem: testUrlProblem(testUrl, env.appUrl) }), ...copyIssues],
     notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
   };
-  const [row] = await db.insert(courseLessons).values(values).onConflictDoUpdate({ target: courseLessons.notionPageId, set: values }).returning();
+  const [row] = await db.insert(courseLessons).values(values).onConflictDoUpdate({ target: courseLessons.notionPageId, set: values, ...(readAt ? { setWhere: lte(courseLessons.updatedAt, readAt) } : {}) }).returning();
+  if (!row) return (await db.select().from(courseLessons).where(eq(courseLessons.notionPageId, page.id)))[0];
   const ids = await hashtagIdsFor(labels(page, "Hashtags"));
   await db.delete(courseLessonHashtags).where(eq(courseLessonHashtags.lessonId, row.id));
   if (ids.length) await db.insert(courseLessonHashtags).values(ids.map((hashtagId) => ({ lessonId: row.id, hashtagId }))).onConflictDoNothing();
@@ -205,6 +212,7 @@ async function run({ trigger, full }: { trigger: string; full?: boolean }): Prom
     return { ok: status === "ok", changed, detail };
   };
   try {
+    const readAt = new Date();
     const [coursePages, sectionPages, lessonPages] = [await listPages(env.notionFormations), await listPages(env.notionSections), await listPages(env.notionLecons)];
     const knownCourses = new Map((await db.select().from(courses)).map((c) => [c.notionPageId, c]));
     const knownSections = new Map((await db.select().from(courseSections)).map((x) => [x.notionPageId, x]));
@@ -217,7 +225,7 @@ async function run({ trigger, full }: { trigger: string; full?: boolean }): Prom
     for (const page of coursePages) {
       const row = knownCourses.get(page.id);
       if (full || needsRead(page, row, since)) {
-        courseByPage.set(page.id, await syncCoursePage(page, row));
+        courseByPage.set(page.id, await syncCoursePage(page, row, readAt));
         if (isNew(page, row)) changed++;
       } else if (row) courseByPage.set(page.id, row);
     }
@@ -228,7 +236,7 @@ async function run({ trigger, full }: { trigger: string; full?: boolean }): Prom
       const row = knownSections.get(page.id);
       if (!course) { notes.push(`Section sans formation : « ${text(page, "Section")} »`); continue; }
       if (full || needsRead(page, row, since) || row?.courseId !== course.id) {
-        sectionByPage.set(page.id, await syncSectionPage(page, course, row));
+        sectionByPage.set(page.id, await syncSectionPage(page, course, row, readAt));
         if (isNew(page, row)) changed++;
       } else if (row) sectionByPage.set(page.id, row);
     }
@@ -238,18 +246,19 @@ async function run({ trigger, full }: { trigger: string; full?: boolean }): Prom
       const row = knownLessons.get(page.id);
       if (!section) { notes.push(`Leçon sans section : « ${text(page, "Leçon")} »`); continue; }
       if (full || needsRead(page, row, since) || row?.sectionId !== section.id) {
-        await syncLessonPage(page, section, row);
+        await syncLessonPage(page, section, row, readAt);
         if (isNew(page, row)) changed++;
       }
     }
     // Disparu de Notion : caché, jamais supprimé (la progression et le journal des membres restent)
+    // Une page créée depuis Construire pendant la lecture n'a pas disparu : elle est simplement trop récente pour la liste
     const coursesSeen = new Set(coursePages.map((p) => p.id));
     const sectionsSeen = new Set(sectionPages.map((p) => p.id));
     const lessonsSeen = new Set(lessonPages.map((p) => p.id));
     const now = new Date();
-    for (const c of knownCourses.values()) if (!coursesSeen.has(c.notionPageId) && !c.archivedAt) { await db.update(courses).set({ archivedAt: now }).where(eq(courses.id, c.id)); changed++; }
-    for (const x of knownSections.values()) if (!sectionsSeen.has(x.notionPageId) && !x.archivedAt) { await db.update(courseSections).set({ archivedAt: now }).where(eq(courseSections.id, x.id)); changed++; }
-    for (const l of knownLessons.values()) if (!lessonsSeen.has(l.notionPageId) && !l.archivedAt) { await db.update(courseLessons).set({ archivedAt: now }).where(eq(courseLessons.id, l.id)); changed++; }
+    for (const c of knownCourses.values()) if (!coursesSeen.has(c.notionPageId) && !c.archivedAt && c.updatedAt <= readAt) { await db.update(courses).set({ archivedAt: now }).where(eq(courses.id, c.id)); changed++; }
+    for (const x of knownSections.values()) if (!sectionsSeen.has(x.notionPageId) && !x.archivedAt && x.updatedAt <= readAt) { await db.update(courseSections).set({ archivedAt: now }).where(eq(courseSections.id, x.id)); changed++; }
+    for (const l of knownLessons.values()) if (!lessonsSeen.has(l.notionPageId) && !l.archivedAt && l.updatedAt <= readAt) { await db.update(courseLessons).set({ archivedAt: now }).where(eq(courseLessons.id, l.id)); changed++; }
     // Ce que les membres ont fait dans les anciens modules passe sur les leçons du même nom
     const resume = await resumeLegacyProgress();
     for (const title of resume.waiting) notes.push(`Progression mise de côté : aucune leçon ne porte le nom « ${title} »`);

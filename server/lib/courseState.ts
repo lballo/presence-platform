@@ -11,8 +11,8 @@ import { LESSON_RUBRICS, memberBlocks, type Rubrics } from "./courseBlocks";
 const parisDay = (d: Date) => d.toLocaleDateString("fr-FR", { dateStyle: "long", timeZone: "Europe/Paris" });
 
 /**
- * Tout ce qu'un membre peut voir de ses formations : une leçon n'est visible que si sa formation, sa section et elle-même
- * sont publiées, et une section sans leçon publiée n'apparaît pas. C'est la seule source des droits de lecture.
+ * Tout ce qu'un membre peut voir de ses formations : une leçon n'est visible que si sa formation et elle-même sont publiées.
+ * Une section n'a pas de statut : elle apparaît dès qu'une de ses leçons est publiée. C'est la seule source des droits de lecture.
  */
 export async function memberCourses(member: Pick<Member, "id" | "accessType">, courseId?: number) {
   const db = getDb();
@@ -34,7 +34,7 @@ export async function memberCourses(member: Pick<Member, "id" | "accessType">, c
   });
   if (!visible.length) return [];
   const sections = await db.select().from(courseSections)
-    .where(and(inArray(courseSections.courseId, visible.map((v) => v.course.id)), eq(courseSections.status, "publie"), isNull(courseSections.archivedAt)))
+    .where(and(inArray(courseSections.courseId, visible.map((v) => v.course.id)), isNull(courseSections.archivedAt)))
     .orderBy(asc(courseSections.position), asc(courseSections.id));
   const lessons = sections.length ? await db.select().from(courseLessons)
     .where(and(inArray(courseLessons.sectionId, sections.map((s) => s.id)), eq(courseLessons.status, "publie"), isNull(courseLessons.archivedAt)))

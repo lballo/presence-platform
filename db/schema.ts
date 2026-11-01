@@ -720,7 +720,7 @@ export const courseSections = pgTable(
     notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
     title: varchar("title", { length: 200 }).notNull(),
     position: integer("position").notNull().default(0), // « Ordre » dans Notion : fixe la semaine d'ouverture
-    status: contentStatusEnum("status").notNull().default("brouillon"),
+    // Pas de statut : une section apparaît dès qu'une de ses leçons est publiée. La colonne status reste en base jusqu'à la migration 0018.
     intention: text("intention").notNull().default(""),
     content: jsonb("content").$type<PageContent>().notNull().default({}),
     issues: jsonb("issues").$type<string[]>().notNull().default([]),

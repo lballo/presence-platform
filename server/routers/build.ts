@@ -17,7 +17,7 @@ import { env } from "../lib/env";
 import { appendBlocks, getPage, listTemplates, notionReady, updatePage } from "../lib/notion";
 import { cleanInline, heading2 } from "../lib/notionBlocks";
 import { lastSync, refreshCourse, refreshLesson, refreshSection, syncAll, syncCoursePage, syncLessonPage, syncRunning, syncSectionPage } from "../lib/notionSync";
-import { asTrpcError, assertNotionReady, assertUnchanged, COURSE_STATUS, courseProperties, createCoursePage, createLessonPage, createSectionPage, LESSON_STATUS, lessonProperties, SECTION_STATUS, sectionProperties, writeLessonList, writeList, writeRubrics } from "../lib/notionWrite";
+import { asTrpcError, assertNotionReady, assertUnchanged, COURSE_STATUS, courseProperties, createCoursePage, createLessonPage, createSectionPage, LESSON_STATUS, lessonProperties, sectionProperties, writeLessonList, writeList, writeRubrics } from "../lib/notionWrite";
 import { notify } from "../lib/notify";
 import { open, privateBoxReady } from "../lib/privateBox";
 import { reminderPlan, sendCourseReminder, sendMemberEmail, SKIP_LABEL } from "../lib/reminders";
@@ -143,7 +143,7 @@ async function courseStats(courseId: number) {
   const db = getDb();
   const [{ sections, lessons }, enrollments] = await Promise.all([outline(courseId), db.select().from(courseEnrollments).where(eq(courseEnrollments.courseId, courseId))]);
   const progress = lessons.length ? await db.select().from(lessonProgress).where(inArray(lessonProgress.lessonId, lessons.map((l) => l.id))) : [];
-  const shownSections = sections.filter((x) => x.status === "publie").map((x) => ({ ...x, lessons: lessons.filter((l) => l.sectionId === x.id && l.status === "publie") })).filter((x) => x.lessons.length);
+  const shownSections = sections.map((x) => ({ ...x, lessons: lessons.filter((l) => l.sectionId === x.id && l.status === "publie") })).filter((x) => x.lessons.length);
   const published = shownSections.flatMap((x) => x.lessons);
   const did = (memberId: number, lessonId: number) => progress.some((p) => p.memberId === memberId && p.lessonId === lessonId && p.completedAt);
   const now = Date.now();
@@ -195,9 +195,8 @@ async function tagNames(ids: number[]): Promise<string[]> {
 async function participants(courseId: number) {
   const db = getDb();
   const rows = await db.select({ e: courseEnrollments, m: members }).from(courseEnrollments).innerJoin(members, eq(members.id, courseEnrollments.memberId)).where(eq(courseEnrollments.courseId, courseId)).orderBy(desc(courseEnrollments.startedAt));
-  const { sections, lessons } = await outline(courseId);
-  const shown = new Set(sections.filter((x) => x.status === "publie").map((x) => x.id));
-  const published = lessons.filter((l) => l.status === "publie" && shown.has(l.sectionId));
+  const { lessons } = await outline(courseId);
+  const published = lessons.filter((l) => l.status === "publie");
   const progress = published.length && rows.length ? await db.select().from(lessonProgress).where(and(inArray(lessonProgress.lessonId, published.map((l) => l.id)), inArray(lessonProgress.memberId, rows.map((r) => r.e.memberId)))) : [];
   const sends = rows.length ? await db.select({ memberId: emailSends.memberId, at: emailSends.createdAt }).from(emailSends).where(and(eq(emailSends.courseId, courseId), eq(emailSends.status, "envoye"), inArray(emailSends.memberId, rows.map((r) => r.e.memberId)))).orderBy(desc(emailSends.createdAt)) : [];
   const now = Date.now();
@@ -259,17 +258,16 @@ export const buildRouter = createRouter({
     const db = getDb();
     const [rows, sections, lessons, counts] = await Promise.all([
       db.select().from(courses).where(isNull(courses.archivedAt)).orderBy(asc(courses.position), asc(courses.title)),
-      db.select({ id: courseSections.id, courseId: courseSections.courseId, status: courseSections.status, issues: courseSections.issues }).from(courseSections).where(isNull(courseSections.archivedAt)),
+      db.select({ id: courseSections.id, courseId: courseSections.courseId, issues: courseSections.issues }).from(courseSections).where(isNull(courseSections.archivedAt)),
       db.select({ sectionId: courseLessons.sectionId, status: courseLessons.status, issues: courseLessons.issues }).from(courseLessons).where(isNull(courseLessons.archivedAt)),
       db.select({ courseId: courseEnrollments.courseId, n: sql<number>`count(*)::int` }).from(courseEnrollments).groupBy(courseEnrollments.courseId),
     ]);
     return rows.map((c) => {
       const ownSections = sections.filter((x) => x.courseId === c.id);
       const ownLessons = lessons.filter((l) => ownSections.some((x) => x.id === l.sectionId));
-      const shown = new Set(ownSections.filter((x) => x.status === "publie").map((x) => x.id));
       return {
         id: c.id, title: c.title, tagline: c.tagline, emoji: c.emoji, coverUrl: c.coverUrl, public: c.public, rhythm: c.rhythm, status: c.status, position: c.position,
-        sectionCount: ownSections.length, lessonCount: ownLessons.length, publishedCount: ownLessons.filter((l) => l.status === "publie" && shown.has(l.sectionId)).length, participants: counts.find((x) => x.courseId === c.id)?.n ?? 0,
+        sectionCount: ownSections.length, lessonCount: ownLessons.length, publishedCount: ownLessons.filter((l) => l.status === "publie").length, participants: counts.find((x) => x.courseId === c.id)?.n ?? 0,
         issueCount: c.issues.length + ownSections.reduce((n, x) => n + x.issues.length, 0) + ownLessons.reduce((n, l) => n + l.issues.length, 0),
       };
     });
@@ -288,7 +286,7 @@ export const buildRouter = createRouter({
     return {
       id: c.id, title: c.title, tagline: c.tagline, emoji: c.emoji, coverUrl: c.coverUrl, public: c.public, rhythm: c.rhythm, status: c.status, position: c.position,
       description: c.content.description ?? [], hashtagIds: tags.map((t) => t.id), issues: c.issues, notionPageId: c.notionPageId, notionEditedAt: c.notionEditedAt, archived: !!c.archivedAt,
-      sections: sections.map((x) => ({ id: x.id, title: x.title, position: x.position, status: x.status, intention: x.intention, issues: x.issues, lessons: lessons.filter((l) => l.sectionId === x.id).map(lessonSummary) })),
+      sections: sections.map((x) => ({ id: x.id, title: x.title, position: x.position, intention: x.intention, issues: x.issues, lessons: lessons.filter((l) => l.sectionId === x.id).map(lessonSummary) })),
       assignments: assignments.map(({ a, name, tag }) => ({ id: a.id, memberId: a.memberId, accessType: a.accessType, tagId: a.tagId, label: name ?? tag ?? "" })),
       participants: people, stats,
     };
@@ -341,7 +339,7 @@ export const buildRouter = createRouter({
 
   /* ───────────── Sections ───────────── */
 
-  /** Créer une section : d'abord dans Notion, en brouillon, à la suite des autres. */
+  /** Créer une section : d'abord dans Notion, à la suite des autres. Elle apparaîtra quand une de ses leçons sera publiée. */
   createSection: buildProc
     .input(z.object({ courseId: z.number().int(), title: z.string().trim().min(1, "Indiquez un titre.").max(200), intention: z.string().trim().max(600).default("") }))
     .mutation(async ({ ctx, input }) => {
@@ -349,7 +347,7 @@ export const buildRouter = createRouter({
       const course = await requireCourse(input.courseId);
       const [{ n }] = await getDb().select({ n: sql<number>`coalesce(max(${courseSections.position}), 0)::int` }).from(courseSections).where(and(eq(courseSections.courseId, course.id), isNull(courseSections.archivedAt)));
       try {
-        const page = await createSectionPage({ title: input.title, position: n + 1, status: "brouillon", intention: input.intention, hashtags: [], coursePageId: course.notionPageId }, { kind: "structure" });
+        const page = await createSectionPage({ title: input.title, position: n + 1, intention: input.intention, hashtags: [], coursePageId: course.notionPageId }, { kind: "structure" });
         const row = await syncSectionPage(await getPage(page.id), course);
         await logAdmin(ctx.member, { action: "Section créée", targetType: "section", targetId: row.id, label: row.title, detail: course.title });
         return { id: row.id };
@@ -363,7 +361,7 @@ export const buildRouter = createRouter({
       requireCourse(x.courseId),
     ]);
     return {
-      id: x.id, courseId: x.courseId, courseTitle: course.title, title: x.title, position: x.position, status: x.status, intention: x.intention,
+      id: x.id, courseId: x.courseId, courseTitle: course.title, title: x.title, position: x.position, intention: x.intention,
       rubrics: { intention: x.content.rubrics?.intention ?? [], objectifs: x.content.rubrics?.objectifs ?? [], defi: x.content.rubrics?.defi ?? [] },
       hashtagIds: tags.map((t) => t.id), issues: x.issues, notionPageId: x.notionPageId, notionEditedAt: x.notionEditedAt, archived: !!x.archivedAt,
     };
@@ -371,7 +369,7 @@ export const buildRouter = createRouter({
 
   /** Enregistrer une section : Notion d'abord, relecture ensuite. Refusé si la page a changé dans Notion entre-temps. */
   saveSection: buildProc
-    .input(z.object({ id: z.number().int(), title: z.string().trim().min(1, "Indiquez un titre.").max(200), position: z.number().int().min(0), status: statusSchema, intention: z.string().trim().max(2000), hashtagIds: z.array(z.number().int()).max(10), rubrics: sectionRubrics }))
+    .input(z.object({ id: z.number().int(), title: z.string().trim().min(1, "Indiquez un titre.").max(200), position: z.number().int().min(0), intention: z.string().trim().max(2000), hashtagIds: z.array(z.number().int()).max(10), rubrics: sectionRubrics }))
     .mutation(async ({ ctx, input }) => {
       assertNotionReady();
       const x = await requireSection(input.id);
@@ -410,19 +408,7 @@ export const buildRouter = createRouter({
     return { ok: true };
   }),
 
-  setSectionStatus: buildProc.input(z.object({ id: z.number().int(), status: statusSchema })).mutation(async ({ ctx, input }) => {
-    assertNotionReady();
-    const x = await requireSection(input.id);
-    try {
-      await assertUnchanged(x.notionPageId, x.notionEditedAt);
-      await updatePage(x.notionPageId, { properties: { Statut: { status: { name: SECTION_STATUS[input.status] } } } });
-      await refreshSection(x);
-    } catch (e) { throw asTrpcError(e); }
-    await logAdmin(ctx.member, { action: input.status === "publie" ? "Section publiée" : "Section dépubliée", targetType: "section", targetId: x.id, label: x.title });
-    return { ok: true };
-  }),
-
-  /** Dupliquer une section avec ses leçons : « Copie de… », tout en brouillon, à la suite des autres sections. */
+  /** Dupliquer une section avec ses leçons : « Copie de… », leçons en brouillon, à la suite des autres sections. */
   duplicateSection: buildProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
     assertNotionReady();
     const db = getDb();
@@ -432,7 +418,7 @@ export const buildRouter = createRouter({
     const own = lessons.filter((l) => l.sectionId === x.id);
     const sectionTags = await db.select({ id: courseSectionHashtags.hashtagId }).from(courseSectionHashtags).where(eq(courseSectionHashtags.sectionId, x.id));
     try {
-      const page = await createSectionPage({ title: `Copie de ${x.title}`.slice(0, 200), position: Math.max(0, ...sections.map((y) => y.position)) + 1, status: "brouillon", intention: x.intention, hashtags: await tagNames(sectionTags.map((t) => t.id)), coursePageId: course.notionPageId }, { kind: "copie", content: x.content, lessonTitles: own.map((l) => l.title) });
+      const page = await createSectionPage({ title: `Copie de ${x.title}`.slice(0, 200), position: Math.max(0, ...sections.map((y) => y.position)) + 1, intention: x.intention, hashtags: await tagNames(sectionTags.map((t) => t.id)), coursePageId: course.notionPageId }, { kind: "copie", content: x.content, lessonTitles: own.map((l) => l.title) });
       const row = await syncSectionPage(await getPage(page.id), course);
       for (const l of own) {
         const tags = await db.select({ id: courseLessonHashtags.hashtagId }).from(courseLessonHashtags).where(eq(courseLessonHashtags.lessonId, l.id));
@@ -454,11 +440,11 @@ export const buildRouter = createRouter({
     try {
       for (const l of own) {
         await updatePage(l.notionPageId, { in_trash: true });
-        await db.update(courseLessons).set({ archivedAt: now }).where(eq(courseLessons.id, l.id));
+        await db.update(courseLessons).set({ archivedAt: now, updatedAt: new Date() }).where(eq(courseLessons.id, l.id));
       }
       await updatePage(x.notionPageId, { in_trash: true });
     } catch (e) { throw asTrpcError(e); }
-    await db.update(courseSections).set({ archivedAt: now }).where(eq(courseSections.id, x.id));
+    await db.update(courseSections).set({ archivedAt: now, updatedAt: new Date() }).where(eq(courseSections.id, x.id));
     await logAdmin(ctx.member, { action: "Section retirée", targetType: "section", targetId: x.id, label: x.title, detail: `${own.length} leçon(s) à la corbeille de Notion` });
     return { ok: true };
   }),
@@ -490,7 +476,7 @@ export const buildRouter = createRouter({
     ]);
     const r = l.content.rubrics ?? {};
     return {
-      id: l.id, sectionId: l.sectionId, sectionTitle: section.title, sectionStatus: section.status, courseId: section.courseId, courseTitle: course.title, title: l.title, position: l.position, type: l.type, status: l.status, intention: l.intention, durationMin: l.durationMin, videoUrl: l.videoUrl, testUrl: l.testUrl,
+      id: l.id, sectionId: l.sectionId, sectionTitle: section.title, courseId: section.courseId, courseTitle: course.title, title: l.title, position: l.position, type: l.type, status: l.status, intention: l.intention, durationMin: l.durationMin, videoUrl: l.videoUrl, testUrl: l.testUrl,
       rubrics: { intention: r.intention ?? [], contenu: r.contenu ?? [], exercice: r.exercice ?? [], defi: r.defi ?? [], plusLoin: r.plusLoin ?? [] }, headings: l.content.headings ?? {}, before: l.content.before ?? [], hashtagIds: tags.map((t) => t.id), issues: l.issues, notionPageId: l.notionPageId, notionEditedAt: l.notionEditedAt, archived: !!l.archivedAt,
     };
   }),
@@ -581,7 +567,7 @@ export const buildRouter = createRouter({
     assertNotionReady();
     const l = await requireLesson(input.id);
     try { await updatePage(l.notionPageId, { in_trash: true }); } catch (e) { throw asTrpcError(e); }
-    await getDb().update(courseLessons).set({ archivedAt: new Date() }).where(eq(courseLessons.id, l.id));
+    await getDb().update(courseLessons).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(courseLessons.id, l.id));
     await refreshLessonList(l.sectionId);
     await logAdmin(ctx.member, { action: "Leçon retirée", targetType: "lecon", targetId: l.id, label: l.title });
     return { ok: true };
@@ -592,7 +578,7 @@ export const buildRouter = createRouter({
     const l = await requireLesson(input.id);
     const section = await requireSection(l.sectionId);
     const course = await requireCourse(section.courseId);
-    return { ...(await lessonView(l, section, course)), preview: true, status: l.status, sectionStatus: section.status, courseStatus: course.status };
+    return { ...(await lessonView(l, section, course)), preview: true, status: l.status, courseStatus: course.status };
   }),
 
   setCourseStatus: buildProc.input(z.object({ id: z.number().int(), status: statusSchema })).mutation(async ({ ctx, input }) => {
@@ -616,15 +602,15 @@ export const buildRouter = createRouter({
     try {
       for (const l of lessons) {
         await updatePage(l.notionPageId, { in_trash: true });
-        await getDb().update(courseLessons).set({ archivedAt: now }).where(eq(courseLessons.id, l.id));
+        await getDb().update(courseLessons).set({ archivedAt: now, updatedAt: new Date() }).where(eq(courseLessons.id, l.id));
       }
       for (const x of sections) {
         await updatePage(x.notionPageId, { in_trash: true });
-        await getDb().update(courseSections).set({ archivedAt: now }).where(eq(courseSections.id, x.id));
+        await getDb().update(courseSections).set({ archivedAt: now, updatedAt: new Date() }).where(eq(courseSections.id, x.id));
       }
       await updatePage(c.notionPageId, { in_trash: true });
     } catch (e) { throw asTrpcError(e); }
-    await getDb().update(courses).set({ archivedAt: now }).where(eq(courses.id, c.id));
+    await getDb().update(courses).set({ archivedAt: now, updatedAt: new Date() }).where(eq(courses.id, c.id));
     await logAdmin(ctx.member, { action: "Formation supprimée", targetType: "formation", targetId: c.id, label: c.title, detail: `${sections.length} section(s) et ${lessons.length} leçon(s) à la corbeille de Notion` });
     return { ok: true };
   }),
@@ -691,7 +677,7 @@ export const buildRouter = createRouter({
       db.select({ id: memberTags.id, name: memberTags.name }).from(memberTagLinks).innerJoin(memberTags, eq(memberTags.id, memberTagLinks.tagId)).where(eq(memberTagLinks.memberId, input.memberId)),
       db.select().from(memberActivity).where(eq(memberActivity.memberId, input.memberId)).orderBy(desc(memberActivity.createdAt), desc(memberActivity.id)).limit(40),
     ]);
-    const published = await db.select({ id: courseLessons.id, courseId: courseSections.courseId }).from(courseLessons).innerJoin(courseSections, eq(courseSections.id, courseLessons.sectionId)).where(and(eq(courseLessons.status, "publie"), isNull(courseLessons.archivedAt), eq(courseSections.status, "publie"), isNull(courseSections.archivedAt)));
+    const published = await db.select({ id: courseLessons.id, courseId: courseSections.courseId }).from(courseLessons).innerJoin(courseSections, eq(courseSections.id, courseLessons.sectionId)).where(and(eq(courseLessons.status, "publie"), isNull(courseLessons.archivedAt), isNull(courseSections.archivedAt)));
     const progress = await db.select({ lessonId: lessonProgress.lessonId }).from(lessonProgress).where(and(eq(lessonProgress.memberId, input.memberId), isNotNull(lessonProgress.completedAt)));
     const [prefs, sends] = await Promise.all([memberPreferences(input.memberId), db.select().from(emailSends).where(eq(emailSends.memberId, input.memberId)).orderBy(desc(emailSends.createdAt)).limit(10)]);
     return {

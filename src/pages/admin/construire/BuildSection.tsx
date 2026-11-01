@@ -4,10 +4,10 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import type { CourseBlock } from "../../../../server/lib/courseBlocks";
-import { ConfirmButton, Select } from "../shared";
+import { ConfirmButton } from "../shared";
 import { BlockEditor, HashtagPicker } from "./BlockEditor";
 import { IssueList, NotionConflict, SaveBar, useLeaveWarning } from "./EditorParts";
-import { STATUS_LABEL, notionUrl } from "./labels";
+import { notionUrl } from "./labels";
 
 type Section = RouterOutputs["build"]["section"];
 
@@ -28,7 +28,7 @@ function Editor({ s, onSaved }: { s: Section; onSaved: () => void }) {
   const utils = trpc.useUtils();
   const navigate = useNavigate();
   const tags = trpc.hashtags.list.useQuery();
-  const [f, setF] = useState({ title: s.title, position: s.position, status: s.status, intention: s.intention, hashtagIds: s.hashtagIds });
+  const [f, setF] = useState({ title: s.title, position: s.position, intention: s.intention, hashtagIds: s.hashtagIds });
   const [objectifs, setObjectifs] = useState<CourseBlock[]>(s.rubrics.objectifs);
   const [defi, setDefi] = useState<CourseBlock[]>(s.rubrics.defi);
   const [dirty, setDirty] = useState(false);
@@ -39,7 +39,7 @@ function Editor({ s, onSaved }: { s: Section; onSaved: () => void }) {
     onError: (e) => { if (e.data?.code === "CONFLICT") setConflict(true); else toast.error(e.message, { duration: 8000 }); },
   });
   const archive = trpc.build.archiveSection.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Section et leçons à la corbeille de Notion"); navigate(`/admin/construire/${s.courseId}`); }, onError: (e) => toast.error(e.message) });
-  const duplicate = trpc.build.duplicateSection.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Section et leçons copiées dans Notion, en brouillon"); navigate(`/admin/construire/${s.courseId}/section/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  const duplicate = trpc.build.duplicateSection.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Section et leçons copiées dans Notion, leçons en brouillon"); navigate(`/admin/construire/${s.courseId}/section/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   useLeaveWarning(dirty);
   return (
     <>
@@ -51,10 +51,8 @@ function Editor({ s, onSaved }: { s: Section; onSaved: () => void }) {
       {conflict && <NotionConflict onResolved={() => { setConflict(false); setDirty(false); onSaved(); }} />}
       <section className="p-card p-4 sm:p-5 flex flex-col gap-3.5" aria-label="Fiche de la section">
         <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => set({ title: e.target.value })} /></label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select label="Statut" value={f.status} onChange={(status) => set({ status })} options={Object.entries(STATUS_LABEL) as [Section["status"], string][]} />
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Ordre (semaine d’ouverture)</span><input type="number" min={0} className="p-field" value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
-        </div>
+        <label className="flex flex-col gap-1 text-[13px] p-muted sm:max-w-[260px]"><span>Ordre (semaine d’ouverture)</span><input type="number" min={0} className="p-field" value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
+        <p className="m-0 text-[13.5px] p-muted">La section apparaît pour les membres dès qu’une de ses leçons est publiée.</p>
         <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Intention</span><textarea className="p-field" rows={2} value={f.intention} onChange={(e) => set({ intention: e.target.value })} /></label>
         <div className="flex flex-col gap-1.5"><span className="text-[13px] p-muted">Hashtags de la communauté</span><HashtagPicker all={tags.data ?? []} value={f.hashtagIds} onChange={(hashtagIds) => set({ hashtagIds })} /></div>
       </section>

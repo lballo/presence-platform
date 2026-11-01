@@ -40,8 +40,13 @@ describe("texte mis en forme", () => {
     expect(clean).not.toMatch(/script|onclick|onerror|img|javascript/);
     expect(clean).toContain("Texte");
   });
-  it("deux paragraphes de l'éditeur deviennent un retour à la ligne", () => {
-    expect(cleanInline("<p>Un</p><p>Deux</p>")).toBe("Un<br />Deux");
+  it("deux paragraphes de l'éditeur restent séparés par une ligne vide", () => {
+    expect(cleanInline("<p>Un</p><p>Deux</p>")).toBe("Un<br /><br />Deux");
+    expect(cleanInline("<p>Un</p><p></p><p></p><p>Deux</p><p></p>")).toBe("Un<br /><br />Deux");
+    expect(htmlToRichText(cleanInline("<p>Un</p><p>Deux</p>"))[0].text?.content).toBe("Un\n\nDeux");
+  });
+  it("un retour à la ligne simple dans un paragraphe reste simple", () => {
+    expect(cleanInline("<p>Un<br>Deux</p>")).toBe("Un<br />Deux");
   });
 });
 

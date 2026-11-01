@@ -15,7 +15,7 @@ export default function BuildPreview() {
   return (
     <div className="flex flex-col gap-5">
       <div className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-[14px]" style={{ background: "var(--p-accent-soft)" }}>
-        <span className="flex flex-wrap items-center gap-2"><b>Aperçu comme un membre.</b> Rien n’est enregistré. <Badge tone={statusTone(q.data.status)}>{LESSON_STATUS_LABEL[q.data.status]}</Badge>{q.data.sectionStatus !== "publie" && <Badge>Section non publiée</Badge>}</span>
+        <span className="flex flex-wrap items-center gap-2"><b>Aperçu comme un membre.</b> Rien n’est enregistré. <Badge tone={statusTone(q.data.status)}>{LESSON_STATUS_LABEL[q.data.status]}</Badge></span>
         <span className="flex flex-wrap gap-2">{back}<Link to={`/admin/construire/${id}/lecon/${lessonId}`} className="p-btn-outline p-btn-sm no-underline"><Pencil size={14} /> Modifier</Link></span>
       </div>
       <LessonReader key={q.data.id} m={q.data} />

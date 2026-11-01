@@ -63,7 +63,8 @@ export const richTextToPlain = (rich: RichText[] | undefined) => (rich ?? []).ma
 
 /** Le texte vient du navigateur : seul ce nettoyage garantit qu'il ne contient aucun script. */
 export function cleanInline(html: string): string {
-  const flat = html.replace(/<\/(p|div|h[1-6]|li|blockquote)>\s*<(p|div|h[1-6]|li|blockquote)[^>]*>/gi, "<br>");
+  // Deux paragraphes restent séparés par une ligne vide, dans Notion comme pour les membres
+  const flat = html.replace(/<\/p>\s*<p[^>]*>/gi, "<br><br>").replace(/<\/(p|div|h[1-6]|li|blockquote)>\s*<(p|div|h[1-6]|li|blockquote)[^>]*>/gi, "<br>");
   return sanitizeHtml(flat, {
     allowedTags: ["strong", "em", "u", "s", "code", "a", "br"],
     allowedAttributes: { a: ["href", "target", "rel"] },
@@ -74,7 +75,7 @@ export function cleanInline(html: string): string {
       i: "em",
       a: (tagName, attribs) => ({ tagName, attribs: { href: attribs.href ?? "", target: "_blank", rel: "noopener noreferrer nofollow" } }),
     },
-  }).trim();
+  }).replace(/(<br\s*\/?>\s*){3,}/gi, "<br /><br />").replace(/(<br\s*\/?>\s*)+$/i, "").trim();
 }
 
 /* ───────────── Blocs Notion → blocs de l'application ───────────── */

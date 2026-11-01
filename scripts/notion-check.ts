@@ -10,7 +10,7 @@ import { createLessonPage } from "../server/lib/notionWrite";
 
 const EXPECTED = {
   [env.notionFormations]: { Formation: "title", Accroche: "rich_text", Couverture: "files", Hashtags: "multi_select", "Ordre d'affichage": "number", Public: "select", Rythme: "select", Statut: "status" },
-  [env.notionSections]: { Section: "title", Formation: "relation", Ordre: "number", Intention: "rich_text", Statut: "status", Hashtags: "multi_select", "Leçons": "relation" },
+  [env.notionSections]: { Section: "title", Formation: "relation", Ordre: "number", Intention: "rich_text", Hashtags: "multi_select", "Leçons": "relation" },
   [env.notionLecons]: { "Leçon": "title", Section: "relation", Ordre: "number", Type: "select", Intention: "rich_text", Statut: "status", "Durée estimée (min)": "number", "Vidéo": "url", "Test intégré": "url", Hashtags: "multi_select" },
 };
 

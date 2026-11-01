@@ -52,7 +52,6 @@ function Editor({ l, onSaved }: { l: Lesson; onSaved: () => void }) {
           <a href={notionUrl(l.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a>
         </span>
       </header>
-      {l.status === "publie" && l.sectionStatus !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette leçon est publiée, mais sa section ne l’est pas : les membres ne la voient pas encore.</p>}
       <IssueList issues={l.issues} />
       {conflict && <NotionConflict onResolved={() => { setConflict(false); setDirty(false); onSaved(); }} />}
       <section className="p-card p-4 sm:p-5 flex flex-col gap-3.5" aria-label="Fiche de la leçon">
@@ -75,7 +74,7 @@ function Editor({ l, onSaved }: { l: Lesson; onSaved: () => void }) {
           <h3 className="m-0 text-[24px]">{r.title}</h3>
           {r.key === "exercice" && <p className="m-0 text-[13.5px] p-muted">Chaque question reçoit un champ de réponse, rangé dans le journal privé du membre.</p>}
           {r.key === "defi" && <p className="m-0 text-[13.5px] p-muted">Les membres voient ce texte et le bouton « J’ai relevé ce défi ».</p>}
-          <BlockEditor label={r.title} questions={r.key === "exercice"} blocks={rubrics[r.key]} onChange={(b) => { setRubrics((x) => ({ ...x, [r.key]: b })); setDirty(true); }} />
+          <BlockEditor label={r.title} large={r.key === "contenu"} questions={r.key === "exercice"} blocks={rubrics[r.key]} onChange={(b) => { setRubrics((x) => ({ ...x, [r.key]: b })); setDirty(true); }} />
         </section>
       ))}
       <div className="flex flex-wrap justify-end gap-2">

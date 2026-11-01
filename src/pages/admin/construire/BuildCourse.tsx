@@ -38,7 +38,7 @@ export default function BuildCourse() {
         </div>
         <span className="flex flex-wrap items-center gap-2"><CourseActions c={c} /><a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a></span>
       </header>
-      {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses sections et ses leçons le sont.</p>}
+      {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses leçons le sont.</p>}
       <Chips value={tab} onChange={setTab} label="Rubriques de la formation" options={[["sections", "Sections", c.sections.length], ["reglages", "Réglages"], ["participants", "Participants", c.participants.length], ["stats", "Statistiques"]]} />
       {tab === "sections" && <Outline c={c} />}
       {tab === "reglages" && <Settings key={`${revision}-${c.status}`} c={c} onSaved={() => setRevision((r) => r + 1)} />}
@@ -53,7 +53,7 @@ function CourseActions({ c }: { c: Course }) {
   const utils = trpc.useUtils();
   const set = trpc.build.setCourseStatus.useMutation({ onSuccess: (_r, v) => { utils.build.invalidate(); toast.success(v.status === "publie" ? "Formation publiée dans Notion et ici" : "Formation dépubliée dans Notion et ici"); }, onError: (e) => toast.error(e.message) });
   if (c.status === "publie") return <ConfirmButton label="Dépublier" question="Les membres ne verront plus cette formation. Leurs réponses restent dans leur journal." confirm="Dépublier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "brouillon" })} />;
-  return <ConfirmButton label="Publier la formation" className="p-btn-primary p-btn-sm" question="Les membres verront cette formation, avec ses sections et leçons publiées." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
+  return <ConfirmButton label="Publier la formation" className="p-btn-primary p-btn-sm" question="Les membres verront cette formation, avec ses leçons publiées." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
 }
 
 function Settings({ c, onSaved }: { c: Course; onSaved: () => void }) {
@@ -195,7 +195,7 @@ function Stats({ c }: { c: Course }) {
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {[["Ont commencé", s.enrolled], ["Ont terminé", s.finished], ["En pause depuis 14 jours", s.inactive], ["En accès complet", s.fullAccess]].map(([l, n]) => <div key={l} className="p-card p-4 flex flex-col gap-1"><span className="serif text-[36px] leading-none">{n}</span><span className="text-[13px] p-muted leading-snug">{l}</span></div>)}
       </div>
-      {s.sections.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucune section publiée pour l’instant.</div>}
+      {s.sections.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucune leçon publiée pour l’instant.</div>}
       <ol className="list-none m-0 p-0 flex flex-col gap-3">
         {s.sections.map((x) => (
           <li key={x.id} className="p-card p-3.5 flex flex-col gap-3">

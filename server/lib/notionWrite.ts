@@ -40,17 +40,15 @@ async function notionLabels(dataSourceId: string, names: string[]): Promise<{ na
 }
 
 type Status = "brouillon" | "relecture" | "publie";
-export const SECTION_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publié" } as const;
 export const LESSON_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publiée" } as const;
 export const COURSE_STATUS = { brouillon: "Brouillon", relecture: "En relecture", publie: "Publiée" } as const;
 
-export type SectionProps = { title: string; position: number; status: Status; intention: string; hashtags: string[] };
+export type SectionProps = { title: string; position: number; intention: string; hashtags: string[] };
 
 export async function sectionProperties(p: SectionProps) {
   return {
     Section: { title: plainToRichText(p.title) },
     Ordre: { number: p.position },
-    Statut: { status: { name: SECTION_STATUS[p.status] } },
     Intention: richProp(p.intention),
     Hashtags: { multi_select: await notionLabels(env.notionSections, p.hashtags) },
   };
