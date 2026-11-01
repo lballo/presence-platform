@@ -127,6 +127,22 @@
   .p-muted { color: var(--p-ink-2); }
   .p-faint { color: var(--p-ink-3); }
   .p-link { color: var(--p-accent-text); }
+  .p-dot { @apply inline-block w-2.5 h-2.5 rounded-full flex-none; background: var(--p-accent); }
+  /* Texte mis en forme du forum : publication et éditeur */
+  .p-rich { @apply text-[16px] leading-relaxed; overflow-wrap: anywhere; }
+  .p-rich > * + * { margin-top: 0.7em; }
+  .p-rich h2 { @apply text-[27px] leading-tight; }
+  .p-rich h3 { @apply text-[22px] leading-tight; }
+  .p-rich ul { @apply list-disc pl-6; }
+  .p-rich ol { @apply list-decimal pl-6; }
+  .p-rich li > * + * { margin-top: 0.3em; }
+  .p-rich blockquote { @apply pl-4 border-l-[3px]; border-color: var(--p-accent-line); color: var(--p-ink-2); }
+  .p-rich a { @apply underline; color: var(--p-accent-text); }
+  .p-rich img { @apply max-w-full h-auto rounded-2xl; }
+  .p-rich hr { border-color: var(--p-line); }
+  .p-editor { @apply min-h-[170px] px-3 py-3 outline-none; }
+  .p-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--p-ink-3); }
+  .p-editor img.ProseMirror-selectednode { outline: 2px solid var(--p-accent); }
 }
 
 @keyframes p-pulse { 0% { transform: scale(1); opacity: .6 } 100% { transform: scale(2.2); opacity: 0 } }

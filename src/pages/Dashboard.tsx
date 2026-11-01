@@ -4,6 +4,7 @@ import { Linkedin, Pencil, CalendarPlus, ExternalLink, ChevronLeft, ChevronRight
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, iso, monthTitle, plural, monthAbr, dayNum } from "@/lib/format";
+import { PinnedAnnouncements } from "@/components/forum/PinnedAnnouncements";
 
 const PREFS: [string, string][] = [["f", "Une femme"], ["m", "Un homme"], ["all", "Peu importe"]];
 
@@ -21,6 +22,8 @@ export default function Dashboard() {
         <h1 className="text-[clamp(38px,5vw,56px)] leading-[1.05] m-0">Bonjour {me.data?.firstName ?? ""}</h1>
         <p className="m-0 text-[17px] p-muted">Votre semaine en un coup d’œil.</p>
       </header>
+
+      <PinnedAnnouncements />
 
       {me.data && (editing ? <ProfileEditor me={me.data} onDone={() => setEditing(false)} /> : <ProfileCard me={me.data} onEdit={() => setEditing(true)} />)}
 

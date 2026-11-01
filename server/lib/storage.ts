@@ -4,14 +4,17 @@ import { env } from "./env";
 /**
  * Stockage de fichiers dans Supabase Storage.
  * Le serveur crée des URL d'envoi signées ; le navigateur envoie le fichier directement
- * (aucune limite de taille côté serveur). Buckets : « talks » et « forum » (lecture publique),
- * « messages » (privé : liens de téléchargement signés, valables une heure).
+ * (aucune limite de taille côté serveur). Buckets : « talks », « forum » et « forum-images » (lecture publique),
+ * « messages » et « forum-fichiers » (privés : liens de téléchargement signés, valables une heure).
  */
-export const BUCKETS = {
-  talk: { bucket: "talks", maxMb: 500, videoOnly: true, public: true },
-  forum: { bucket: "forum", maxMb: 500, videoOnly: true, public: true },
-  message: { bucket: "messages", maxMb: 50, videoOnly: false, public: false },
-} as const;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "message", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
+  talk: { bucket: "talks", maxMb: 500, types: "video", public: true },
+  forum: { bucket: "forum", maxMb: 500, types: "video", public: true },
+  forumImage: { bucket: "forum-images", maxMb: 10, types: IMAGE_TYPES, public: true },
+  forumFile: { bucket: "forum-fichiers", maxMb: 50, public: false },
+  message: { bucket: "messages", maxMb: 50, public: false },
+};
 export type UploadKind = keyof typeof BUCKETS;
 
 export const storageReady = () => !!(env.supabaseUrl && env.supabaseServiceKey);
@@ -21,7 +24,8 @@ const headers = () => ({ Authorization: `Bearer ${env.supabaseServiceKey}`, apik
 export async function createSignedUpload(kind: UploadKind, memberId: number, filename: string, contentType: string, size: number) {
   if (!storageReady()) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Le stockage des fichiers n’est pas encore configuré (SUPABASE_SERVICE_ROLE_KEY)." });
   const cfg = BUCKETS[kind];
-  if (cfg.videoOnly && !contentType.startsWith("video/")) throw new TRPCError({ code: "BAD_REQUEST", message: "Choisissez un fichier vidéo (mp4, mov, webm)." });
+  if (cfg.types === "video" && !contentType.startsWith("video/")) throw new TRPCError({ code: "BAD_REQUEST", message: "Choisissez un fichier vidéo (mp4, mov, webm)." });
+  if (Array.isArray(cfg.types) && !cfg.types.includes(contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: "Choisissez une image (jpg, png, webp ou gif)." });
   if (size > cfg.maxMb * 1024 * 1024) throw new TRPCError({ code: "BAD_REQUEST", message: `Le fichier dépasse ${cfg.maxMb} Mo.` });
   const ext = (filename.split(".").pop() ?? "bin").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "bin";
   const path = `membre-${memberId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;

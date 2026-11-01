@@ -11,9 +11,11 @@ import {
   boolean,
   jsonb,
   index,
+  primaryKey,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Schéma Postgres : "public" par défaut, ou celui de DB_SCHEMA (ex. "presence" sur Supabase,
 // pour cohabiter avec d'autres applications dans la même base).
@@ -106,19 +108,118 @@ export const coachingSessions = pgTable("coaching_sessions", {
 // ─────────────────────────────────────────────────────────────
 
 export const forumKindEnum = pgEnum("forum_kind", ["victoire", "video", "question"]);
+export const forumSpaceKindEnum = pgEnum("forum_space_kind", ["libre", "annonces", "video", "opportunites"]);
+export const forumPostStatusEnum = pgEnum("forum_post_status", ["published", "pending", "rejected"]);
+export const forumAudienceEnum = pgEnum("forum_audience", ["tous", "collectif", "accompagnement"]);
+export const opportunityTypeEnum = pgEnum("opportunity_type", ["recrut", "fin", "assoc"]);
 
-export const forumPosts = pgTable("forum_posts", {
+// Le slug reste stable (il sert d'adresse) ; nom, emoji et ordre sont modifiables par l'administratrice.
+export const forumSpaces = pgTable("forum_spaces", {
   id: serial("id").primaryKey(),
-  authorId: integer("author_id").notNull(),
-  kind: forumKindEnum("kind").notNull(),
-  text: text("text").notNull(),
-  askFeedback: boolean("ask_feedback").notNull().default(false),
-  videoUrl: text("video_url").notNull().default(""), // lien (YouTube, Drive…) ou vidéo chargée, pour les demandes de retour
-  likes: integer("likes").notNull().default(0),
-  replies: integer("replies").notNull().default(0),
-  editedAt: timestamp("edited_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  slug: varchar("slug", { length: 60 }).notNull().unique(),
+  name: varchar("name", { length: 80 }).notNull(),
+  emoji: varchar("emoji", { length: 16 }).notNull().default(""),
+  description: text("description").notNull().default(""),
+  groupKey: varchar("group_key", { length: 20 }).notNull(), // arriver | echanger
+  position: integer("position").notNull().default(0),
+  kind: forumSpaceKindEnum("kind").notNull().default("libre"),
+  adminOnly: boolean("admin_only").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export type PostAttachment = { path: string; name: string; type: string; size: number };
+
+export const forumPosts = pgTable(
+  "forum_posts",
+  {
+    id: serial("id").primaryKey(),
+    authorId: integer("author_id").notNull(),
+    spaceId: integer("space_id").references(() => forumSpaces.id), // espace du réseau…
+    hiveId: integer("hive_id").references(() => hives.id, { onDelete: "cascade" }), // …ou annonce de ruche
+    kind: forumKindEnum("kind"), // conservé pour les publications d'avant les espaces
+    title: varchar("title", { length: 200 }).notNull().default(""),
+    text: text("text").notNull(), // version sans mise en forme (extraits, recherche)
+    html: text("html").notNull().default(""), // texte mis en forme, nettoyé par le serveur (server/lib/richText.ts)
+    coverUrl: text("cover_url").notNull().default(""),
+    attachments: jsonb("attachments").$type<PostAttachment[]>().notNull().default([]),
+    askFeedback: boolean("ask_feedback").notNull().default(false),
+    videoUrl: text("video_url").notNull().default(""), // lien (YouTube, Drive…) ou vidéo chargée
+    status: forumPostStatusEnum("status").notNull().default("published"), // relecture des opportunités
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+    audience: forumAudienceEnum("audience").notNull().default("tous"),
+    publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(), // dans le futur : publication programmée
+    endsAt: timestamp("ends_at", { withTimezone: true }), // fin d'affichage d'une annonce
+    oppType: opportunityTypeEnum("opp_type"),
+    facts: jsonb("facts").$type<string[]>().notNull().default([]),
+    likes: integer("likes").notNull().default(0),
+    replies: integer("replies").notNull().default(0),
+    editedAt: timestamp("edited_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    spaceIdx: index("forum_posts_space_idx").on(t.spaceId, t.publishedAt),
+    hiveIdx: index("forum_posts_hive_idx").on(t.hiveId, t.publishedAt),
+    statusIdx: index("forum_posts_status_idx").on(t.status),
+  })
+);
+
+export type ForumPost = typeof forumPosts.$inferSelect;
+
+// Liste partagée, définie par l'administratrice. Elle n'est pas propre au forum :
+// les contenus de formation auront leur propre table de liaison vers cette même liste.
+export const hashtags = pgTable(
+  "hashtags",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 40 }).notNull(),
+    color: varchar("color", { length: 7 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ nameUniq: uniqueIndex("hashtags_name_unique").on(sql`lower(${t.name})`) })
+);
+
+export const forumPostHashtags = pgTable(
+  "forum_post_hashtags",
+  {
+    postId: integer("post_id").notNull().references(() => forumPosts.id, { onDelete: "cascade" }),
+    hashtagId: integer("hashtag_id").notNull().references(() => hashtags.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.postId, t.hashtagId] }), tagIdx: index("forum_post_hashtags_tag_idx").on(t.hashtagId) })
+);
+
+// Lecture d'une annonce : read_at (point de couleur, nombre de lectures), dismissed_at (fermée du tableau de bord)
+export const forumPostReads = pgTable(
+  "forum_post_reads",
+  {
+    postId: integer("post_id").notNull().references(() => forumPosts.id, { onDelete: "cascade" }),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true }).defaultNow().notNull(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.postId, t.memberId] }), memberIdx: index("forum_post_reads_member_idx").on(t.memberId) })
+);
+
+// « Ça m'intéresse » sur une opportunité
+export const forumPostInterests = pgTable(
+  "forum_post_interests",
+  {
+    postId: integer("post_id").notNull().references(() => forumPosts.id, { onDelete: "cascade" }),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.postId, t.memberId] }) })
+);
+
+// Brouillon enregistré automatiquement, un par fenêtre de publication et par membre
+export const forumDrafts = pgTable(
+  "forum_drafts",
+  {
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 40 }).notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.key] }) })
+);
 
 // Réponses aux publications du forum
 export const forumReplies = pgTable(
@@ -144,9 +245,9 @@ export const forumLikes = pgTable(
   (t) => ({ uniq: uniqueIndex("forum_likes_uniq").on(t.postId, t.memberId) })
 );
 
-export const opportunityTypeEnum = pgEnum("opportunity_type", ["recrut", "fin", "assoc"]);
 export const opportunityStatusEnum = pgEnum("opportunity_status", ["pending", "published", "rejected"]);
 
+// Anciennes tables des opportunités, reprises dans forum_posts : conservées, mais plus lues ni écrites.
 export const opportunities = pgTable("opportunities", {
   id: serial("id").primaryKey(),
   authorId: integer("author_id").notNull(),

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, Lock, Unlock, Heart, MessageCircle, Plus, FileText, Link2, Sheet, Presentation, Pin, ExternalLink, Users, CalendarDays, Flag, Settings, Trash2 } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, Heart, Megaphone, MessageCircle, Plus, FileText, Link2, Sheet, Presentation, Pin, ExternalLink, Users, CalendarDays, Flag, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { ago, longDate, hour, plural } from "@/lib/format";
 import { COVERS, PHASES, endLabel, CreateHive } from "./Ruches";
 import { AccessInfo, AccessFields, accessReady } from "@/components/EventAccess";
+import { ComposerHost, PostList } from "@/components/forum/PostList";
+import type { ComposerTarget } from "@/components/forum/Composer";
+import { UnreadDot, type Post } from "@/components/forum/shared";
 
 const RES_ICON = { doc: FileText, pdf: FileText, sheet: Sheet, slides: Presentation, link: Link2 } as const;
 const RES_LABEL = { doc: "Document", pdf: "PDF", sheet: "Tableur", slides: "Présentation", link: "Lien" } as const;
@@ -20,11 +23,14 @@ export default function Ruche() {
   const refresh = () => { utils.hives.byId.invalidate({ id: hiveId }); utils.hives.list.invalidate(); utils.dashboard.invalidate(); };
   const join = trpc.hives.join.useMutation({ onSuccess: (r) => { refresh(); toast.success(r.role === "pending" ? "Demande envoyée aux leaders" : "Bienvenue dans la ruche"); } });
   const leave = trpc.hives.leave.useMutation({ onSuccess: refresh, onError: (e) => toast.error(e.message) });
+  const unread = trpc.forum.unread.useQuery();
+  const unreadCount = unread.data?.hives[hiveId];
+  const [composer, setComposer] = useState<ComposerTarget | null>(null);
 
   if (!h.data) return <p className="p-muted py-20 text-center">Chargement…</p>;
   const r = h.data;
   const pj = r.type === "projet";
-  const tabs = pj ? [["disc", "Discussions"], ["res", "Ressources"], ["mem", "Contributeurs"], ["ev", "Rendez-vous"]] : [["disc", "Discussions"], ["proj", "Projets"], ["mem", "Membres"], ["ev", "Événements"]];
+  const tabs = pj ? [["disc", "Discussions"], ["ann", "Annonces"], ["res", "Ressources"], ["mem", "Contributeurs"], ["ev", "Rendez-vous"]] : [["disc", "Discussions"], ["ann", "Annonces"], ["proj", "Projets"], ["mem", "Membres"], ["ev", "Événements"]];
   const tab = tabs.some((t) => t[0] === params.get("tab")) ? params.get("tab")! : "disc";
   const setTab = (t: string) => setParams({ tab: t });
   const who = pj ? "contributeurs" : "membres";
@@ -53,16 +59,18 @@ export default function Ruche() {
           {r.role === "pending" && <><span className="h-12 px-4 rounded-full border border-white/45 flex items-center text-[14.5px]">Demande envoyée · en attente de validation</span><button type="button" className="underline text-white/85" onClick={() => leave.mutate({ id: hiveId })}>Annuler la demande</button></>}
           {r.role === "member" && <><span className="h-12 px-4 rounded-full bg-white/15 flex items-center text-[14.5px]">✓ {pj ? "Vous contribuez à ce projet" : "Vous êtes membre"}</span><button type="button" className="underline text-white/85" onClick={() => leave.mutate({ id: hiveId })}>{pj ? "Quitter le projet" : "Quitter la ruche"}</button></>}
           {r.canManage && (r.role === "founder" || r.role === "leader") && <span className="h-12 px-4 rounded-full bg-white/15 flex items-center text-[14.5px]">{r.role === "founder" ? (pj ? "Vous avez lancé ce projet" : "Vous êtes la leader fondatrice") : pj ? "Vous portez ce projet" : "Vous êtes leader de cette ruche"}</span>}
+          {r.canAnnounce && <button type="button" className="p-btn-white" onClick={() => { setTab("ann"); setComposer({ mode: "new", hive: { id: hiveId, name: r.name } }); }}><Megaphone size={16} /> Créer une annonce</button>}
         </div>
       </section>
 
       <div className="flex flex-wrap gap-6 items-start">
         <section className="flex-[2_1_560px] min-w-0 p-card overflow-hidden">
           <div className="flex flex-wrap gap-0.5 px-4 border-b" style={{ borderColor: "var(--p-line)" }}>
-            {tabs.map(([k, l]) => <button key={k} type="button" aria-pressed={tab === k} className="h-[54px] px-3.5 -mb-px border-b-2 text-[14.5px] font-medium" style={{ borderColor: tab === k ? "var(--p-accent)" : "transparent", color: tab === k ? "var(--p-ink)" : "var(--p-ink-2)" }} onClick={() => setTab(k)}>{l}</button>)}
+            {tabs.map(([k, l]) => <button key={k} type="button" aria-pressed={tab === k} className="inline-flex items-center gap-1.5 h-[54px] px-3.5 -mb-px border-b-2 text-[14.5px] font-medium" style={{ borderColor: tab === k ? "var(--p-accent)" : "transparent", color: tab === k ? "var(--p-ink)" : "var(--p-ink-2)" }} onClick={() => setTab(k)}>{l}{k === "ann" && !!unreadCount && <UnreadDot label="Annonces non lues" />}</button>)}
           </div>
           <div className="p-5 sm:p-7 flex flex-col gap-4">
             {tab === "disc" && <Discussions r={r} hiveId={hiveId} refresh={refresh} join={() => join.mutate({ id: hiveId })} />}
+            {tab === "ann" && <Announcements r={r} hiveId={hiveId} onCreate={() => setComposer({ mode: "new", hive: { id: hiveId, name: r.name } })} onEdit={(post) => setComposer({ mode: "edit", post })} />}
             {tab === "proj" && <Projects r={r} hiveId={hiveId} />}
             {tab === "res" && <Resources r={r} hiveId={hiveId} refresh={refresh} join={() => join.mutate({ id: hiveId })} />}
             {tab === "mem" && <Members r={r} hiveId={hiveId} refresh={refresh} />}
@@ -94,11 +102,23 @@ export default function Ruche() {
           </section>
         </aside>
       </div>
+      <ComposerHost target={composer} onClose={() => setComposer(null)} />
     </>
   );
 }
 
 type R = RouterOutputs["hives"]["byId"];
+
+/** Onglet « Annonces » : créées par la fondatrice et les leaders, avec les mêmes réactions et réponses qu'au forum. */
+function Announcements({ r, hiveId, onCreate, onEdit }: { r: R; hiveId: number; onCreate: () => void; onEdit: (post: Post) => void }) {
+  if (r.locked) return <Locked r={r} what="Les annonces sont" />;
+  return (
+    <>
+      {r.canAnnounce && <button type="button" className="p-btn-primary p-btn-sm self-start" onClick={onCreate}><Megaphone size={15} /> Créer une annonce</button>}
+      <PostList hive={hiveId} onEdit={onEdit} empty={<div className="p-7 rounded-2xl border border-dashed text-center text-[15px] p-muted" style={{ borderColor: "var(--p-line-2)" }}>Aucune annonce pour l’instant.</div>} />
+    </>
+  );
+}
 
 function Locked({ r, what }: { r: R; what: string }) {
   return (

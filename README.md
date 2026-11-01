@@ -62,7 +62,7 @@ npm start         # sert le tout sur PORT (3000 par défaut)
 server/
   boot.ts          serveur Hono (sert /api/trpc et le front en prod)
   router.ts        assemblage des routeurs tRPC
-  routers/         members, forum, hives, events, matching, coach, speech, dashboard
+  routers/         members, forum, hashtags, hives, events, matching, coach, speech, dashboard
   lib/             intents (7 intentions + Espace Rencontre), gemini, coach, format
 db/
   schema.ts        tables Drizzle · relations.ts · seed.ts
@@ -96,7 +96,7 @@ Chaque membre renseigne son intention, son ambition, ses valeurs, ses passions e
 
 ## Fichiers
 
-Les vidéos (Talk Show, demandes de retour du forum) et les pièces jointes des messages sont envoyées directement du navigateur vers Supabase Storage grâce à une URL signée créée par le serveur. Il faut `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` ; sans elles, le forum et le Talk Show proposent un lien vidéo et le trombone des messages reste désactivé.
+Les vidéos (Talk Show, forum), les images et pièces jointes du forum (buckets `forum-images` et `forum-fichiers`, privé) et les pièces jointes des messages sont envoyées directement du navigateur vers Supabase Storage grâce à une URL signée créée par le serveur. Il faut `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` ; sans elles, le forum et le Talk Show proposent un lien vidéo et le trombone des messages reste désactivé.
 
 ## Statuts et événements
 
@@ -104,6 +104,16 @@ Les vidéos (Talk Show, demandes de retour du forum) et les pièces jointes des 
 - **Organisateur** : crée des événements Présence publiés directement, et modifie ou supprime les siens.
 - **Administrateur** : valide les propositions et les candidatures, change le statut des membres (fiche membre de l’annuaire), modifie ou supprime tous les événements.
 - **Deux canaux distincts** : la page Événements ne montre que le programme Présence ; les événements de ruche vivent dans leur ruche (créés par les leaders). Le tableau de bord consolide dans « Mon agenda » tout ce à quoi on est inscrit et suggère les prochains événements des deux canaux.
+
+## Forum
+
+- **Espaces** (`forum_spaces`) : fil d'actualité, puis « Arriver dans le réseau » (Bienvenue, Présentations, Annonces) et « Échanger » (Conversations, Victoires, Retours vidéo, Entraide, Opportunités). Bienvenue et Annonces sont réservés aux administrateurs ; les opportunités des membres sont relues avant publication, y compris après une modification.
+- **Fenêtre de publication** (`src/components/forum/Composer.tsx`) : création, annonce et modification ; couverture, image, pièce jointe, vidéo, lien, emoji, note vocale (enregistrée comme pièce jointe privée) et hashtags. Le brouillon est enregistré sur le serveur (`forum_drafts`). Le texte mis en forme est nettoyé par `server/lib/richText.ts` avant d'être enregistré ; lui seul est affiché tel quel.
+- **Annonces** : publications de l'espace Annonces ou d'une ruche (`forum_posts.hive_id`). Épingle, public visé (d'après `access_type` du membre), publication programmée, fin d'affichage, point de couleur et nombre de lectures (`forum_post_reads`). Une annonce est comptée comme lue après une seconde à l'écran, ou quand la personne la ferme sur son tableau de bord.
+- **Qui voit quoi** : `server/lib/forumAccess.ts`, doublé par la RLS (`db/migrations/supabase/0011_forum_rls.sql`). Publier ou modifier passe uniquement par le serveur.
+- **Hashtags** (`hashtags`) : liste partagée définie par l'administratrice. Elle n'est pas propre au forum : les contenus de formation auront leur propre table de liaison vers cette liste, comme `forum_post_hashtags`.
+- **Administration provisoire** : `/admin/forum`, en attendant le panneau `/admin`.
+- **Mise en ligne** : appliquer `0009_forum_spaces.sql` et `0011_forum_rls.sql`, déployer, puis passer `0010_forum_ranger_publications.sql` (qui peut être rejoué). Les anciennes tables `opportunities` et `opportunity_interests` sont conservées, mais ne sont plus lues.
 
 ## Connexion et droits
 
@@ -120,4 +130,4 @@ Les vidéos (Talk Show, demandes de retour du forum) et les pièces jointes des 
   - modérer les contenus (forum, ruches, opportunités, talks) : masquer, supprimer, valider ;
   - files d’attente : opportunités et talks à relire.
 - **Analyse vidéo des longues vidéos** : aujourd’hui la vidéo est envoyée au serveur en un seul bloc (héritage PresenceAI), ce qui limite la taille. Prévu : envoi direct du navigateur vers Supabase Storage (comme pour le Talk Show), puis traitement asynchrone côté serveur avec l’API Files de Gemini (statut « en cours » → « terminé »).
-- Ensuite : onglet « Mon parcours », réponses aux publications du forum et des ruches, notifications (e-mail / push) pour les nouveaux messages.
+- Ensuite : onglet « Mon parcours », réponses aux discussions des ruches, notifications (e-mail / push) pour les nouveaux messages.

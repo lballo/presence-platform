@@ -1,330 +1,192 @@
 import { useState } from "react";
-import { Heart, MessageCircle, ShieldCheck, Briefcase, TrendingUp, Link2, Upload, X, Pencil, Trash2, MoreHorizontal } from "lucide-react";
-import { useUpload, fileSize } from "@/lib/upload";
-import { VideoEmbed } from "@/components/VideoEmbed";
+import { Link, NavLink, useNavigate, useParams, useSearchParams } from "react-router";
+import { ArrowLeft, ChevronDown, Megaphone, Newspaper, PenLine, Settings, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
-import { ago, plural } from "@/lib/format";
+import { ago } from "@/lib/format";
+import { PostCard } from "@/components/forum/PostCard";
+import { ComposerHost, PostList } from "@/components/forum/PostList";
+import type { ComposerTarget } from "@/components/forum/Composer";
+import { OPP, SPACE_GROUPS, TagLabel, UnreadDot, type OppType, type Post, type Space } from "@/components/forum/shared";
 
-const KINDS = { victoire: "Victoire", video: "Retour vidéo", question: "Entraide" } as const;
-const TABS = [["all", "Tout"], ["victoire", "Victoires"], ["video", "Retours vidéo"], ["question", "Entraide"], ["opp", "Opportunités"]] as const;
-type ComposerKind = keyof typeof KINDS | "opportunite";
-const OPP = {
-  recrut: { label: "Recrutement", icon: Briefcase, ph: "Ex. Responsable marketing (H/F)" },
-  fin: { label: "Financement", icon: TrendingUp, ph: "Ex. Levée d’amorçage pour une jeune entreprise" },
-  assoc: { label: "Recherche d’associé", icon: Link2, ph: "Ex. Un associé pour développer mon cabinet" },
-} as const;
+type Spaces = RouterOutputs["forum"]["spaces"];
+const FEED_NAME = "Fil d’actualité";
+const FEED_INTRO = "Les dernières publications de tous les espaces.";
 
 export default function Forum() {
-  const [tab, setTab] = useState<(typeof TABS)[number][0]>("all");
+  const { slug, id } = useParams();
+  const [params] = useSearchParams();
+  const spaces = trpc.forum.spaces.useQuery();
+  const [composer, setComposer] = useState<ComposerTarget | null>(null);
+  const navigate = useNavigate();
+  const data = spaces.data;
+  const tag = Number(params.get("tag")) || undefined;
+  const space = data?.spaces.find((s) => s.slug === slug);
+  const tagName = trpc.hashtags.list.useQuery().data?.find((t) => t.id === tag)?.name;
+  const editPost = (post: Post) => setComposer({ mode: "edit", post });
+
+  return (
+    <div className="flex gap-6 lg:gap-8 items-start">
+      <aside className="hidden md:block w-[216px] flex-none sticky top-6 max-h-[calc(100vh-48px)] overflow-y-auto" aria-label="Espaces du forum">
+        {data && <SpaceNav data={data} />}
+      </aside>
+
+      <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <div className="md:hidden">{data && <SpaceDropdown data={data} label={id ? "Espaces du forum" : space ? `${space.emoji} ${space.name}` : FEED_NAME} />}</div>
+
+        {id ? <SinglePost id={Number(id)} onEdit={editPost} /> : (
+          <>
+            <header className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3 mb-1">
+              <div className="flex-[1_1_280px] min-w-0 flex flex-col gap-1.5">
+                <span className="p-eyebrow">Le forum</span>
+                <h1 className="m-0 text-[clamp(32px,4vw,44px)] leading-[1.08]">{slug ? (space ? `${space.emoji} ${space.name}` : "Espace introuvable") : tagName ? `#${tagName}` : FEED_NAME}</h1>
+                <p className="m-0 text-[15.5px] leading-relaxed p-muted">{slug ? space?.description : tagName ? "Toutes les publications qui portent ce hashtag." : FEED_INTRO}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setComposer({ mode: "new", spaceSlug: slug })}><PenLine size={15} /> Nouvelle publication</button>
+                {data?.canAnnounce && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setComposer({ mode: "new", announcement: true })}><Megaphone size={15} /> Créer une annonce</button>}
+              </div>
+            </header>
+
+            {(!slug || space) && <HashtagFilter space={slug} active={tag} />}
+            {space?.kind === "opportunites" && <PendingReview />}
+            {(!slug || space) && <Posts key={`${slug ?? "fil"}-${tag ?? ""}`} space={space} slug={slug} tag={tag} onEdit={editPost} />}
+          </>
+        )}
+      </div>
+
+      <ComposerHost target={composer} onClose={() => setComposer(null)} onSaved={(postId) => { if (composer?.mode === "new" && !composer.hive) navigate(`/forum/publication/${postId}`); }} />
+    </div>
+  );
+}
+
+function Posts({ space, slug, tag, onEdit }: { space?: Space; slug?: string; tag?: number; onEdit: (p: Post) => void }) {
+  const [oppType, setOppType] = useState<OppType | undefined>();
+  const isOpp = space?.kind === "opportunites";
   return (
     <>
-      <PageHeader eyebrow="Le forum" title="Partager avec le cercle" intro="Racontez vos victoires, grandes ou discrètes, demandez des retours sur vos vidéos, sollicitez l’entraide du cercle et partagez vos opportunités : recrutement, financement, recherche d’associé." />
-      <div className="flex flex-wrap gap-2 mb-6">
-        {TABS.map(([k, l]) => <button key={k} type="button" className={`p-chip h-10 ${tab === k ? "p-chip-on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
-      </div>
-      {tab === "opp" ? <Opportunities /> : <Posts filter={tab} onOpportunitySent={() => setTab("opp")} />}
+      {isOpp && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={`p-chip h-9 ${!oppType ? "p-chip-on" : ""}`} onClick={() => setOppType(undefined)}>Toutes</button>
+          {(Object.keys(OPP) as OppType[]).map((k) => <button key={k} type="button" className={`p-chip h-9 ${oppType === k ? "p-chip-on" : ""}`} onClick={() => setOppType(k)}>{OPP[k].label}</button>)}
+        </div>
+      )}
+      <PostList space={slug} hashtagId={tag} oppType={isOpp ? oppType : undefined} showOrigin={!slug} onEdit={onEdit}
+        empty={<div className="p-soft p-9 text-center p-muted">{tag ? "Aucune publication ne porte ce hashtag ici." : space?.adminOnly ? "L’équipe n’a encore rien publié ici." : "Rien ici pour l’instant. Lancez la première publication."}</div>} />
     </>
   );
 }
 
-function Posts({ filter, onOpportunitySent }: { filter: string; onOpportunitySent: () => void }) {
-  const utils = trpc.useUtils();
-  const me = trpc.members.me.useQuery();
-  const posts = trpc.forum.posts.useQuery();
-  const create = trpc.forum.createPost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setText(""); setVideoLink(""); setVideoFile(null); toast.success("Publié dans le cercle"); }, onError: (e) => toast.error(e.message) });
-  const cfg = trpc.uploads.config.useQuery();
-  const { upload, progress } = useUpload("forum");
-  const [videoMode, setVideoMode] = useState<"link" | "file">("link");
-  const [videoLink, setVideoLink] = useState("");
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const canUpload = !!cfg.data?.enabled;
-  const vMode = canUpload ? videoMode : "link";
-  const createOpp = trpc.forum.createOpportunity.useMutation({ onSuccess: () => { utils.forum.opportunities.invalidate(); setText(""); setOpp({ type: "recrut", title: "", facts: "" }); setKind("victoire"); toast.success("Annonce envoyée à l’équipe pour relecture"); onOpportunitySent(); }, onError: (e) => toast.error(e.message) });
-  const like = trpc.forum.toggleLike.useMutation({ onSuccess: () => utils.forum.posts.invalidate() });
-  const [text, setText] = useState("");
-  const [kind, setKind] = useState<ComposerKind>("victoire");
-  const [opp, setOpp] = useState({ type: "recrut" as keyof typeof OPP, title: "", facts: "" });
-  const isOpp = kind === "opportunite";
-  const send = async () => {
-    if (isOpp) return createOpp.mutate({ type: opp.type, title: opp.title, text, facts: opp.facts.split(",").map((x) => x.trim()).filter(Boolean) });
-    let videoUrl = "";
-    if (kind === "video") {
-      if (vMode === "file" && videoFile) {
-        try { videoUrl = (await upload(videoFile)).publicUrl ?? ""; } catch (e) { toast.error(e instanceof Error ? e.message : "Envoi impossible"); return; }
-      } else videoUrl = videoLink.trim();
-    }
-    create.mutate({ kind, text, askFeedback: kind === "video", videoUrl });
-  };
-  const videoReady = kind !== "video" || (vMode === "file" ? !!videoFile : /^https?:\/\/\S+$/.test(videoLink.trim()));
-  const canSend = !!text.trim() && (!isOpp || !!opp.title.trim()) && videoReady && !create.isPending && !createOpp.isPending && progress === null;
-  const list = (posts.data ?? []).filter((p) => filter === "all" || p.kind === filter);
-
+function SpaceLink({ to, end, label, icon, unread, pending, onPick }: { to: string; end?: boolean; label: string; icon: React.ReactNode; unread?: number; pending?: number; onPick?: () => void }) {
   return (
-    <div className="flex flex-wrap gap-6 items-start">
-      <div className="flex-[2_1_540px] min-w-0 flex flex-col gap-4">
-        <section className="p-card p-5 flex flex-col gap-3">
-          <div className="flex gap-3">
-            {me.data && <Avatar m={me.data} size={44} />}
-            <textarea className="p-field" rows={3} placeholder={isOpp ? "Le contexte, ce que vous cherchez, ce que vous proposez en retour." : "Racontez une victoire, sollicitez l’entraide du cercle, demandez un retour…"} value={text} onChange={(e) => setText(e.target.value)} />
-          </div>
-          {kind === "video" && (
-            <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[13px] p-muted mr-1">Votre vidéo</span>
-                <button type="button" className={`p-chip h-8 text-[13px] ${vMode === "link" ? "p-chip-on" : ""}`} onClick={() => setVideoMode("link")}><Link2 size={13} /> Coller un lien</button>
-                {canUpload && <button type="button" className={`p-chip h-8 text-[13px] ${vMode === "file" ? "p-chip-on" : ""}`} onClick={() => setVideoMode("file")}><Upload size={13} /> Charger une vidéo</button>}
-              </div>
-              {vMode === "link" ? (
-                <input className="p-field" value={videoLink} onChange={(e) => setVideoLink(e.target.value)} placeholder="https://… (YouTube, Vimeo, Loom, Google Drive)" />
-              ) : videoFile ? (
-                <div className="flex items-center gap-2 h-11 px-3 rounded-xl border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }}>
-                  <Upload size={15} style={{ color: "var(--p-accent-text)" }} /><span className="flex-1 truncate text-[13.5px]">{videoFile.name}</span>
-                  <span className="text-[12px] p-faint">{fileSize(videoFile.size)}{progress !== null ? ` · envoi ${progress}%` : ""}</span>
-                  {progress === null && <button type="button" aria-label="Retirer la vidéo" onClick={() => setVideoFile(null)}><X size={15} /></button>}
-                </div>
-              ) : (
-                <label className="flex flex-col items-center gap-1 p-5 rounded-xl border-2 border-dashed cursor-pointer text-center" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }}>
-                  <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f && f.size > (cfg.data?.maxMb.forum ?? 500) * 1048576) toast.error(`La vidéo dépasse ${cfg.data?.maxMb.forum ?? 500} Mo.`); else if (f) setVideoFile(f); }} />
-                  <Upload size={20} style={{ color: "var(--p-accent-text)" }} />
-                  <span className="text-[14px] font-medium">Choisir une vidéo</span>
-                  <span className="text-[12px] p-muted">mp4, mov ou webm · jusqu’à {cfg.data?.maxMb.forum ?? 500} Mo</span>
-                </label>
-              )}
-              {!canUpload && <span className="text-[12px] p-faint">Le chargement direct de fichiers sera disponible une fois le stockage configuré ; en attendant, partagez un lien.</span>}
-            </div>
-          )}
-          {isOpp && (
-            <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
-              <div className="flex flex-wrap gap-1.5">{(Object.keys(OPP) as (keyof typeof OPP)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${opp.type === k ? "p-chip-on" : ""}`} onClick={() => setOpp({ ...opp, type: k })}>{OPP[k].label}</button>)}</div>
-              <input className="p-field" value={opp.title} placeholder={`Titre de l’annonce · ${OPP[opp.type].ph}`} onChange={(e) => setOpp({ ...opp, title: e.target.value })} />
-              <input className="p-field" value={opp.facts} placeholder="Lieu et format, séparés par des virgules · Ex. Lyon, CDI, dès janvier" onChange={(e) => setOpp({ ...opp, facts: e.target.value })} />
-              <span className="text-[12.5px] p-muted">Les opportunités sont relues par l’équipe Présence avant d’être visibles par tous les membres.</span>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(KINDS) as (keyof typeof KINDS)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${kind === k ? "p-chip-on" : ""}`} onClick={() => setKind(k)}>{KINDS[k]}</button>)}
-              <button type="button" className={`p-chip h-8 text-[13px] ${isOpp ? "p-chip-on" : ""}`} onClick={() => setKind("opportunite")}>Opportunité</button>
-            </div>
-            <button type="button" className="p-btn-primary p-btn-sm" disabled={!canSend} onClick={send}>{isOpp ? "Soumettre l’annonce" : "Publier"}</button>
-          </div>
-        </section>
-        {list.map((p) => <PostCard key={p.id} p={p} onLike={() => like.mutate({ postId: p.id })} />)}
-        {list.length === 0 && <p className="p-muted text-center py-10">Rien ici pour l’instant.</p>}
-      </div>
-      <aside className="flex-[1_1_300px] min-w-0">
-        <section className="p-band p-6 flex flex-col gap-2">
-          <span className="text-[12px] font-medium uppercase tracking-[0.3em]" style={{ color: "var(--p-gold-bright)" }}>L’esprit du cercle</span>
-          <p className="m-0 serif text-[28px] leading-tight">Bienveillance, courtoisie et confidentialité.</p>
-          <p className="m-0 text-[14px] text-white/75 leading-relaxed">Nous vous invitons à faire des retours courtois et constructifs envers les membres.</p>
-        </section>
-      </aside>
-    </div>
+    <NavLink to={to} end={end} onClick={onPick} className="flex items-center gap-2.5 min-h-[40px] px-2.5 rounded-xl text-[14.5px] no-underline transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={({ isActive }) => ({ background: isActive ? "var(--p-pill)" : undefined, color: isActive ? "var(--p-accent-text)" : "var(--p-ink)", fontWeight: isActive ? 600 : 400 })}>
+      <span className="w-[22px] flex justify-center flex-none text-[16px]">{icon}</span>
+      <span className="flex-1 min-w-0 truncate">{label}</span>
+      {!!unread && <UnreadDot label={`${unread} annonce${unread > 1 ? "s" : ""} non lue${unread > 1 ? "s" : ""}`} />}
+      {!!pending && <span title="À relire" className="min-w-[20px] h-5 px-1 rounded-full text-[11px] font-semibold flex items-center justify-center text-white" style={{ background: "var(--p-accent)" }}>{pending}</span>}
+    </NavLink>
   );
 }
 
-type Post = RouterOutputs["forum"]["posts"][number];
-
-/** Une publication du forum, avec modification et suppression pour son auteur (suppression aussi pour l'équipe). */
-function PostCard({ p, onLike }: { p: Post; onLike: () => void }) {
-  const utils = trpc.useUtils();
-  const [menu, setMenu] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [confirm, setConfirm] = useState(false);
-  const [text, setText] = useState(p.text);
-  const [video, setVideo] = useState(p.videoUrl);
-  const [showReplies, setShowReplies] = useState(false);
-  const update = trpc.forum.updatePost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setEditing(false); toast.success("Publication modifiée"); }, onError: (e) => toast.error(e.message) });
-  const remove = trpc.forum.deletePost.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); toast.success("Publication supprimée"); }, onError: (e) => toast.error(e.message) });
-  const isLink = !p.videoUrl.includes("/storage/v1/object/");
+/** Colonne des espaces (ordinateur) et contenu du menu déroulant (téléphone). */
+function SpaceNav({ data, onPick }: { data: Spaces; onPick?: () => void }) {
   return (
-    <article className="p-card p-5 flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <Avatar m={p.author} size={44} />
-        <span className="flex flex-col min-w-0"><span className="font-semibold">{p.author.name}</span><span className="text-[12.5px] p-muted">{p.author.jobTitle} · {p.author.city} · {ago(new Date(p.createdAt))}{p.editedAt ? " · modifié" : ""}</span></span>
-        <span className="p-pill ml-auto">{KINDS[p.kind]}</span>
-        {(p.canEdit || p.canDelete) && !editing && (
-          <span className="relative">
-            <button type="button" aria-label="Options de la publication" aria-expanded={menu} className="w-9 h-9 rounded-full flex items-center justify-center p-muted hover:bg-black/5 dark:hover:bg-white/5" onClick={() => setMenu(!menu)}><MoreHorizontal size={18} /></button>
-            {menu && (
-              <span className="absolute right-0 top-10 z-10 min-w-[170px] p-1.5 rounded-xl shadow-lg flex flex-col" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }} onMouseLeave={() => setMenu(false)}>
-                {p.canEdit && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { setMenu(false); setText(p.text); setVideo(p.videoUrl); setEditing(true); }}><Pencil size={14} /> Modifier</button>}
-                {p.canDelete && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" style={{ color: "var(--p-accent-text)" }} onClick={() => { setMenu(false); setConfirm(true); }}><Trash2 size={14} /> Supprimer{!p.isMine ? " (modération)" : ""}</button>}
-              </span>
-            )}
-          </span>
-        )}
-      </div>
-      {editing ? (
-        <div className="flex flex-col gap-2.5">
-          <textarea className="p-field" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
-          {p.kind === "video" && isLink && <input className="p-field" value={video} onChange={(e) => setVideo(e.target.value)} placeholder="Lien de la vidéo (https://…)" />}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="p-btn-primary p-btn-sm" disabled={!text.trim() || update.isPending} onClick={() => update.mutate({ id: p.id, text, ...(p.kind === "video" && isLink ? { videoUrl: video } : {}) })}>Enregistrer</button>
-            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setEditing(false)}>Annuler</button>
-          </div>
+    <nav className="flex flex-col gap-0.5">
+      <SpaceLink to="/forum" end label={FEED_NAME} icon={<Newspaper size={17} />} onPick={onPick} />
+      {SPACE_GROUPS.map(([g, label]) => (
+        <div key={g} className="flex flex-col gap-0.5 mt-3">
+          <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--p-gold)" }}>{label}</span>
+          {data.spaces.filter((s) => s.groupKey === g).map((s) => <SpaceLink key={s.id} to={`/forum/${s.slug}`} label={s.name} icon={s.emoji} unread={s.unread} pending={s.pending} onPick={onPick} />)}
         </div>
-      ) : (
+      ))}
+      {data.canManage && (
+        <div className="mt-3 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
+          <SpaceLink to="/admin/forum" label="Gérer le forum" icon={<Settings size={16} />} onPick={onPick} />
+        </div>
+      )}
+    </nav>
+  );
+}
+
+function SpaceDropdown({ data, label }: { data: Spaces; label: string }) {
+  const [open, setOpen] = useState(false);
+  const unread = data.spaces.reduce((n, s) => n + s.unread, 0);
+  return (
+    <div className="relative">
+      <button type="button" aria-expanded={open} aria-haspopup="true" className="w-full flex items-center gap-2.5 h-12 px-3.5 rounded-xl border text-[15px] font-medium text-left" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => setOpen(!open)}>
+        <span className="flex-1 min-w-0 truncate">{label}</span>
+        {unread > 0 && !open && <UnreadDot label={`${unread} annonce${unread > 1 ? "s" : ""} non lue${unread > 1 ? "s" : ""}`} />}
+        <ChevronDown size={18} className="flex-none transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
+      </button>
+      {open && (
         <>
-          <p className="m-0 text-[16px] leading-relaxed whitespace-pre-line">{p.text}</p>
-          {p.videoUrl && <VideoEmbed url={p.videoUrl} title={`Vidéo de ${p.author.name}`} />}
-          {p.askFeedback && <span className="text-[13px] p-muted">Demande un retour bienveillant et précis.</span>}
+          <button type="button" aria-label="Fermer le menu des espaces" className="fixed inset-0 z-[44] cursor-default" onClick={() => setOpen(false)} />
+          <div className="absolute z-[45] left-0 right-0 top-[54px] p-2 rounded-2xl shadow-xl max-h-[70vh] overflow-y-auto" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }}>
+            <SpaceNav data={data} onPick={() => setOpen(false)} />
+          </div>
         </>
       )}
-      {confirm && (
-        <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-xl" style={{ background: "var(--p-accent-soft)" }}>
-          <span className="flex-1 min-w-[200px] text-[14px]">{p.isMine ? "Supprimer définitivement cette publication ?" : `Supprimer la publication de ${p.author.firstName} ?`}</span>
-          <button type="button" className="p-btn-primary p-btn-sm" disabled={remove.isPending} onClick={() => remove.mutate({ id: p.id })}>Supprimer</button>
-          <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setConfirm(false)}>Annuler</button>
-        </div>
-      )}
-      <div className="flex items-center gap-1 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
-        <button type="button" aria-pressed={p.liked} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: p.liked ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={onLike}><Heart size={16} fill={p.liked ? "currentColor" : "none"} /> {p.likes}</button>
-        <button type="button" aria-expanded={showReplies} className="inline-flex items-center gap-2 h-10 px-3 rounded-full text-[14px]" style={{ color: showReplies ? "var(--p-accent-text)" : "var(--p-ink-2)" }} onClick={() => setShowReplies(!showReplies)}><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</button>
-      </div>
-      {showReplies && <Replies post={p} />}
-    </article>
+    </div>
   );
 }
 
-/** Fil de réponses d'une publication. */
-function Replies({ post }: { post: Post }) {
+/** Filtre par hashtag dans l'espace ouvert ; dans le fil, il rassemble toutes les publications. */
+function HashtagFilter({ space, active }: { space?: string; active?: number }) {
+  const [, setParams] = useSearchParams();
+  const facets = trpc.forum.hashtagFacets.useQuery({ space });
+  const all = trpc.hashtags.list.useQuery();
+  const current = all.data?.find((t) => t.id === active);
+  const list = facets.data ?? [];
+  if (!list.length && !current) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" aria-label="Filtrer par hashtag">
+      {current && !list.some((t) => t.id === current.id) && <button type="button" aria-pressed className="p-chip p-chip-on h-8 text-[13px]" onClick={() => setParams({})}><TagLabel tag={current} /> <X size={13} /></button>}
+      {list.map((t) => {
+        const on = t.id === active;
+        return <button key={t.id} type="button" aria-pressed={on} className={`p-chip h-8 text-[13px] ${on ? "p-chip-on" : ""}`} onClick={() => setParams(on ? {} : { tag: String(t.id) })}><TagLabel tag={t} /> <span className={on ? "" : "p-faint"}>{t.count}</span>{on && <X size={13} />}</button>;
+      })}
+    </div>
+  );
+}
+
+/** Une publication seule : lien d'une annonce du tableau de bord ou d'un titre. */
+function SinglePost({ id, onEdit }: { id: number; onEdit: (p: Post) => void }) {
+  const q = trpc.forum.post.useQuery({ id }, { retry: false });
+  const p = q.data;
+  const back = p?.hive ? `/ruches/${p.hive.id}?tab=ann` : p?.space ? `/forum/${p.space.slug}` : "/forum";
+  return (
+    <>
+      <Link to={back} className="p-btn-outline p-btn-sm no-underline self-start"><ArrowLeft size={15} /> {p?.hive ? p.hive.name : p?.space ? `${p.space.emoji} ${p.space.name}` : FEED_NAME}</Link>
+      {q.isLoading && <p className="p-muted text-center py-10 m-0">Chargement…</p>}
+      {q.isError && <div className="p-soft p-9 text-center p-muted">Cette publication n’existe pas ou n’est pas visible pour vous.</div>}
+      {p && <PostCard key={p.id} p={p} openReplies onEdit={onEdit} />}
+    </>
+  );
+}
+
+/** Équipe : publications à relire avant publication. */
+function PendingReview() {
   const utils = trpc.useUtils();
   const me = trpc.members.me.useQuery();
-  const [text, setText] = useState("");
-  const send = trpc.forum.reply.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setText(""); }, onError: (e) => toast.error(e.message) });
-  return (
-    <div className="flex flex-col gap-3 pt-1">
-      {post.replyList.map((r) => <ReplyItem key={r.id} r={r} />)}
-      <form className="flex items-end gap-2.5" onSubmit={(e) => { e.preventDefault(); if (text.trim()) send.mutate({ postId: post.id, text }); }}>
-        {me.data && <Avatar m={me.data} size={34} />}
-        <textarea rows={1} className="p-field flex-1 resize-none text-[14.5px]" style={{ minHeight: 42 }} value={text} onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (text.trim()) send.mutate({ postId: post.id, text }); } }}
-          placeholder={post.isMine ? "Ajouter une précision…" : `Répondre à ${post.author.firstName}…`} />
-        <button type="submit" className="p-btn-primary p-btn-sm" disabled={!text.trim() || send.isPending}>Répondre</button>
-      </form>
-    </div>
-  );
-}
-
-function ReplyItem({ r }: { r: Post["replyList"][number] }) {
-  const utils = trpc.useUtils();
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(r.text);
-  const [confirm, setConfirm] = useState(false);
-  const update = trpc.forum.updateReply.useMutation({ onSuccess: () => { utils.forum.posts.invalidate(); setEditing(false); }, onError: (e) => toast.error(e.message) });
-  const remove = trpc.forum.deleteReply.useMutation({ onSuccess: () => utils.forum.posts.invalidate(), onError: (e) => toast.error(e.message) });
-  return (
-    <div className="group flex gap-2.5">
-      <Avatar m={r.author} size={34} />
-      <div className="flex-1 min-w-0 flex flex-col gap-1">
-        <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-md" style={{ background: "var(--p-surface-2)" }}>
-          <span className="flex items-baseline gap-2 flex-wrap"><span className="text-[13.5px] font-semibold">{r.author.name}</span><span className="text-[12px] p-faint">{ago(new Date(r.createdAt))}{r.editedAt ? " · modifié" : ""}</span></span>
-          {editing ? (
-            <div className="flex flex-col gap-2 mt-1.5">
-              <textarea className="p-field text-[14.5px]" rows={2} value={text} onChange={(e) => setText(e.target.value)} />
-              <span className="flex gap-2"><button type="button" className="p-btn-primary p-btn-sm" disabled={!text.trim() || update.isPending} onClick={() => update.mutate({ id: r.id, text })}>Enregistrer</button><button type="button" className="p-btn-outline p-btn-sm" onClick={() => { setEditing(false); setText(r.text); }}>Annuler</button></span>
-            </div>
-          ) : <p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{r.text}</p>}
-        </div>
-        {!editing && (r.isMine || r.canDelete) && (
-          <span className="flex items-center gap-3 pl-2 text-[12.5px] p-muted">
-            {confirm ? (
-              <>
-                <span>Supprimer cette réponse ?</span>
-                <button type="button" className="font-semibold" style={{ color: "var(--p-accent-text)" }} disabled={remove.isPending} onClick={() => remove.mutate({ id: r.id })}>Oui, supprimer</button>
-                <button type="button" onClick={() => setConfirm(false)}>Annuler</button>
-              </>
-            ) : (
-              <>
-                {r.isMine && <button type="button" className="hover:underline" onClick={() => setEditing(true)}>Modifier</button>}
-                {r.canDelete && <button type="button" className="hover:underline" onClick={() => setConfirm(true)}>Supprimer{!r.isMine ? " (modération)" : ""}</button>}
-              </>
-            )}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Opportunities() {
-  const me = trpc.members.me.useQuery();
-  const utils = trpc.useUtils();
-  const opps = trpc.forum.opportunities.useQuery();
-  const interest = trpc.forum.toggleInterest.useMutation({ onSuccess: () => utils.forum.opportunities.invalidate() });
-  const create = trpc.forum.createOpportunity.useMutation({ onSuccess: () => { utils.forum.opportunities.invalidate(); setF({ type: "recrut", title: "", text: "", facts: "" }); toast.success("Annonce envoyée à l’équipe pour relecture"); } });
-  const [filter, setFilter] = useState<"all" | keyof typeof OPP>("all");
-  const [f, setF] = useState({ type: "recrut" as keyof typeof OPP, title: "", text: "", facts: "" });
-  const list = (opps.data ?? []).filter((o) => filter === "all" || o.type === filter);
-
-  return (
-    <div className="flex flex-wrap gap-6 items-start">
-      <div className="flex-[2_1_540px] min-w-0 flex flex-col gap-4">
-        {me.data?.permissions.validateOpportunities && <PendingOpportunities />}
-        <div className="p-soft p-4 flex gap-3 text-[14px] leading-relaxed p-muted"><ShieldCheck size={20} className="flex-none mt-0.5" style={{ color: "var(--p-accent-text)" }} /><span><b style={{ color: "var(--p-ink)" }}>Un espace d’entraide.</b> Chaque annonce est relue par l’équipe Présence avant d’être publiée, et la prospection commerciale n’y a pas sa place.</span></div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={`p-chip h-9 ${filter === "all" ? "p-chip-on" : ""}`} onClick={() => setFilter("all")}>Toutes</button>
-          {(Object.keys(OPP) as (keyof typeof OPP)[]).map((k) => <button key={k} type="button" className={`p-chip h-9 ${filter === k ? "p-chip-on" : ""}`} onClick={() => setFilter(k)}>{OPP[k].label}</button>)}
-        </div>
-        {list.map((o) => { const Icon = OPP[o.type].icon; return (
-          <article key={o.id} className="p-card p-5 flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="flex items-center gap-2"><span className="p-pill"><Icon size={13} /> {OPP[o.type].label}</span>{o.status === "pending" && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted">En cours de relecture</span>}</span>
-              <span className="text-[12.5px] p-muted">{ago(new Date(o.createdAt))}</span>
-            </div>
-            <h3 className="m-0 text-[26px] leading-tight">{o.title}</h3>
-            <p className="m-0 text-[15.5px] leading-relaxed">{o.text}</p>
-            <div className="flex flex-wrap gap-1.5">{o.facts.map((x) => <span key={x} className="p-chip h-[30px] text-[13px] cursor-default">{x}</span>)}</div>
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t" style={{ borderColor: "var(--p-line)" }}>
-              <span className="flex items-center gap-2.5"><Avatar m={o.author} size={40} /><span className="flex flex-col"><span className="text-[14.5px] font-semibold">{o.author.name}</span><span className="text-[12.5px] p-muted">{o.author.jobTitle} · {o.author.city}</span></span></span>
-              <span className="flex items-center gap-2.5">
-                <span className="text-[13px] p-muted">{o.isMine ? "Votre annonce" : o.interestedCount ? plural(o.interestedCount, "membre intéressé", "membres intéressés") : "Personne pour l’instant"}</span>
-                {!o.isMine && <button type="button" className={o.interested ? "p-btn-outline p-btn-sm" : "p-btn-primary p-btn-sm"} onClick={() => interest.mutate({ opportunityId: o.id })}>{o.interested ? "✓ Intérêt envoyé" : "Ça m’intéresse"}</button>}
-              </span>
-            </div>
-          </article>
-        ); })}
-        {list.length === 0 && <p className="p-muted text-center py-10">Aucune annonce dans cette catégorie.</p>}
-      </div>
-      <aside className="flex-[1_1_300px] min-w-0">
-        <section className="p-card p-5 flex flex-col gap-3">
-          <span className="p-eyebrow">Opportunités</span>
-          <h2 className="m-0 text-[28px]">Publier une annonce</h2>
-          <div className="flex flex-wrap gap-1.5">{(Object.keys(OPP) as (keyof typeof OPP)[]).map((k) => <button key={k} type="button" className={`p-chip h-8 text-[13px] ${f.type === k ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, type: k })}>{OPP[k].label}</button>)}</div>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Titre</span><input className="p-field" value={f.title} placeholder={OPP[f.type].ph} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Votre annonce</span><textarea className="p-field" rows={4} value={f.text} placeholder="Le contexte, ce que vous cherchez, ce que vous proposez en retour." onChange={(e) => setF({ ...f, text: e.target.value })} /></label>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Lieu et format <span className="p-faint">· séparés par des virgules</span></span><input className="p-field" value={f.facts} placeholder="Ex. Lyon, CDI, dès janvier" onChange={(e) => setF({ ...f, facts: e.target.value })} /></label>
-          <button type="button" className="p-btn-primary" disabled={!f.title.trim() || !f.text.trim() || create.isPending} onClick={() => create.mutate({ type: f.type, title: f.title, text: f.text, facts: f.facts.split(",").map((x) => x.trim()).filter(Boolean) })}>Soumettre l’annonce</button>
-          <span className="text-[12.5px] p-muted leading-relaxed">Chaque annonce est relue par l’équipe Présence avant d’être visible par tous les membres.</span>
-        </section>
-      </aside>
-    </div>
-  );
-}
-
-/** Administrateur : annonces à relire avant publication. */
-function PendingOpportunities() {
-  const utils = trpc.useUtils();
-  const pending = trpc.forum.pendingOpportunities.useQuery();
-  const decide = trpc.forum.decideOpportunity.useMutation({
-    onSuccess: (_r, v) => { utils.forum.pendingOpportunities.invalidate(); utils.forum.opportunities.invalidate(); toast.success(v.accept ? "Annonce publiée" : "Annonce refusée"); },
+  const allowed = !!me.data?.permissions.validateOpportunities;
+  const pending = trpc.forum.pending.useQuery(undefined, { enabled: allowed });
+  const decide = trpc.forum.decide.useMutation({
+    onSuccess: (_r, v) => { utils.forum.invalidate(); toast.success(v.accept ? "Annonce publiée" : "Annonce refusée"); },
     onError: (e) => toast.error(e.message),
   });
-  if (!pending.data?.length) return null;
+  if (!allowed || !pending.data?.length) return null;
   return (
     <section className="p-5 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
       <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}><ShieldCheck size={14} /> Équipe Présence · annonces à valider</span>
       {pending.data.map((o) => (
         <article key={o.id} className="p-card p-4 flex flex-wrap gap-4 items-start">
           <Avatar m={o.author} size={44} />
-          <div className="flex-[1_1_280px] min-w-0 flex flex-col gap-1">
-            <span className="text-[13px] p-muted">{OPP[o.type].label} · {o.author.name} · {ago(new Date(o.createdAt))}</span>
+          <div className="flex-[1_1_240px] min-w-0 flex flex-col gap-1">
+            <span className="text-[13px] p-muted">{o.oppType ? OPP[o.oppType].label : o.space?.name} · {o.author.name} · {ago(new Date(o.publishedAt))}</span>
             <span className="serif text-[22px] leading-tight">{o.title}</span>
-            <p className="m-0 text-[14.5px] leading-relaxed">{o.text}</p>
+            {o.html ? <div className="p-rich text-[14.5px]" dangerouslySetInnerHTML={{ __html: o.html }} /> : <p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{o.text}</p>}
+            {o.facts.length > 0 && <div className="flex flex-wrap gap-1.5 mt-1">{o.facts.map((x) => <span key={x} className="p-chip h-[28px] text-[12.5px] cursor-default">{x}</span>)}</div>}
           </div>
           <div className="flex gap-2 self-center">
             <button type="button" className="p-btn-primary p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: o.id, accept: true })}>Publier</button>

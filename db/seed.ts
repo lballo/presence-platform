@@ -34,7 +34,7 @@ async function seed() {
   const db = getDb();
   console.log("Nettoyage…");
   const schemaName = (process.env.DB_SCHEMA ?? "").replace(/[^a-z0-9_]/gi, "");
-  const tables = ["members", "coaching_sessions", "forum_posts", "forum_likes", "opportunities", "opportunity_interests",
+  const tables = ["members", "coaching_sessions", "forum_spaces", "forum_posts", "forum_likes", "forum_post_interests", "forum_post_reads", "forum_post_hashtags", "forum_drafts", "hashtags", "opportunities", "opportunity_interests",
     "hives", "hive_members", "hive_posts", "hive_resources", "events", "event_registrations", "swipes", "talks",
     "coach_messages", "messages", "forum_replies", "speeches", "speech_scores", "advice"].map((t) => (schemaName && schemaName !== "public" ? `"${schemaName}"."${t}"` : `"${t}"`));
   await db.execute(sql.raw(`TRUNCATE TABLE ${tables.join(", ")} RESTART IDENTITY CASCADE`));
@@ -79,11 +79,23 @@ async function seed() {
   ]);
 
   console.log("Forum…");
+  // Mêmes espaces que db/migrations/supabase/0009_forum_spaces.sql
+  const spaces = await db.insert(s.forumSpaces).values([
+    { slug: "bienvenue", name: "Bienvenue", emoji: "🌿", description: "L’esprit et les règles du réseau : bienveillance, courtoisie et confidentialité.", groupKey: "arriver", position: 1, adminOnly: true },
+    { slug: "presentations", name: "Présentations", emoji: "👋", description: "Chaque membre se présente au réseau. Une courte vidéo est la bienvenue.", groupKey: "arriver", position: 2 },
+    { slug: "annonces", name: "Annonces", emoji: "📣", description: "Les nouvelles importantes du réseau.", groupKey: "arriver", position: 3, kind: "annonces", adminOnly: true },
+    { slug: "conversations", name: "Conversations", emoji: "💬", description: "La discussion libre entre membres.", groupKey: "echanger", position: 1 },
+    { slug: "victoires", name: "Victoires", emoji: "🏆", description: "Racontez vos victoires, grandes ou discrètes.", groupKey: "echanger", position: 2 },
+    { slug: "retours-video", name: "Retours vidéo", emoji: "🎥", description: "Partagez une vidéo et recevez des retours courtois et constructifs.", groupKey: "echanger", position: 3, kind: "video" },
+    { slug: "entraide", name: "Entraide", emoji: "🤝", description: "Sollicitez l’entraide du cercle.", groupKey: "echanger", position: 4 },
+    { slug: "opportunites", name: "Opportunités", emoji: "💼", description: "Recrutement, financement, recherche d’associé. Chaque annonce est relue par l’équipe Présence avant d’être publiée, et la prospection commerciale n’y a pas sa place.", groupKey: "echanger", position: 5, kind: "opportunites" },
+  ]).returning();
+  const spaceId = (slug: string) => spaces.find((x) => x.slug === slug)!.id;
   await db.insert(s.forumPosts).values([
-    { authorId: 9, kind: "victoire", text: "J’ai pitché en anglais devant des investisseurs à Londres. Deux ans que je repoussais ce moment. Ils ont posé des questions jusqu’au bout.", likes: 32, replies: 9, createdAt: d("2026-10-24T09:10:00") },
-    { authorId: 4, kind: "video", text: "Première répétition de mon discours de rentrée devant l’équipe. J’aimerais vos retours sur le rythme et les silences.", askFeedback: true, likes: 11, replies: 6, createdAt: d("2026-10-23T18:40:00") },
-    { authorId: 10, kind: "question", text: "Comment dites-vous non à une demande de votre direction sans passer pour quelqu’un qui freine ?", likes: 8, replies: 14, createdAt: d("2026-10-22T11:30:00") },
-    { authorId: 11, kind: "victoire", text: "J’ai présenté notre projet devant le conseil municipal. J’ai tenu les silences, comme on l’avait travaillé ici.", likes: 21, replies: 5, createdAt: d("2026-10-21T20:00:00") },
+    { authorId: 9, spaceId: spaceId("victoires"), kind: "victoire", text: "J’ai pitché en anglais devant des investisseurs à Londres. Deux ans que je repoussais ce moment. Ils ont posé des questions jusqu’au bout.", likes: 32, replies: 9, createdAt: d("2026-10-24T09:10:00"), publishedAt: d("2026-10-24T09:10:00") },
+    { authorId: 4, spaceId: spaceId("retours-video"), kind: "video", text: "Première répétition de mon discours de rentrée devant l’équipe. J’aimerais vos retours sur le rythme et les silences.", askFeedback: true, likes: 11, replies: 6, createdAt: d("2026-10-23T18:40:00"), publishedAt: d("2026-10-23T18:40:00") },
+    { authorId: 10, spaceId: spaceId("entraide"), kind: "question", text: "Comment dites-vous non à une demande de votre direction sans passer pour quelqu’un qui freine ?", likes: 8, replies: 14, createdAt: d("2026-10-22T11:30:00"), publishedAt: d("2026-10-22T11:30:00") },
+    { authorId: 11, spaceId: spaceId("victoires"), kind: "victoire", text: "J’ai présenté notre projet devant le conseil municipal. J’ai tenu les silences, comme on l’avait travaillé ici.", likes: 21, replies: 5, createdAt: d("2026-10-21T20:00:00"), publishedAt: d("2026-10-21T20:00:00") },
   ]);
   await db.insert(s.forumReplies).values([
     { postId: 1, authorId: 2, text: "Bravo Julien ! Deux ans d’attente, et le jour venu tu étais prêt. C’est exactement ça, la présence." },
@@ -95,20 +107,16 @@ async function seed() {
     { postId: 4, authorId: 7, text: "Magnifique, Nicolas. Le silence, c’est ta signature maintenant." },
   ]);
 
-  await db.insert(s.opportunities).values([
-    { authorId: 13, type: "recrut", title: "Responsable administratif et financier (H/F)", text: "Nous cherchons quelqu’un qui sache tenir les chiffres sans perdre de vue les équipes. Un poste clé dans une usine de 300 personnes, avec une vraie autonomie.", facts: ["Lyon", "CDI", "Prise de poste en janvier"], status: "published", createdAt: d("2026-10-23T10:00:00") },
-    { authorId: 9, type: "fin", title: "Business angels pour une edtech", text: "Nous préparons une levée d’amorçage pour une application qui aide les lycéens à préparer leur grand oral. Je cherche des investisseurs qui partagent notre vision de l’éducation, et leurs conseils.", facts: ["Amorçage", "500 k€ recherchés", "Bordeaux"], status: "published", createdAt: d("2026-10-21T10:00:00") },
-    { authorId: 12, type: "assoc", title: "Une associée pour mon cabinet de conseil", text: "Mon cabinet accompagne les comités de direction. Je cherche une associée plus opérationnelle que moi, prête à développer l’activité côté France.", facts: ["Genève et Annecy", "Entrée au capital", "Temps plein"], status: "published", createdAt: d("2026-10-18T10:00:00") },
-    { authorId: 6, type: "recrut", title: "Coach en freelance, deux jours par mois", text: "Notre banque lance un programme d’accompagnement des nouveaux managers. Je cherche un ou une coach certifiée pour suivre une dizaine de personnes sur l’année.", facts: ["Paris et visio", "Freelance", "Dès novembre"], status: "published", createdAt: d("2026-10-18T09:00:00") },
-    { authorId: 4, type: "fin", title: "Entreprises mécènes pour un programme d’insertion", text: "Notre association accompagne 120 jeunes vers l’emploi. Nous cherchons deux ou trois entreprises mécènes pour financer un atelier de prise de parole.", facts: ["Mécénat", "Nantes", "Avantage fiscal"], status: "published", createdAt: d("2026-10-15T09:00:00") },
-  ]);
-  await db.insert(s.opportunityInterests).values([
-    { opportunityId: 1, memberId: 3 }, { opportunityId: 1, memberId: 7 }, { opportunityId: 1, memberId: 14 },
-    { opportunityId: 2, memberId: 8 }, { opportunityId: 2, memberId: 10 }, { opportunityId: 2, memberId: 5 }, { opportunityId: 2, memberId: 6 }, { opportunityId: 2, memberId: 12 },
-    { opportunityId: 3, memberId: 14 }, { opportunityId: 3, memberId: 10 },
-    { opportunityId: 4, memberId: 5 }, { opportunityId: 4, memberId: 8 }, { opportunityId: 4, memberId: 12 }, { opportunityId: 4, memberId: 2 }, { opportunityId: 4, memberId: 7 }, { opportunityId: 4, memberId: 11 },
-    { opportunityId: 5, memberId: 13 }, { opportunityId: 5, memberId: 6 }, { opportunityId: 5, memberId: 9 }, { opportunityId: 5, memberId: 3 },
-  ]);
+  // Les opportunités sont des publications de l'espace « Opportunités »
+  const opps = await db.insert(s.forumPosts).values([
+    { authorId: 13, spaceId: spaceId("opportunites"), oppType: "recrut" as const, title: "Responsable administratif et financier (H/F)", text: "Nous cherchons quelqu’un qui sache tenir les chiffres sans perdre de vue les équipes. Un poste clé dans une usine de 300 personnes, avec une vraie autonomie.", facts: ["Lyon", "CDI", "Prise de poste en janvier"], createdAt: d("2026-10-23T10:00:00"), publishedAt: d("2026-10-23T10:00:00") },
+    { authorId: 9, spaceId: spaceId("opportunites"), oppType: "fin" as const, title: "Business angels pour une edtech", text: "Nous préparons une levée d’amorçage pour une application qui aide les lycéens à préparer leur grand oral. Je cherche des investisseurs qui partagent notre vision de l’éducation, et leurs conseils.", facts: ["Amorçage", "500 k€ recherchés", "Bordeaux"], createdAt: d("2026-10-21T10:00:00"), publishedAt: d("2026-10-21T10:00:00") },
+    { authorId: 12, spaceId: spaceId("opportunites"), oppType: "assoc" as const, title: "Une associée pour mon cabinet de conseil", text: "Mon cabinet accompagne les comités de direction. Je cherche une associée plus opérationnelle que moi, prête à développer l’activité côté France.", facts: ["Genève et Annecy", "Entrée au capital", "Temps plein"], createdAt: d("2026-10-18T10:00:00"), publishedAt: d("2026-10-18T10:00:00") },
+    { authorId: 6, spaceId: spaceId("opportunites"), oppType: "recrut" as const, title: "Coach en freelance, deux jours par mois", text: "Notre banque lance un programme d’accompagnement des nouveaux managers. Je cherche un ou une coach certifiée pour suivre une dizaine de personnes sur l’année.", facts: ["Paris et visio", "Freelance", "Dès novembre"], createdAt: d("2026-10-18T09:00:00"), publishedAt: d("2026-10-18T09:00:00") },
+    { authorId: 4, spaceId: spaceId("opportunites"), oppType: "fin" as const, title: "Entreprises mécènes pour un programme d’insertion", text: "Notre association accompagne 120 jeunes vers l’emploi. Nous cherchons deux ou trois entreprises mécènes pour financer un atelier de prise de parole.", facts: ["Mécénat", "Nantes", "Avantage fiscal"], createdAt: d("2026-10-15T09:00:00"), publishedAt: d("2026-10-15T09:00:00") },
+  ]).returning();
+  const interested = [[3, 7, 14], [8, 10, 5, 6, 12], [14, 10], [5, 8, 12, 2, 7, 11], [13, 6, 9, 3]];
+  await db.insert(s.forumPostInterests).values(interested.flatMap((ids, i) => ids.map((memberId) => ({ postId: opps[i].id, memberId }))));
 
   console.log("Ruches…");
   // 1 voix, 2 lyon, 3 sensibles, 4 fondateurs, 5 ia, 6 dirigeantes, puis ruches projet 7..15

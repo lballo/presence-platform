@@ -63,6 +63,13 @@ describe("ruches", () => {
     expect(can(orga, "hive.delete", { hiveRole: "founder" })).toBe(false);
     expect(can(admin, "hive.delete")).toBe(true);
   });
+  it("créer une annonce de ruche : fondatrice, leaders et administrateur", () => {
+    expect(can(membre, "hive.announce", { hiveRole: "founder" })).toBe(true);
+    expect(can(membre, "hive.announce", { hiveRole: "leader" })).toBe(true);
+    expect(can(membre, "hive.announce", { hiveRole: "member" })).toBe(false);
+    expect(can(orga, "hive.announce", { hiveRole: "" })).toBe(false);
+    expect(can(admin, "hive.announce", { hiveRole: "" })).toBe(true);
+  });
   it("un événement de ruche se modifie par le leader qui l'a créé", () => {
     expect(can(membre, "event.edit", { ownerId: membre.id, hiveId: 3, hiveRole: "leader" })).toBe(true);
     expect(can(membre, "event.edit", { ownerId: membre.id, hiveId: 3, hiveRole: "member" })).toBe(false);
@@ -71,7 +78,7 @@ describe("ruches", () => {
 });
 
 describe("administrateur seulement", () => {
-  it.each(["event.validate", "talk.validate", "opportunity.validate", "organizer.validate", "members.manage", "moderate", "hive.delete"] as const)("%s", (action) => {
+  it.each(["event.validate", "talk.validate", "opportunity.validate", "organizer.validate", "members.manage", "moderate", "hive.delete", "forum.manage", "forum.post_restricted"] as const)("%s", (action) => {
     expect(can(membre, action)).toBe(false);
     expect(can(orga, action)).toBe(false);
     expect(can(admin, action)).toBe(true);

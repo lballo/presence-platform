@@ -2,6 +2,7 @@ import { createRouter, publicProc } from "./middleware";
 import { authRouter } from "./routers/auth";
 import { membersRouter } from "./routers/members";
 import { forumRouter } from "./routers/forum";
+import { hashtagsRouter } from "./routers/hashtags";
 import { hivesRouter } from "./routers/hives";
 import { eventsRouter } from "./routers/events";
 import { matchingRouter } from "./routers/matching";
@@ -17,6 +18,7 @@ export const appRouter = createRouter({
   auth: authRouter,
   members: membersRouter,
   forum: forumRouter,
+  hashtags: hashtagsRouter,
   hives: hivesRouter,
   events: eventsRouter,
   matching: matchingRouter,

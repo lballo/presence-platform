@@ -4,9 +4,10 @@ import { TRPCError } from "@trpc/server";
 import { assertCan, createRouter, procFor } from "../middleware";
 import { can } from "../lib/permissions";
 import { getDb } from "../queries/connection";
-import { hives, hiveMembers, hivePosts, hiveResources, events, eventRegistrations } from "../../db/schema";
+import { hives, hiveMembers, hivePosts, hiveResources, events, eventRegistrations, forumPosts } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { eventAccess } from "../lib/eventAccess";
+import { deleteForumPosts } from "./forum";
 
 type Role = "founder" | "leader" | "member" | "pending" | "";
 
@@ -71,6 +72,7 @@ export const hivesRouter = createRouter({
     return {
       ...h,
       role, inside, canManage: manager, canDelete: can(ctx.member, "hive.delete"), locked: !open,
+      canAnnounce: can(ctx.member, "hive.announce", { hiveRole: role }),
       canNameLeader: can(ctx.member, "hive.name_leader", { hiveRole: role }), canRemoveLeader: can(ctx.member, "hive.remove_leader", { hiveRole: role }),
       founder: publicMember(h.memberships.find((m) => m.role === "founder")?.member ?? h.memberships[0].member),
       leaders: leaders.map((m) => ({ ...publicMember(m.member), role: m.role })),
@@ -241,6 +243,7 @@ export const hivesRouter = createRouter({
     for (const e of evs) await db.delete(eventRegistrations).where(eq(eventRegistrations.eventId, e.id));
     await db.delete(events).where(eq(events.hiveId, h.id));
     await db.delete(hivePosts).where(eq(hivePosts.hiveId, h.id));
+    await deleteForumPosts((await db.select({ id: forumPosts.id }).from(forumPosts).where(eq(forumPosts.hiveId, h.id))).map((p) => p.id));
     await db.delete(hiveResources).where(eq(hiveResources.hiveId, h.id));
     await db.delete(hiveMembers).where(eq(hiveMembers.hiveId, h.id));
     await db.update(hives).set({ parentId: null }).where(eq(hives.parentId, h.id)); // les projets nés ici continuent

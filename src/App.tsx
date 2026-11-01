@@ -6,6 +6,7 @@ import PresenceIA from "@/pages/PresenceIA";
 import Analysis from "@/pages/Analysis";
 import TalkShow from "@/pages/TalkShow";
 import Forum from "@/pages/Forum";
+import AdminForum from "@/pages/AdminForum";
 import Matching from "@/pages/Matching";
 import Membres from "@/pages/Membres";
 import Ruches from "@/pages/Ruches";
@@ -36,6 +37,9 @@ export default function App() {
         <Route path="/presence-ia/analyse/:id" element={<Analysis />} />
         <Route path="/talk-show" element={<TalkShow />} />
         <Route path="/forum" element={<Forum />} />
+        <Route path="/forum/publication/:id" element={<Forum />} />
+        <Route path="/forum/:slug" element={<Forum />} />
+        <Route path="/admin/forum" element={<AdminForum />} />
         <Route path="/matching" element={<Matching />} />
         <Route path="/membres" element={<Membres />} />
         <Route path="/membres/:id" element={<Profil />} />

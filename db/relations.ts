@@ -3,7 +3,9 @@ import {
   members,
   invitations,
   forumPosts,
-  opportunities,
+  forumSpaces,
+  forumPostHashtags,
+  hashtags,
   hives,
   hiveMembers,
   hivePosts,
@@ -28,13 +30,25 @@ export const coachingSessionsRelations = relations(coachingSessions, ({ one }) =
   member: one(members, { fields: [coachingSessions.memberId], references: [members.id] }),
 }));
 
-export const forumPostsRelations = relations(forumPosts, ({ one, many }) => ({
-  author: one(members, { fields: [forumPosts.authorId], references: [members.id] }),
-  replyList: many(forumReplies),
+export const forumSpacesRelations = relations(forumSpaces, ({ many }) => ({
+  posts: many(forumPosts),
 }));
 
-export const opportunitiesRelations = relations(opportunities, ({ one }) => ({
-  author: one(members, { fields: [opportunities.authorId], references: [members.id] }),
+export const forumPostsRelations = relations(forumPosts, ({ one, many }) => ({
+  author: one(members, { fields: [forumPosts.authorId], references: [members.id] }),
+  space: one(forumSpaces, { fields: [forumPosts.spaceId], references: [forumSpaces.id] }),
+  hive: one(hives, { fields: [forumPosts.hiveId], references: [hives.id] }),
+  replyList: many(forumReplies),
+  tags: many(forumPostHashtags),
+}));
+
+export const forumPostHashtagsRelations = relations(forumPostHashtags, ({ one }) => ({
+  post: one(forumPosts, { fields: [forumPostHashtags.postId], references: [forumPosts.id] }),
+  hashtag: one(hashtags, { fields: [forumPostHashtags.hashtagId], references: [hashtags.id] }),
+}));
+
+export const hashtagsRelations = relations(hashtags, ({ many }) => ({
+  posts: many(forumPostHashtags),
 }));
 
 export const hivesRelations = relations(hives, ({ one, many }) => ({

@@ -40,7 +40,6 @@ const RULES = {
   "events.read": everyone,
   "events.register": everyone,
   "talks.use": everyone,
-  "opportunities.use": everyone,
   "coach.use": everyone,
   "speech.use": everyone,
   "dashboard.read": everyone,
@@ -70,6 +69,7 @@ const RULES = {
   "hive.create_event": hiveManager,
   "hive.name_leader": hiveManager,
   "hive.remove_leader": (m: Actor, r: Resource) => isAdmin(m) || r.hiveRole === "founder",
+  "hive.announce": hiveManager,
 
   // Candidature organisateur
   "organizer.apply": (m: Actor) => m.role === "membre",
@@ -82,6 +82,8 @@ const RULES = {
   "members.manage": adminOnly,
   moderate: adminOnly,
   "hive.delete": adminOnly,
+  "forum.manage": adminOnly, // espaces, hashtags, épingles
+  "forum.post_restricted": adminOnly, // publier dans un espace réservé (Bienvenue, Annonces)
 } satisfies Record<string, (m: Actor, r: Resource) => boolean>;
 
 export type Action = keyof typeof RULES;

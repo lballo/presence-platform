@@ -6,6 +6,7 @@ import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/providers/auth";
 import { Avatar } from "@/components/Avatar";
 import { CoachBubble } from "@/components/CoachBubble";
+import { UnreadDot } from "@/components/forum/shared";
 
 const NAV = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard },
@@ -49,7 +50,7 @@ function UnreadBadge({ n, small }: { n?: number; small?: boolean }) {
 }
 
 /** Contenu du menu : utilisé dans la barre latérale (ordinateur) et dans le tiroir (mobile). */
-function MenuContent({ unread, dark, setDark }: { unread?: number; dark: boolean; setDark: (v: boolean) => void }) {
+function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: Record<string, boolean>; dark: boolean; setDark: (v: boolean) => void }) {
   const me = trpc.members.me.useQuery();
   const { signOut } = useAuth();
   return (
@@ -65,9 +66,14 @@ function MenuContent({ unread, dark, setDark }: { unread?: number; dark: boolean
             }
             style={({ isActive }) => (isActive ? { background: "var(--p-accent)" } : { color: "var(--p-menu-ink)" })}
           >
-            <Icon size={19} strokeWidth={1.6} />
-            <span className="flex-1">{label}</span>
-            {to === "/messages" && <UnreadBadge n={unread} />}
+            {({ isActive }) => (
+              <>
+                <Icon size={19} strokeWidth={1.6} />
+                <span className="flex-1">{label}</span>
+                {to === "/messages" && <UnreadBadge n={unread} />}
+                {dots[to] && <UnreadDot label="Annonces non lues" light={isActive} />}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -108,6 +114,8 @@ export default function Layout() {
   const { dark, setDark } = useTheme();
   const me = trpc.members.me.useQuery();
   const unread = trpc.messages.unreadCount.useQuery(undefined, { refetchInterval: 8000 });
+  const announcements = trpc.forum.unread.useQuery(undefined, { refetchInterval: 60000 });
+  const dots = { "/forum": !!announcements.data?.annonces, "/ruches": Object.keys(announcements.data?.hives ?? {}).length > 0 };
   const [drawer, setDrawer] = useState(false);
   const { pathname } = useLocation();
 
@@ -125,7 +133,7 @@ export default function Layout() {
       {/* Ordinateur : barre latérale fixe */}
       <aside className="hidden lg:flex w-[256px] flex-none flex-col border-r sticky top-0 h-screen overflow-y-auto" style={{ background: "var(--p-menu-bg)", borderColor: "var(--p-menu-line)" }}>
         <NavLink to="/" className="px-6 py-5 border-b no-underline" style={{ borderColor: "var(--p-menu-line)", color: "var(--p-ink)" }}><Brand /></NavLink>
-        <MenuContent unread={unread.data} dark={dark} setDark={setDark} />
+        <MenuContent unread={unread.data} dots={dots} dark={dark} setDark={setDark} />
       </aside>
 
       {/* Mobile : barre du haut compacte */}
@@ -145,7 +153,7 @@ export default function Layout() {
               <Brand />
               <button type="button" aria-label="Fermer le menu" className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ color: "var(--p-ink)" }} onClick={() => setDrawer(false)}><X size={22} /></button>
             </div>
-            <MenuContent unread={unread.data} dark={dark} setDark={setDark} />
+            <MenuContent unread={unread.data} dots={dots} dark={dark} setDark={setDark} />
           </aside>
         </div>
       )}
@@ -160,7 +168,7 @@ export default function Layout() {
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 flex border-t" style={{ background: "var(--p-menu-bg)", borderColor: "var(--p-menu-line)", paddingBottom: "env(safe-area-inset-bottom)" }} aria-label="Navigation principale">
         {TABS.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === "/"} className="flex-1 flex flex-col items-center justify-center gap-0.5 h-16 no-underline text-[11px] relative" style={({ isActive }) => ({ color: isActive ? "var(--p-accent-text)" : "var(--p-menu-ink)", fontWeight: isActive ? 600 : 400 })}>
-            <span className="relative"><Icon size={21} strokeWidth={1.7} />{to === "/messages" && <span className="absolute -top-1.5 -right-2.5"><UnreadBadge n={unread.data} small /></span>}</span>
+            <span className="relative"><Icon size={21} strokeWidth={1.7} />{to === "/messages" && <span className="absolute -top-1.5 -right-2.5"><UnreadBadge n={unread.data} small /></span>}{to === "/forum" && dots["/forum"] && <span className="absolute -top-0.5 -right-1 flex"><UnreadDot label="Annonces non lues" /></span>}</span>
             {label}
           </NavLink>
         ))}

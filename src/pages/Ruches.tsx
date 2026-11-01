@@ -6,6 +6,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Faces } from "@/components/Avatar";
 import { longDate, monthLabel, plural } from "@/lib/format";
+import { UnreadDot } from "@/components/forum/shared";
 
 export const COVERS: Record<string, string> = {
   rouge: "linear-gradient(135deg, #A92B2A 0%, #4A211C 100%)",
@@ -69,6 +70,7 @@ function Section({ title, count, items, empty, chips }: { title: string; count: 
 }
 
 function HiveCard({ h }: { h: Hive }) {
+  const unread = trpc.forum.unread.useQuery();
   const pj = h.type === "projet";
   const pill = h.role === "founder" || h.role === "leader" ? (h.pendingCount ? plural(h.pendingCount, "demande", "demandes") : pj ? "Porteuse" : "Leader") : h.role === "member" ? (pj ? "Contributrice" : "Membre") : h.role === "pending" ? "En attente" : "";
   return (
@@ -79,7 +81,7 @@ function HiveCard({ h }: { h: Hive }) {
       </span>
       <span className="p-4 flex flex-col gap-1.5">
         <span className="text-[11.5px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>{pj ? `Ruche projet · ${PHASES[h.phase ?? "idee"]}` : h.theme}</span>
-        <span className="serif text-[24px] leading-tight">{h.name}</span>
+        <span className="flex items-center gap-2"><span className="serif text-[24px] leading-tight">{h.name}</span>{!!unread.data?.hives[h.id] && <UnreadDot label="Annonces non lues" />}</span>
         <span className="flex items-center gap-2.5 mt-1"><Faces list={h.faces} /><span className="text-[13px] p-muted">{pj ? plural(h.memberCount, "contributeur", "contributeurs") : plural(h.memberCount, "membre", "membres") + (h.projectCount ? ` · ${plural(h.projectCount, "projet", "projets")}` : "")}</span></span>
         <span className="flex items-center gap-1.5 mt-1.5 pt-2.5 border-t text-[12.5px] p-muted truncate" style={{ borderColor: "var(--p-line)" }}><CalendarDays size={13} className="flex-none" />{pj ? [endLabel(h.phase, h.endMonth), h.parentName ? `né dans ${h.parentName}` : ""].filter(Boolean).join(" · ") : h.nextEvent ? `Prochain rendez-vous : ${longDate(new Date(h.nextEvent.startsAt)).toLowerCase()}` : "Pas d’événement prévu"}</span>
       </span>
