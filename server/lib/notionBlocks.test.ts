@@ -118,7 +118,7 @@ describe("découpage d'une page de leçon", () => {
     expect(alert("test")[0]).toContain("aucun test intégré");
     expect(alert("exercice")[0]).toContain("aucune question");
     expect(alert("defi")[0]).toContain("Défi est vide");
-    expect(alert("contenu")[0]).toContain("Contenu est vide");
+    expect(alert("contenu")).toEqual([]); // retirer le bloc Contenu est permis
     expect(lessonIssues(empty, { ...props, type: "video", intention: "", videoUrl: "https://exemple.org/v" }).filter((i) => i.startsWith("Leçon de type"))).toEqual([]);
   });
   it("un titre inconnu reste du contenu de la rubrique en cours", () => {

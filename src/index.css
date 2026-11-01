@@ -246,6 +246,13 @@ html.creator-mode .cr-doc-h { margin: 0; font-family: "Abhaya Libre", Georgia, s
 .cr-toolbar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid #E8DDD6; border-radius: 10px; background: #fff; box-shadow: 0 6px 16px -10px rgba(61, 49, 40, .3); transition: opacity .12s; }
 .cr-popover { position: absolute; top: 42px; left: 0; z-index: 3; padding: 12px; border: 1px solid #E8DDD6; border-radius: 14px; background: #fff; box-shadow: 0 10px 30px -12px rgba(61, 49, 40, .25); }
 .cr-menu { position: absolute; z-index: 30; left: 8px; top: 100%; width: min(300px, 86vw); max-height: 340px; overflow-y: auto; padding: 6px; border: 1px solid #E8DDD6; border-radius: 14px; background: #fff; box-shadow: 0 14px 34px -14px rgba(61, 49, 40, .35); font-family: "Plus Jakarta Sans", sans-serif; color: #3D3128; }
+.cr-menu-up { top: auto; bottom: 100%; margin-bottom: 8px; }
+.cr-page-add { display: inline-flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: 14px; font-size: 14px; font-weight: 500; color: #6C6059; }
+.cr-page-add:hover { background: #F3ECE8; color: #3D3128; }
+.cr-page-add-plus { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #F3ECE8; color: #A83932; }
+.cr-remove { opacity: 0; transition: opacity .12s; color: #6C6059; }
+.cr-removable:hover .cr-remove, .cr-removable:focus-within .cr-remove, .cr-remove:focus-visible { opacity: 1; }
+@media (hover: none) { .cr-remove { opacity: 1; } }
 .cr-drop { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: #F3ECE8; color: #6C6059; font-size: 14px; }
 .cr-drop input { color: #3D3128; }
 .cr-drop input::placeholder { color: #6C6059; }

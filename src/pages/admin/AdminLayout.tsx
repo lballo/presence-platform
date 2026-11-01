@@ -10,7 +10,6 @@ const TABS = [
   { to: "/admin/ruches", label: "Ruches" },
   { to: "/admin/evenements", label: "Événements" },
   { to: "/admin/forum", label: "Forum et annonces" },
-  { to: "/admin/construire", label: "Construire" },
   { to: "/admin/coaching", label: "Coaching", count: "coaching" },
   { to: "/admin/journal", label: "Journal" },
 ] as const;

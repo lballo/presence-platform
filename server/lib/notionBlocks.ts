@@ -200,7 +200,7 @@ function pageIssues(content: PageContent, rubrics: readonly Rubric[], optional: 
     if (key === "lecons") continue;
     const blocks = content.rubrics?.[key] ?? [];
     if (!content.headings?.[key]) { if (!optional.includes(key)) out.push(`Rubrique « ${title} » absente de la page Notion.`); continue; }
-    if (blocks.some((b) => "draft" in b && b.draft)) out.push(`${title} : texte encore à écrire, caché aux membres.`);
+    if (!optional.includes(key) && blocks.some((b) => "draft" in b && b.draft)) out.push(`${title} : texte encore à écrire, caché aux membres.`);
     for (const t of unknownTypes(blocks)) out.push(`${title} : un bloc Notion de type « ${t} » n’est pas affiché aux membres.`);
   }
   if (content.before?.length) out.push("Du contenu précède le premier titre de la page : il n’est pas affiché aux membres.");
@@ -216,11 +216,11 @@ export function sectionIssues(content: PageContent, props: { intention: string }
 
 /** Le type d'une leçon sert d'étiquette et d'alerte : il ne change pas ce qu'elle peut contenir. */
 export function lessonIssues(content: PageContent, props: { type: LessonType; intention: string; videoUrl: string; testUrl: string; testProblem?: string | null }): string[] {
-  const out = pageIssues(content, LESSON_RUBRICS, [], props.intention);
+  // « Pour aller plus loin » n'est pas attendu : il s'ajoute quand il sert
+  const out = pageIssues(content, LESSON_RUBRICS, ["plusLoin"], props.intention);
   const shown = (key: RubricKey) => memberBlocks(content.rubrics?.[key] ?? []);
   const drafted = (key: RubricKey) => (content.rubrics?.[key] ?? []).some((b) => "draft" in b && b.draft);
   const label = LESSON_TYPE_LABEL[props.type];
-  if (props.type === "contenu" && !shown("contenu").length && !drafted("contenu")) out.push(`Leçon de type ${label} : la rubrique Contenu est vide.`);
   if (props.type === "video" && !props.videoUrl) out.push(`Leçon de type ${label} : aucun lien de vidéo.`);
   if (props.type === "test" && !props.testUrl) out.push(`Leçon de type ${label} : aucun test intégré.`);
   if (props.type === "exercice" && !shown("exercice").some(isQuestion) && !drafted("exercice")) out.push(`Leçon de type ${label} : aucune question (une puce par question).`);
@@ -293,7 +293,6 @@ export function lessonSkeleton(intention: string): Record<string, unknown>[] {
     heading2("Contenu"), paragraph("À écrire : texte, images, vidéos, liens externes, emojis."),
     heading2("Exercice"), bullet("À écrire"),
     heading2("Défi dans le réseau"), paragraph("Proposition : à écrire."),
-    heading2("Pour aller plus loin"), bullet("À compléter"),
   ];
 }
 

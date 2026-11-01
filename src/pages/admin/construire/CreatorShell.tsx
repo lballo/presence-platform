@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { ArrowUpRight, BellRing, BookOpen, ChevronRight, ClipboardCheck, Menu, Settings2, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
@@ -20,7 +20,22 @@ export default function CreatorLayout() {
   }, []);
   if (!me.data) return <p className="p-muted py-20 text-center m-0">Chargement…</p>;
   if (!me.data.permissions.buildCourses) return <div className="py-20 text-center p-muted">Cette page est réservée aux administrateurs.</div>;
-  return <Outlet />;
+  return <Boundary><Outlet /></Boundary>;
+}
+
+/** Une erreur ne laisse jamais une page blanche : en brouillon, la dernière saisie est partie dans Notion au moment où la page s'est arrêtée. */
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="m-0 text-[16px] max-w-[460px]">Une erreur a interrompu cette page. Rechargez-la pour reprendre votre écriture : vérifiez ensuite vos dernières lignes.</p>
+        <button type="button" className="cr-btn cr-btn-primary" onClick={() => window.location.reload()}>Recharger la page</button>
+      </div>
+    );
+  }
 }
 
 export type Crumb = { label: string; to?: string };

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, ArrowRight, Check, CircleCheck, Copy, Eye, ExternalLink, Flag, PanelLeftOpen, Target, Trash2, Video } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleCheck, CircleHelp, Copy, Eye, ExternalLink, Flag, PanelLeftOpen, Target, Trash2, Type, Video } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { LESSON_RUBRICS, LESSON_TYPE_LABEL, LESSON_TYPES, type CourseBlock, type LessonType } from "../../../../server/lib/courseBlocks";
+import { LESSON_RUBRICS, type CourseBlock, type LessonType } from "../../../../server/lib/courseBlocks";
 import { ConfirmButton } from "../shared";
-import { BlockEditor, DocProvider, DocToolbar, HashtagPicker, remapIds, sendableBlocks } from "./BlockEditor";
+import { BlockEditor, DocProvider, DocToolbar, focusBlock, HashtagPicker, makeText, PageAdd, remapIds, sendableBlocks, type PageItem } from "./BlockEditor";
 import { CoursePanel, lessonPlace } from "./CoursePanel";
 import { CreatorShell } from "./CreatorShell";
 import { IssueList, NotionConflict, SaveStatus, useDocSaver, useLeaveGuard, useLeaveWarning } from "./EditorParts";
@@ -14,23 +15,44 @@ import { LESSON_STATUS_LABEL, notionUrl } from "./labels";
 type Lesson = RouterOutputs["build"]["lesson"];
 type RubricKey = (typeof LESSON_RUBRICS)[number]["key"];
 type LessonRubrics = Record<RubricKey, CourseBlock[]>;
+type PageBlock = "video" | "test" | "intention" | "contenu" | "exercice" | "defi" | "plusLoin";
+
+/**
+ * Une rubrique vidée puis enregistrée reste vide à la réouverture : elle ne revient pas.
+ * Un lien vide ne se distingue pas d'un lien jamais rempli : ce choix-là est gardé dans ce navigateur.
+ */
+const removedKey = (id: number) => `construire:lecon:${id}:retires`;
+const readRemoved = (id: number): string[] => { try { return JSON.parse(localStorage.getItem(removedKey(id)) ?? "[]") as string[]; } catch { return []; } };
+const writeRemoved = (id: number, list: string[]) => { try { localStorage.setItem(removedKey(id), JSON.stringify(list)); } catch { /* le choix ne durera que le temps de la page */ } };
 
 /** Une zone de saisie qui grandit avec son texte, sans barre de défilement. */
-export function AutoGrow({ value, onChange, className, placeholder, label, onEnter }: { value: string; onChange: (v: string) => void; className: string; placeholder?: string; label: string; onEnter?: () => void }) {
+export function AutoGrow({ value, onChange, className, placeholder, label, onEnter, field }: { value: string; onChange: (v: string) => void; className: string; placeholder?: string; label: string; onEnter?: () => void; field?: string }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; } }, [value]);
-  return <textarea ref={ref} rows={1} aria-label={label} className={className} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); } }} />;
+  return <textarea ref={ref} rows={1} data-page-field={field} aria-label={label} className={className} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); } }} />;
 }
 
 /** Une ligne de propriété du document : l'étiquette, puis un champ sans cadre. */
-export function PropRow({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+export function PropRow({ icon, label, children, onRemove }: { icon: ReactNode; label: string; children: ReactNode; onRemove?: () => void }) {
   return (
-    <div className="flex flex-wrap items-start gap-x-3 min-h-[34px] px-2">
+    <div className="cr-removable flex flex-wrap items-start gap-x-3 min-h-[34px] px-2">
       <span className="flex-[0_0_150px] flex items-center gap-2 h-[33px] text-[14px] p-muted">{icon}{label}</span>
       <div className="flex-[1_1_200px] min-w-0">{children}</div>
+      {onRemove && <RemoveBlock label={label} onRemove={onRemove} />}
     </div>
   );
 }
+
+/** Retirer un bloc de la page. S'il contient déjà quelque chose, on le demande d'abord. */
+export function RemoveBlock({ label, filled, onRemove }: { label: string; filled?: boolean; onRemove: () => void }) {
+  const name = `Supprimer le bloc « ${label} »`;
+  if (filled) return <ConfirmButton label={<><Trash2 size={15} /><span className="sr-only">{name}</span></>} className="cr-icon cr-remove" question={`Supprimer « ${label} » et son contenu ? Il part aussi de Notion.`} confirm="Supprimer" onConfirm={onRemove} />;
+  return <button type="button" aria-label={name} title={name} className="cr-icon cr-remove" onClick={onRemove}><Trash2 size={15} /></button>;
+}
+
+/** Du texte vraiment écrit, et pas seulement l'invite « À écrire ». */
+export const hasWritten = (list: CourseBlock[]) => list.some((b) => b.type !== "unknown" && !("draft" in b && b.draft));
+export const hasBlocks = (list: CourseBlock[]) => list.some((b) => b.type !== "unknown");
 
 const focusFirstBlock = () => (document.querySelector("[data-doc-root] .ProseMirror") as HTMLElement | null)?.focus();
 
@@ -56,6 +78,19 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
   const [issues, setIssues] = useState(l.issues);
   const [conflict, setConflict] = useState(false);
   const [panel, setPanel] = useState(true);
+  // « Pour aller plus loin » n'est pas là par défaut : il s'ajoute avec le « + » du bas de page
+  const [shown, setShown] = useState<Set<PageBlock>>(() => {
+    const removed = readRemoved(l.id);
+    const out = new Set<PageBlock>();
+    if (l.videoUrl || !removed.includes("video")) out.add("video");
+    if (l.testUrl || !removed.includes("test")) out.add("test");
+    if (l.intention) out.add("intention");
+    for (const key of ["contenu", "exercice", "defi"] as const) if (hasBlocks(l.rubrics[key])) out.add(key);
+    if (hasWritten(l.rubrics.plusLoin)) out.add("plusLoin");
+    return out;
+  });
+  const reveal = (id: PageBlock) => setShown((s) => new Set(s).add(id));
+  const conceal = (id: PageBlock) => setShown((s) => { const next = new Set(s); next.delete(id); return next; });
   const live = useRef({ f, rubrics });
   live.current = { f, rubrics };
   const save = trpc.build.saveLesson.useMutation();
@@ -90,6 +125,37 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
   const saver = useDocSaver({ auto, ready: !!f.title.trim() && !conflict, write });
   const set = (p: Partial<typeof f>) => { setF((x) => ({ ...x, ...p })); saver.touch(); };
   const setBlocks = (key: RubricKey, b: CourseBlock[]) => { setRubrics((x) => ({ ...x, [key]: b })); saver.touch(); };
+  const removeLink = (id: "video" | "test") => {
+    set(id === "video" ? { videoUrl: "" } : { testUrl: "" });
+    conceal(id);
+    writeRemoved(l.id, [...new Set([...readRemoved(l.id), id])]);
+  };
+  const addLink = (id: "video" | "test") => {
+    flushSync(() => reveal(id));
+    writeRemoved(l.id, readRemoved(l.id).filter((x) => x !== id));
+    (document.querySelector(`[data-page-field="${id}"]`) as HTMLElement | null)?.focus();
+  };
+  // Un bloc Notion que l'application ne sait pas afficher reste dans Notion, quoi qu'il arrive
+  const removeRubric = (key: Exclude<RubricKey, "intention">) => { setBlocks(key, live.current.rubrics[key].filter((b) => b.type === "unknown")); conceal(key); };
+  const addRubric = (key: Exclude<RubricKey, "intention">, kind: "paragraph" | "bullet") => {
+    const list = live.current.rubrics[key];
+    const first = list.find((b) => b.type !== "unknown") ?? makeText(kind);
+    flushSync(() => { reveal(key); if (!list.includes(first)) setBlocks(key, [...list, first]); });
+    focusBlock(first);
+  };
+  const insertInContent = (b: CourseBlock) => {
+    flushSync(() => { reveal("contenu"); setBlocks("contenu", [...live.current.rubrics.contenu, b]); });
+    focusBlock(b);
+  };
+  const offered: (PageItem & { block: PageBlock })[] = [
+    { block: "video", id: "b-video", label: "Vidéo principale", desc: "Un lien vers la vidéo", icon: <Video size={14} />, add: () => addLink("video") },
+    { block: "test", id: "b-test", label: "Test intégré", desc: "Un lien vers le test", icon: <CircleCheck size={14} />, add: () => addLink("test") },
+    { block: "intention", id: "b-intention", label: "Intention", desc: "Ce que la leçon permet", icon: <Target size={14} />, add: () => { flushSync(() => reveal("intention")); (document.querySelector('[data-page-field="intention"]') as HTMLElement | null)?.focus(); } },
+    { block: "contenu", id: "b-contenu", label: "Contenu", desc: "Texte, titres, couleurs, liens", icon: <Type size={14} />, add: () => addRubric("contenu", "paragraph") },
+    { block: "exercice", id: "b-exercice", label: "Questions clés", desc: "Réponses dans le journal privé", icon: <CircleHelp size={14} />, add: () => addRubric("exercice", "bullet") },
+    { block: "defi", id: "b-defi", label: "Défi dans le réseau", desc: "Avec le bouton « J’ai relevé ce défi »", icon: <Flag size={14} />, add: () => addRubric("defi", "paragraph") },
+    { block: "plusLoin", id: "b-plus-loin", label: "Pour aller plus loin", desc: "Lectures, liens, pistes", icon: <ArrowUpRight size={14} />, add: () => addRubric("plusLoin", "bullet") },
+  ];
   const setStatus = (status: Lesson["status"]) => { live.current = { ...live.current, f: { ...live.current.f, status } }; setF((x) => ({ ...x, status })); saver.touchAndSave(); };
 
   const archive = trpc.build.archiveLesson.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Leçon supprimée, à la corbeille de Notion"); navigate(`/admin/construire/${l.courseId}`); }, onError: (e) => toast.error(e.message) });
@@ -124,31 +190,44 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
             </div>
             <div className="px-2 mb-3"><AutoGrow label="Titre de la leçon" className="cr-doc-title" placeholder="Titre de la leçon" value={f.title} onChange={(title) => set({ title })} onEnter={focusFirstBlock} /></div>
             <div className="flex flex-col mb-4">
-              <PropRow icon={<Video size={15} strokeWidth={1.6} />} label="Vidéo principale"><input type="url" aria-label="Vidéo principale" className="cr-prop" placeholder="Coller un lien…" value={f.videoUrl} onChange={(e) => set({ videoUrl: e.target.value })} /></PropRow>
-              <PropRow icon={<CircleCheck size={15} strokeWidth={1.6} />} label="Test intégré"><input type="url" aria-label="Test intégré" className="cr-prop" placeholder="Coller un lien…" value={f.testUrl} onChange={(e) => set({ testUrl: e.target.value })} /></PropRow>
-              <PropRow icon={<Target size={15} strokeWidth={1.6} />} label="Intention"><AutoGrow label="Intention" className="cr-prop" placeholder="Ce que la leçon permet…" value={f.intention} onChange={(intention) => set({ intention })} /></PropRow>
+              {shown.has("video") && <PropRow icon={<Video size={15} strokeWidth={1.6} />} label="Vidéo principale" onRemove={() => removeLink("video")}><input type="url" data-page-field="video" aria-label="Vidéo principale" className="cr-prop" placeholder="Coller un lien…" value={f.videoUrl} onChange={(e) => set({ videoUrl: e.target.value })} /></PropRow>}
+              {shown.has("test") && <PropRow icon={<CircleCheck size={15} strokeWidth={1.6} />} label="Test intégré" onRemove={() => removeLink("test")}><input type="url" data-page-field="test" aria-label="Test intégré" className="cr-prop" placeholder="Coller un lien…" value={f.testUrl} onChange={(e) => set({ testUrl: e.target.value })} /></PropRow>}
+              {shown.has("intention") && <PropRow icon={<Target size={15} strokeWidth={1.6} />} label="Intention" onRemove={() => { set({ intention: "" }); conceal("intention"); }}><AutoGrow field="intention" label="Intention" className="cr-prop" placeholder="Ce que la leçon permet…" value={f.intention} onChange={(intention) => set({ intention })} /></PropRow>}
             </div>
             <DocToolbar />
-            <BlockEditor label="Contenu" emptyHeight blocks={rubrics.contenu} onChange={(b) => setBlocks("contenu", b)} />
+            {shown.has("contenu") && (
+              <section className="cr-removable flex flex-col" aria-label="Bloc Contenu">
+                <div className="flex flex-wrap items-center justify-between min-h-[28px] px-2"><span className="cr-remove text-[10px] font-medium tracking-[0.12em] p-muted">CONTENU</span><RemoveBlock label="Contenu" filled={hasWritten(rubrics.contenu)} onRemove={() => removeRubric("contenu")} /></div>
+                <BlockEditor label="Contenu" emptyHeight blocks={rubrics.contenu} onChange={(b) => setBlocks("contenu", b)} />
+              </section>
+            )}
 
-            <section className="flex flex-col mt-7" aria-labelledby="questions-cles">
-              <div className="px-2"><h2 id="questions-cles" className="cr-doc-h">Questions clés</h2><p className="m-0 mt-0.5 mb-2 text-[12px] p-muted">Chaque question reçoit un champ de réponse, rangé dans le journal privé du membre.</p></div>
-              <BlockEditor label="Exercice" marker="?" addKind="bullet" addLabel="Ajouter une question" placeholder="Une question…" blocks={rubrics.exercice} onChange={(b) => setBlocks("exercice", b)} />
-            </section>
+            {shown.has("exercice") && (
+              <section className="cr-removable flex flex-col mt-7" aria-labelledby="questions-cles">
+                <div className="px-2 flex flex-wrap items-start justify-between gap-x-3"><h2 id="questions-cles" className="cr-doc-h flex-1">Questions clés</h2><RemoveBlock label="Questions clés" filled={hasWritten(rubrics.exercice)} onRemove={() => removeRubric("exercice")} /><p className="m-0 mt-0.5 mb-2 basis-full text-[12px] p-muted">Chaque question reçoit un champ de réponse, rangé dans le journal privé du membre.</p></div>
+                <BlockEditor label="Exercice" marker="?" addKind="bullet" addLabel="Ajouter une question" placeholder="Une question…" blocks={rubrics.exercice} onChange={(b) => setBlocks("exercice", b)} />
+              </section>
+            )}
 
-            <section className="flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
-              <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
-              <div className="flex-1 min-w-0 flex flex-col gap-1">
-                <span className="text-[11px] tracking-[0.22em] px-2" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span>
-                <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={rubrics.defi} onChange={(b) => setBlocks("defi", b)} />
-                <span className="text-[11px] px-2 p-muted">Les membres verront aussi le bouton « J’ai relevé ce défi ».</span>
-              </div>
-            </section>
+            {shown.has("defi") && (
+              <section className="cr-removable flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
+                <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 px-2"><span className="text-[11px] tracking-[0.22em]" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span><RemoveBlock label="Défi dans le réseau" filled={hasWritten(rubrics.defi)} onRemove={() => removeRubric("defi")} /></div>
+                  <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={rubrics.defi} onChange={(b) => setBlocks("defi", b)} />
+                  <span className="text-[11px] px-2 p-muted">Les membres verront aussi le bouton « J’ai relevé ce défi ».</span>
+                </div>
+              </section>
+            )}
 
-            <section className="flex flex-col mt-7" aria-labelledby="plus-loin">
-              <div className="px-2"><h2 id="plus-loin" className="cr-doc-h">Pour aller plus loin</h2><p className="m-0 mt-0.5 mb-2 text-[12px] p-muted">Des pistes complémentaires pour prolonger la leçon.</p></div>
-              <BlockEditor label="Pour aller plus loin" marker="→" addKind="bullet" addLabel="Ajouter une piste" placeholder="Une ressource ou une piste…" blocks={rubrics.plusLoin} onChange={(b) => setBlocks("plusLoin", b)} />
-            </section>
+            {shown.has("plusLoin") && (
+              <section className="cr-removable flex flex-col mt-7" aria-labelledby="plus-loin">
+                <div className="px-2 flex flex-wrap items-start justify-between gap-x-3"><h2 id="plus-loin" className="cr-doc-h flex-1">Pour aller plus loin</h2><RemoveBlock label="Pour aller plus loin" filled={hasWritten(rubrics.plusLoin)} onRemove={() => removeRubric("plusLoin")} /><p className="m-0 mt-0.5 mb-2 basis-full text-[12px] p-muted">Des pistes complémentaires pour prolonger la leçon.</p></div>
+                <BlockEditor label="Pour aller plus loin" marker="→" addKind="bullet" addLabel="Ajouter une piste" placeholder="Une ressource ou une piste…" blocks={rubrics.plusLoin} onChange={(b) => setBlocks("plusLoin", b)} />
+              </section>
+            )}
+
+            <PageAdd items={offered.filter((o) => !shown.has(o.block))} onInsert={insertInContent} />
 
             <nav aria-label="Leçons voisines" className="mt-9 pt-4 border-t flex flex-wrap justify-between gap-4 text-[13px]" style={{ borderColor: "var(--p-line)" }}>
               {prev ? <Link to={`/admin/construire/${l.courseId}/lecon/${prev.id}`} className="flex items-center gap-2 no-underline p-muted"><ArrowLeft size={14} /> {prev.title}</Link> : <span className="flex items-center gap-2 p-muted opacity-50"><ArrowLeft size={14} /> Début du parcours</span>}
@@ -167,12 +246,6 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
                 {(Object.entries(LESSON_STATUS_LABEL) as [Lesson["status"], string][]).map(([s, label]) => <button key={s} type="button" role="radio" aria-checked={f.status === s} disabled={saver.state === "saving"} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium whitespace-nowrap" style={f.status === s ? { background: s === "publie" ? "rgba(46, 125, 80, .12)" : "#F3ECE8", color: s === "publie" ? "#2b7a4b" : "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => { if (f.status !== s) setStatus(s); }}>{label}</button>)}
               </div>
               <span className="text-[11px] p-muted leading-snug">{f.status === "publie" ? "Visible par les membres. Vos modifications leur arrivent quand vous cliquez sur Enregistrer." : "Invisible des membres. Tout s’enregistre au fil de votre écriture."}</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              <span className="text-[12px] font-medium">Format affiché</span>
-              <div role="radiogroup" aria-label="Format affiché" className="flex flex-wrap gap-1 rounded-[10px] border p-[3px] bg-white" style={{ borderColor: "var(--p-line)" }}>
-                {LESSON_TYPES.map((t) => <button key={t} type="button" role="radio" aria-checked={f.type === t} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium" style={f.type === t ? { background: "#F3ECE8", color: "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => set({ type: t })}>{t === "defi" ? "Défi" : LESSON_TYPE_LABEL[t]}</button>)}
-              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-2 text-[12px] font-medium">Durée (min)<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-white w-full" style={{ borderColor: "var(--p-line)" }} value={f.durationMin ?? ""} onChange={(e) => set({ durationMin: e.target.value === "" ? null : Number(e.target.value) })} /></label>

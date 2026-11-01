@@ -138,11 +138,12 @@ Trois niveaux, connectés à Notion (espace « Formations Présence », bases Fo
 
 ## Espace créateur (Construire)
 
-`/admin/construire` est une pleine page, sans le menu du réseau, toujours en clair, aux couleurs de la charte (`html.creator-mode` dans `src/index.css`, `CreatorShell.tsx`).
+`/admin/construire` s'ouvre depuis l'entrée « Espace créateur » du menu principal, sous « Administration ». C'est une pleine page, sans le menu du réseau, toujours en clair, aux couleurs de la charte (`html.creator-mode` dans `src/index.css`, `CreatorShell.tsx`).
 
 - **Mes formations**, **Tests**, **Relances** : le bandeau de gauche. L'éditeur d'une formation garde ses quatre onglets (contenu, informations, participants, statistiques).
 - **Plan** : `Outline.tsx`, glissement aux événements de pointeur (clic tenu puis 4 pixels), écritures en file. Les flèches restent pour le téléphone.
 - **Leçon et section, comme un document** : `BlockEditor.tsx`. Un bloc de l'application reste un bloc Notion : chaque ligne a son éditeur, Entrée crée le bloc suivant, Retour arrière recolle, les flèches passent d'un bloc à l'autre, « / » ouvre le menu d'insertion. Le changement de bloc se fait dans le même geste (`flushSync`, `focusNow`) : la lettre suivante ne doit jamais tomber dans le bloc d'avant.
+- **Blocs de la page** : chaque bloc se retire (lien vidé, rubrique vidée, avec confirmation si elle contient du texte) et se remet avec le « + » du bas de page. Une rubrique vidée reste vide à la réouverture ; pour les liens, le choix est gardé dans le navigateur. « Pour aller plus loin » n'est pas là par défaut. Le champ Type de Notion n'est plus à choisir ici : il reste dans Notion, l'enregistrement le renvoie tel quel.
 - **Enregistrement** : `useDocSaver` (`EditorParts.tsx`). Tant que les membres ne voient pas la page, elle part toute seule dans Notion après 2,5 secondes de pause. Sur une page publiée, rien ne part sans un clic, et quitter pose la question. La page ne se recharge jamais sous les doigts : après une écriture, `remapIds` donne aux blocs leur identifiant Notion. Sans cela, l'écriture suivante les recréerait.
 - **Couleurs** : `server/lib/textColors.ts`. Notion n'a que dix couleurs nommées, et une seule par morceau de texte : chaque teinte de la charte a la sienne, pour revenir à l'identique (classes `c-*` et `h-*`, seules gardées par `cleanInline`). Dans Notion, le texte s'affiche donc dans sa teinte la plus proche.
 - **Polices** : celles de la maquette (Newsreader, Abhaya Libre, Figtree) pour écrire. Les membres lisent en Cormorant Garamond et Plus Jakarta Sans.

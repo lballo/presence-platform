@@ -23,7 +23,7 @@ export const keyOf = (b: CourseBlock) => (b as { key?: string }).key ?? b.id;
 
 const emptyOf = (html: string) => !html.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
 
-function makeText(kind: TextKind, html = ""): CourseBlock {
+export function makeText(kind: TextKind, html = ""): CourseBlock {
   const id = newId();
   if (kind === "heading") return { id, type: "heading", level: 3, html };
   if (kind === "callout") return { id, type: "callout", emoji: "💡", html };
@@ -91,7 +91,8 @@ const tool = "w-7 h-7 flex items-center justify-center rounded-md text-[13px] di
 /** Elle reste en haut de l'écran dans un long texte, au même endroit : la page ne bouge pas quand on passe d'un bloc à l'autre. */
 export function DocToolbar() {
   const doc = useContext(DocContext);
-  const a = doc?.active ?? null;
+  // Le bloc où l'on écrivait a pu être supprimé : son éditeur n'existe plus
+  const a = doc?.active && !doc.active.editor.isDestroyed ? doc.active : null;
   const [open, setOpen] = useState<"color" | "link" | "emoji" | null>(null);
   const [link, setLink] = useState("");
   const state = useEditorState({
@@ -172,7 +173,7 @@ const MENU: { title: string; items: { id: string; label: string; desc: string; i
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 const matches = (query: string) => MENU.flatMap((g) => g.items).filter((i) => !query || fold(i.label).startsWith(fold(query)) || fold(i.id).startsWith(fold(query)));
 
-function makeFrom(insert: Insert): CourseBlock {
+export function makeFrom(insert: Insert): CourseBlock {
   if ("kind" in insert) return makeText(insert.kind);
   const id = newId();
   switch (insert.media) {
@@ -205,6 +206,47 @@ function InsertMenu({ query, index, onPick }: { query: string; index: number; on
       })}
     </div>
   );
+}
+
+/** Le « + » du bas de page : les rubriques qui ne sont pas affichées, puis tout ce qui peut entrer dans le contenu. */
+export type PageItem = { id: string; label: string; desc: string; icon: ReactNode; add: () => void };
+
+export function PageAdd({ items, onInsert }: { items: PageItem[]; onInsert?: (b: CourseBlock) => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (root.current && !root.current.contains(e.target as globalThis.Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const row = (id: string, label: string, desc: string, icon: ReactNode, run: () => void) => (
+    <button key={id} type="button" role="menuitem" className="w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--p-accent-soft)]" onClick={() => { setOpen(false); run(); }}>
+      <span className="w-7 h-7 flex-none rounded-md border flex items-center justify-center p-muted" style={{ borderColor: "var(--p-line)" }}>{icon}</span>
+      <span className="flex flex-col min-w-0"><span className="text-[13px] font-medium">{label}</span><span className="text-[11px] p-muted">{desc}</span></span>
+    </button>
+  );
+  return (
+    <div ref={root} className="relative mt-6 px-2">
+      <button type="button" aria-expanded={open} aria-haspopup="menu" className="cr-page-add" onClick={() => setOpen(!open)}><span className="cr-page-add-plus"><Plus size={16} /></span> Ajouter un bloc</button>
+      {open && (
+        <div role="menu" aria-label="Ajouter un bloc" className="cr-menu cr-menu-up">
+          {items.length > 0 && <><p className="m-0 mx-2 mt-1.5 mb-1 text-[10px] font-semibold tracking-[0.12em] p-muted">BLOCS DE LA PAGE</p>{items.map((i) => row(i.id, i.label, i.desc, i.icon, i.add))}</>}
+          {onInsert && MENU.map((g) => <div key={g.title}><p className="m-0 mx-2 mt-2 mb-1 text-[10px] font-semibold tracking-[0.12em] p-muted">{g.title === "TEXTE" ? "DANS LE CONTENU : TEXTE" : "DANS LE CONTENU : AUTRES BLOCS"}</p>{g.items.map((i) => row(i.id, i.label, i.desc, i.icon, () => onInsert(makeFrom(i.insert))))}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Le curseur va dans un bloc qui vient d'être ajouté depuis le bas de page. */
+export function focusBlock(b: CourseBlock) {
+  const row = document.querySelector(`[data-doc-root] [data-block-key="${keyOf(b)}"]`);
+  const dom = row?.querySelector(".ProseMirror") as (Element & { editor?: Editor }) | null;
+  if (dom?.editor) return focusNow(dom.editor, "end");
+  (row?.querySelector("input") as HTMLInputElement | null)?.focus();
 }
 
 /* ───────────── Un média ───────────── */
@@ -406,7 +448,9 @@ export function BlockEditor({ blocks, onChange, label, marker, addLabel, addKind
       ed?.commands.clearContent(true);
       const current = live.current.find((b) => keyOf(b) === key);
       if ("kind" in insert && current && isText(current)) return setKind(key, insert.kind);
-      apply((list) => list.map((b) => (keyOf(b) === key ? makeFrom(insert) : b)));
+      const made = makeFrom(insert);
+      flushSync(() => apply((list) => list.map((b) => (keyOf(b) === key ? made : b))));
+      (wrap.current?.querySelector(`[data-block-key="${keyOf(made)}"] input`) as HTMLInputElement | null)?.focus();
       return;
     }
     insertAfter(key, [makeFrom(insert)]);
@@ -494,7 +538,12 @@ export function BlockEditor({ blocks, onChange, label, marker, addLabel, addKind
     set: (key, p) => apply((list) => list.map((b) => (keyOf(b) === key ? ({ ...b, ...p } as CourseBlock) : b))),
     move: (key, d) => apply((list) => { const i = list.findIndex((b) => keyOf(b) === key); const out = [...list]; const [x] = out.splice(i, 1); out.splice(i + d, 0, x); return out; }),
     copy: (key) => { const b = live.current.find((x) => keyOf(x) === key); if (b) { const { key: _k, ...rest } = b as CourseBlock & { key?: string }; insertAfter(key, [{ ...rest, id: newId() } as CourseBlock], false); } },
-    remove: (key) => apply((list) => list.filter((b) => keyOf(b) !== key)),
+    remove: (key) => {
+      // Supprimer la ligne où l'on écrit : le curseur passe à sa voisine, on continue d'écrire
+      const ed = editorOf(key);
+      if (ed?.view.hasFocus() && !focusSibling(ed.view.dom, -1)) focusSibling(ed.view.dom, 1);
+      apply((list) => list.filter((b) => keyOf(b) !== key));
+    },
     open: (key) => setMenu((m) => (m?.key === key && !m.slash ? null : { key, query: "", index: 0, slash: false })),
     press: (key, title) => (e) => {
       if (e.button !== 0) return;
@@ -561,6 +610,7 @@ export function BlockEditor({ blocks, onChange, label, marker, addLabel, addKind
   // Une seule ligne est marquée dans la page, et la barre connaît toujours le type du bloc où l'on écrit
   useEffect(() => {
     if (!doc) return;
+    if (doc.active?.editor.isDestroyed) { doc.setActive(null); return setFocusKey(null); }
     if (!doc.active || !wrap.current?.contains(doc.active.editor.view.dom)) return setFocusKey(null);
     const b = blocks.find((x) => keyOf(x) === focusKey);
     if (b && b.type !== doc.active.type) doc.setActive({ ...doc.active, type: b.type });

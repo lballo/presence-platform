@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CircleCheck, Copy, Eye, 
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { LESSON_TYPE_LABEL, LESSON_TYPES, type LessonType } from "../../../../server/lib/courseBlocks";
+import { LESSON_TYPE_LABEL, type LessonType } from "../../../../server/lib/courseBlocks";
 import { ConfirmButton, Select } from "../shared";
 import { useLeaveWarning } from "./EditorParts";
 import { LESSON_STATUS_LABEL } from "./labels";
@@ -20,13 +20,15 @@ type Target = { kind: "section"; index: number } | { kind: "lesson"; sectionId: 
 const iconBtn = "cr-icon";
 const TYPE_TILE: Record<LessonType, { icon: typeof Video; fg: string }> = { contenu: { icon: FileText, fg: "#6C6059" }, video: { icon: Video, fg: "#A83932" }, exercice: { icon: PenLine, fg: "#AA564C" }, test: { icon: CircleCheck, fg: "#3D3128" }, defi: { icon: Flag, fg: "#AD261E" } };
 
+/** Le champ Type n'est plus à choisir dans Construire : une leçon de contenu avec une vidéo ou un test se montre comme telle. */
+export const shownType = (l: { type: LessonType; hasVideo: boolean; hasTest: boolean }): LessonType => (l.type !== "contenu" ? l.type : l.hasVideo ? "video" : l.hasTest ? "test" : "contenu");
+
 /** Le format d'une leçon, d'un coup d'œil. */
 export function TypeTile({ type, size = 32 }: { type: LessonType; size?: number }) {
   const { icon: Icon, fg } = TYPE_TILE[type];
   return <span aria-hidden="true" className="flex-none rounded-md flex items-center justify-center" style={{ width: size, height: size, background: "#F3ECE8", color: fg }}><Icon size={size >= 32 ? 16 : 14} /></span>;
 }
 const mouse = window.matchMedia("(pointer: fine)").matches; // au doigt, les flèches suffisent
-const typeOptions = LESSON_TYPES.map((t): [LessonType, string] => [t, LESSON_TYPE_LABEL[t]]);
 const isPublished = (l: { status: string }) => l.status === "publie";
 
 /** Le plan d'une formation : créer et réordonner les sections et leurs leçons, au glisser-déposer ou avec les flèches sur téléphone. */
@@ -276,10 +278,10 @@ export function Outline({ c }: { c: Course }) {
                   {lessonMark(s.id, n) && <DropMarker edge="top" offset={6} />}
                   {n === s.lessons.length - 1 && lessonMark(s.id, n + 1) && <DropMarker edge="bottom" offset={6} />}
                   <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex w-7 justify-center p-muted"><GripVertical size={16} /></span>
-                  <TypeTile type={l.type} />
+                  <TypeTile type={shownType(l)} />
                   <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col gap-0.5 px-1 no-underline" style={{ color: "var(--p-ink)" }}>
                     <span className="font-medium text-[13px] leading-snug break-words">{l.title}</span>
-                    <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-1.5"><span>{LESSON_TYPE_LABEL[l.type]}</span>{l.durationMin ? <span>· {l.durationMin} min</span> : null}{l.hasVideo && l.type !== "video" && <span className="flex items-center gap-1">· <Video size={11} /> vidéo</span>}{l.hasTest && l.type !== "test" && <span className="flex items-center gap-1">· <CircleCheck size={11} /> test</span>}{l.issues.length > 0 && <span style={{ color: "#AA564C" }}>· {l.issues.length} point{l.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
+                    <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-1.5"><span>{LESSON_TYPE_LABEL[shownType(l)]}</span>{l.durationMin ? <span>· {l.durationMin} min</span> : null}{l.hasVideo && shownType(l) !== "video" && <span className="flex items-center gap-1">· <Video size={11} /> vidéo</span>}{l.hasTest && shownType(l) !== "test" && <span className="flex items-center gap-1">· <CircleCheck size={11} /> test</span>}{l.issues.length > 0 && <span style={{ color: "#AA564C" }}>· {l.issues.length} point{l.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
                   </Link>
                   <button type="button" className="flex-none flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium whitespace-nowrap" aria-label={`${l.status === "publie" ? "Dépublier" : "Publier"} ${l.title}`} title={l.status === "publie" ? "Cliquer pour dépublier" : "Cliquer pour publier"} disabled={setLesson.isPending} style={l.status === "publie" ? { background: "rgba(46, 125, 80, .12)", color: "#2b7a4b" } : { background: "#F3ECE8", color: "var(--p-ink-2)" }} onClick={() => setLesson.mutate({ id: l.id, status: l.status === "publie" ? "brouillon" : "publie" })}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{LESSON_STATUS_LABEL[l.status]}</button>
                   <span className="flex items-center flex-none">
@@ -364,7 +366,6 @@ export function AddLesson({ courseId, section, onClose }: { courseId: number; se
         <p className="m-0 text-[14px] p-muted">Dans la section « {section?.title} »</p>
         <form className="flex flex-col gap-3.5" onSubmit={(e) => { e.preventDefault(); if (ready && section) create.mutate({ sectionId: section.id, title: f.title, intention: f.intention, type: f.type, source: f.source === "notion" ? { kind: "notion", templateId: f.templateId } : { kind: "structure" } }); }}>
           <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Titre</span><input className="p-field" autoFocus value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
-          <Select label="Type" value={f.type} onChange={(type) => setF({ ...f, type })} options={typeOptions} />
           <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Intention</span><input className="p-field" value={f.intention} onChange={(e) => setF({ ...f, intention: e.target.value })} /></label>
           {!!templates.data?.length && <Select label="Partir de" value={f.source} onChange={(source) => setF({ ...f, source })} options={[["structure", "La structure de la base"], ["notion", "Un modèle de la base Notion"]]} />}
           {f.source === "notion" && <Select label="Modèle" value={f.templateId} onChange={(templateId) => setF({ ...f, templateId })} options={[["", "Choisir…"], ...(templates.data ?? []).map((t): [string, string] => [t.id, t.name])]} />}

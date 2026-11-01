@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon, Mail, Menu, ShieldCheck, X } from "lucide-react";
+import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon, Mail, Menu, PenLine, ShieldCheck, X } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/providers/auth";
 import { Avatar } from "@/components/Avatar";
@@ -63,6 +63,16 @@ function AdminEntry() {
   );
 }
 
+/** L'espace créateur s'ouvre en pleine page : c'est une entrée du menu, pas un onglet de l'administration. */
+function CreatorEntry() {
+  return (
+    <NavLink to="/admin/construire" className={({ isActive }) => `flex items-center gap-3.5 min-h-[46px] px-3.5 rounded-xl text-[15.5px] no-underline transition-colors ${isActive ? "text-white font-medium" : "hover:bg-black/5 dark:hover:bg-white/5"}`} style={({ isActive }) => (isActive ? { background: "var(--p-accent)" } : { color: "var(--p-menu-ink)" })}>
+      <PenLine size={19} strokeWidth={1.6} />
+      <span className="flex-1">Espace créateur</span>
+    </NavLink>
+  );
+}
+
 /** Contenu du menu : utilisé dans la barre latérale (ordinateur) et dans le tiroir (mobile). */
 function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: Record<string, boolean>; dark: boolean; setDark: (v: boolean) => void }) {
   const me = trpc.members.me.useQuery();
@@ -92,6 +102,7 @@ function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: R
           </NavLink>
         ))}
         {me.data?.permissions.adminPanel && <AdminEntry />}
+        {me.data?.permissions.buildCourses && <CreatorEntry />}
       </nav>
       <div className="mt-auto px-3.5 pb-3">
         <button

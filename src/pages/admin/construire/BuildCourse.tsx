@@ -11,7 +11,7 @@ import { ACCESS_LABEL, fullDate } from "../labels";
 import { BlockEditor, DocProvider, DocToolbar, HashtagPicker, sendableBlocks } from "./BlockEditor";
 import { CreatorShell } from "./CreatorShell";
 import { useFreshNotion } from "./useFreshNotion";
-import { Outline } from "./Outline";
+import { Outline, shownType } from "./Outline";
 import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, notionUrl } from "./labels";
 
 type Course = RouterOutputs["build"]["course"];
@@ -68,7 +68,7 @@ export default function BuildCourse() {
                   <span className="flex items-center gap-2.5"><Clock size={16} className="p-muted" /><span className="p-muted">Durée totale</span><span className="ml-auto font-semibold">{total} min</span></span>
                 </div>
                 <p className="m-0 mt-5 text-[10px] font-medium tracking-[0.12em] p-muted">FORMATS DE LEÇONS</p>
-                <div className="mt-3 flex flex-wrap gap-2">{[...new Set(lessons.map((l) => l.type))].map((t) => <span key={t} className="rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: "var(--p-line)", background: "#FDFBF9" }}>{LESSON_TYPE_LABEL[t]}</span>)}</div>
+                <div className="mt-3 flex flex-wrap gap-2">{[...new Set(lessons.map(shownType))].map((t) => <span key={t} className="rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: "var(--p-line)", background: "#FDFBF9" }}>{LESSON_TYPE_LABEL[t]}</span>)}</div>
                 <a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="mt-5 flex items-center gap-1.5 text-[12px] no-underline p-muted"><ExternalLink size={14} /> Ouvrir dans Notion</a>
                 <div className="mt-7 border-t pt-5" style={{ borderColor: "var(--p-line)" }}>
                   <Leaf size={24} className="mb-3" style={{ color: "var(--p-accent)" }} />

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams } from "react-router";
-import { Check, Copy, ExternalLink, Flag, Target, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, Flag, ListChecks, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import type { CourseBlock } from "../../../../server/lib/courseBlocks";
 import { ConfirmButton } from "../shared";
-import { BlockEditor, DocProvider, DocToolbar, HashtagPicker, remapIds, sendableBlocks } from "./BlockEditor";
-import { AutoGrow, PropRow } from "./BuildLesson";
+import { BlockEditor, DocProvider, DocToolbar, focusBlock, HashtagPicker, makeText, PageAdd, remapIds, sendableBlocks } from "./BlockEditor";
+import { AutoGrow, hasBlocks, hasWritten, PropRow, RemoveBlock } from "./BuildLesson";
 import { CoursePanel } from "./CoursePanel";
 import { CreatorShell } from "./CreatorShell";
 import { IssueList, NotionConflict, SaveStatus, useDocSaver, useLeaveGuard, useLeaveWarning } from "./EditorParts";
@@ -36,6 +37,7 @@ function Editor({ s, course, crumbs, reload, refetch }: { s: Section; course: Ro
   const [intention, setIntention] = useState<CourseBlock[]>(s.rubrics.intention);
   const [issues, setIssues] = useState(s.issues);
   const [conflict, setConflict] = useState(false);
+  const [shown, setShown] = useState(() => ({ intention: !!s.intention, objectifs: hasBlocks(s.rubrics.objectifs), defi: hasBlocks(s.rubrics.defi) }));
   const live = useRef({ f, objectifs, defi, intention });
   live.current = { f, objectifs, defi, intention };
   const save = trpc.build.saveSection.useMutation();
@@ -64,6 +66,15 @@ function Editor({ s, course, crumbs, reload, refetch }: { s: Section; course: Ro
   const auto = !visible;
   const saver = useDocSaver({ auto, ready: !!f.title.trim() && !conflict, write });
   const set = (p: Partial<typeof f>) => { setF((x) => ({ ...x, ...p })); saver.touch(); };
+  const keepUnknown = (list: CourseBlock[]) => list.filter((b) => b.type === "unknown");
+  const addObjectifs = () => { const first = objectifs.find((b) => b.type !== "unknown") ?? makeText("bullet"); flushSync(() => { setShown((x) => ({ ...x, objectifs: true })); if (!objectifs.includes(first)) { setObjectifs([...objectifs, first]); saver.touch(); } }); focusBlock(first); };
+  const addDefi = () => { const first = defi.find((b) => b.type !== "unknown") ?? makeText("paragraph"); flushSync(() => { setShown((x) => ({ ...x, defi: true })); if (!defi.includes(first)) { setDefi([...defi, first]); saver.touch(); } }); focusBlock(first); };
+  const addIntention = () => { flushSync(() => setShown((x) => ({ ...x, intention: true }))); (document.querySelector('[data-page-field="intention"]') as HTMLElement | null)?.focus(); };
+  const offered = [
+    ...(!shown.intention ? [{ id: "b-intention", label: "Intention", desc: "Ce que cette section permet", icon: <Target size={14} />, add: addIntention }] : []),
+    ...(!shown.objectifs ? [{ id: "b-objectifs", label: "Objectifs", desc: "Ce que le membre saura faire", icon: <ListChecks size={14} />, add: addObjectifs }] : []),
+    ...(!shown.defi ? [{ id: "b-defi", label: "Défi dans le réseau", desc: "Avec le bouton « J’ai relevé ce défi »", icon: <Flag size={14} />, add: addDefi }] : []),
+  ];
   const archive = trpc.build.archiveSection.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Section et leçons à la corbeille de Notion"); navigate(`/admin/construire/${s.courseId}`); }, onError: (e) => toast.error(e.message) });
   const duplicate = trpc.build.duplicateSection.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Section et leçons copiées dans Notion, leçons en brouillon"); navigate(`/admin/construire/${s.courseId}/section/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   useLeaveWarning(saver.state !== "saved");
@@ -89,21 +100,26 @@ function Editor({ s, course, crumbs, reload, refetch }: { s: Section; course: Ro
             <p className="m-0 mb-5 px-2 text-[11px] tracking-[0.22em]" style={{ color: "var(--p-accent)" }}>SECTION {String(index + 1).padStart(2, "0")}</p>
             <div className="px-2 mb-3"><AutoGrow label="Titre de la section" className="cr-doc-title" placeholder="Titre de la section" value={f.title} onChange={(title) => set({ title })} /></div>
             <div className="flex flex-col mb-5">
-              <PropRow icon={<Target size={15} strokeWidth={1.6} />} label="Intention"><AutoGrow label="Intention" className="cr-prop" placeholder="Ce que cette section permet…" value={f.intention} onChange={(v) => set({ intention: v })} /></PropRow>
+              {shown.intention && <PropRow icon={<Target size={15} strokeWidth={1.6} />} label="Intention" onRemove={() => { set({ intention: "" }); setShown((x) => ({ ...x, intention: false })); }}><AutoGrow field="intention" label="Intention" className="cr-prop" placeholder="Ce que cette section permet…" value={f.intention} onChange={(v) => set({ intention: v })} /></PropRow>}
             </div>
             <DocToolbar />
-            <section className="flex flex-col" aria-labelledby="objectifs">
-              <h2 id="objectifs" className="cr-doc-h px-2 mb-2">Objectifs</h2>
-              <BlockEditor label="Objectifs" addKind="bullet" addLabel="Ajouter un objectif" placeholder="Un objectif…" blocks={objectifs} onChange={(b) => { setObjectifs(b); saver.touch(); }} />
-            </section>
-            <section className="flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
-              <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
-              <div className="flex-1 min-w-0 flex flex-col gap-1">
-                <span className="text-[11px] tracking-[0.22em] px-2" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span>
-                <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={defi} onChange={(b) => { setDefi(b); saver.touch(); }} />
-                <span className="text-[11px] px-2 p-muted">Facultatif. Les membres voient ce texte et le bouton « J’ai relevé ce défi » ; il ne compte pas pour terminer la section.</span>
-              </div>
-            </section>
+            {shown.objectifs && (
+              <section className="cr-removable flex flex-col" aria-labelledby="objectifs">
+                <div className="px-2 mb-2 flex flex-wrap items-start justify-between gap-x-3"><h2 id="objectifs" className="cr-doc-h flex-1">Objectifs</h2><RemoveBlock label="Objectifs" filled={hasWritten(objectifs)} onRemove={() => { setObjectifs(keepUnknown(objectifs)); saver.touch(); setShown((x) => ({ ...x, objectifs: false })); }} /></div>
+                <BlockEditor label="Objectifs" addKind="bullet" addLabel="Ajouter un objectif" placeholder="Un objectif…" blocks={objectifs} onChange={(b) => { setObjectifs(b); saver.touch(); }} />
+              </section>
+            )}
+            {shown.defi && (
+              <section className="cr-removable flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
+                <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 px-2"><span className="text-[11px] tracking-[0.22em]" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span><RemoveBlock label="Défi dans le réseau" filled={hasWritten(defi)} onRemove={() => { setDefi(keepUnknown(defi)); saver.touch(); setShown((x) => ({ ...x, defi: false })); }} /></div>
+                  <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={defi} onChange={(b) => { setDefi(b); saver.touch(); }} />
+                  <span className="text-[11px] px-2 p-muted">Facultatif. Les membres voient ce texte et le bouton « J’ai relevé ce défi » ; il ne compte pas pour terminer la section.</span>
+                </div>
+              </section>
+            )}
+            {offered.length > 0 && <PageAdd items={offered} />}
           </article>
         </DocProvider>
         <aside aria-label="Réglages de la section" className="flex-[1_1_200px] lg:max-w-[235px] lg:border-l lg:pl-6 pt-1 w-full" style={{ borderColor: "var(--p-line)" }}>

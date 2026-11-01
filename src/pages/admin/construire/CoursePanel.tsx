@@ -4,7 +4,7 @@ import { ArrowLeft, ChevronDown, PanelLeftClose, Plus } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Layout";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { AddLesson, AddSection, TypeTile } from "./Outline";
+import { AddLesson, AddSection, shownType, TypeTile } from "./Outline";
 
 type Course = RouterOutputs["build"]["course"];
 type Section = Course["sections"][number];
@@ -51,7 +51,7 @@ export function CoursePanel({ c, currentLesson, currentSection, onHide }: { c: C
                         const on = l.id === currentLesson;
                         return (
                           <Link key={l.id} to={`/admin/construire/${c.id}/lecon/${l.id}`} aria-current={on ? "page" : undefined} className="flex items-center gap-2.5 rounded-[10px] p-2 no-underline" style={on ? { background: "var(--p-accent-soft)", color: "var(--p-accent)" } : { color: "var(--p-ink)" }}>
-                            <TypeTile type={l.type} size={28} />
+                            <TypeTile type={shownType(l)} size={28} />
                             <span className="flex-1 min-w-0"><span className={`block text-[12px] leading-[1.35] ${on ? "font-semibold" : "font-medium"}`}>{l.title}</span><span className="block mt-px text-[10px] p-muted">{[l.durationMin ? `${l.durationMin} min` : "", l.status === "publie" ? "" : l.status === "relecture" ? "En relecture" : "Brouillon"].filter(Boolean).join(" · ")}</span></span>
                           </Link>
                         );
