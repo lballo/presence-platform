@@ -74,7 +74,7 @@ api/index.ts       point d’entrée Vercel (fonction serverless) — voir verce
 src/
   pages/           Dashboard, Parcours et parcours/, PresenceIA, Analysis, TalkShow, Forum,
                    Matching, Membres, Ruches, Ruche, Evenements, EventPage, EventManage,
-                   onboarding/Accueil, admin/ (panneau d'administration, dont admin/build : Construire)
+                   onboarding/Accueil, admin/ (panneau d'administration, dont admin/construire : Construire)
   components/      Layout (menu + thème clair/sombre), Avatar, ScoreRing, ui/, forum/, events/, onboarding/, course/
   content/         accueil.ts : les textes de l'accueil, repris dans docs/textes-accueil.md
   lib/format.ts    dates et libellés en français
