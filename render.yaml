@@ -29,6 +29,10 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: NOTION_TOKEN
+        sync: false
+      - key: PRIVATE_DATA_KEY
+        sync: false
       - key: CALENDLY_URL
         sync: false
       - key: CALENDLY_EXPLO_URL

@@ -79,7 +79,7 @@ describe("ruches", () => {
 });
 
 describe("administrateur seulement", () => {
-  it.each(["event.validate", "talk.validate", "opportunity.validate", "organizer.validate", "members.manage", "admin.panel", "moderate", "hive.delete", "forum.manage", "forum.post_restricted"] as const)("%s", (action) => {
+  it.each(["event.validate", "talk.validate", "opportunity.validate", "organizer.validate", "members.manage", "admin.panel", "moderate", "hive.delete", "forum.manage", "forum.post_restricted", "course.build"] as const)("%s", (action) => {
     expect(can(membre, action)).toBe(false);
     expect(can(orga, action)).toBe(false);
     expect(can(admin, action)).toBe(true);

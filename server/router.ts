@@ -17,6 +17,9 @@ import { onboardingRouter } from "./routers/onboarding";
 import { honeyRouter } from "./routers/honey";
 import { adminRouter } from "./routers/admin";
 import { reportsRouter } from "./routers/reports";
+import { coursesRouter } from "./routers/courses";
+import { coachMemoryRouter } from "./routers/coachMemory";
+import { buildRouter } from "./routers/build";
 
 export const appRouter = createRouter({
   ping: publicProc.query(() => ({ ok: true, ts: Date.now() })),
@@ -38,6 +41,9 @@ export const appRouter = createRouter({
   honey: honeyRouter,
   admin: adminRouter,
   reports: reportsRouter,
+  courses: coursesRouter,
+  coachMemory: coachMemoryRouter,
+  build: buildRouter,
 });
 
 export type AppRouter = typeof appRouter;

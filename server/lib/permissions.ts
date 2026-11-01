@@ -44,6 +44,7 @@ const RULES = {
   "speech.use": everyone,
   "dashboard.read": everyone,
   "uploads.use": everyone,
+  "course.use": everyone,
 
   // Contenus du forum : chacun les siens ; la suppression d'un autre relève de la modération
   "content.edit": (m: Actor, r: Resource) => isOwner(m, r),
@@ -82,6 +83,7 @@ const RULES = {
   "admin.panel": adminOnly,
   moderate: adminOnly,
   "hive.delete": adminOnly,
+  "course.build": adminOnly, // onglet Construire, attributions, accès complet
   "forum.manage": adminOnly, // espaces, hashtags, épingles
   "forum.post_restricted": adminOnly, // publier dans un espace réservé (Bienvenue, Annonces)
 } satisfies Record<string, (m: Actor, r: Resource) => boolean>;

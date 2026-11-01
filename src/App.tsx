@@ -3,6 +3,10 @@ import { Toaster } from "sonner";
 import Layout from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
 import Parcours from "@/pages/Parcours";
+import CoursePage from "@/pages/parcours/CoursePage";
+import ModulePage from "@/pages/parcours/ModulePage";
+import JournalPage from "@/pages/parcours/JournalPage";
+import CoachMemoryPage from "@/pages/parcours/CoachMemoryPage";
 import PresenceIA from "@/pages/PresenceIA";
 import Analysis from "@/pages/Analysis";
 import TalkShow from "@/pages/TalkShow";
@@ -17,6 +21,10 @@ import AdminHives from "@/pages/admin/AdminHives";
 import AdminEvents from "@/pages/admin/AdminEvents";
 import AdminForum from "@/pages/admin/AdminForum";
 import AdminLog from "@/pages/admin/AdminLog";
+import BuildHome from "@/pages/admin/build/BuildHome";
+import BuildCourse from "@/pages/admin/build/BuildCourse";
+import BuildModule from "@/pages/admin/build/BuildModule";
+import BuildPreview from "@/pages/admin/build/BuildPreview";
 import Matching from "@/pages/Matching";
 import Membres from "@/pages/Membres";
 import Ruches from "@/pages/Ruches";
@@ -51,6 +59,10 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/parcours" element={<Parcours />} />
+        <Route path="/parcours/journal" element={<JournalPage />} />
+        <Route path="/parcours/coach" element={<CoachMemoryPage />} />
+        <Route path="/parcours/:courseId" element={<CoursePage />} />
+        <Route path="/parcours/:courseId/module/:moduleId" element={<ModulePage />} />
         <Route path="/presence-ia" element={<PresenceIA />} />
         <Route path="/presence-ia/analyse/:id" element={<Analysis />} />
         <Route path="/talk-show" element={<TalkShow />} />
@@ -67,6 +79,10 @@ export default function App() {
           <Route path="evenements" element={<AdminEvents />} />
           <Route path="forum" element={<AdminForum />} />
           <Route path="journal" element={<AdminLog />} />
+          <Route path="construire" element={<BuildHome />} />
+          <Route path="construire/:id" element={<BuildCourse />} />
+          <Route path="construire/:id/module/:moduleId" element={<BuildModule />} />
+          <Route path="construire/:id/apercu/:moduleId" element={<BuildPreview />} />
         </Route>
         <Route path="/matching" element={<Matching />} />
         <Route path="/membres" element={<Membres />} />

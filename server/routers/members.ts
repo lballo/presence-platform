@@ -45,6 +45,7 @@ export const membersRouter = createRouter({
         manageMembers: can(m, "members.manage"),
         moderate: can(m, "moderate"),
         adminPanel: can(m, "admin.panel"),
+        buildCourses: can(m, "course.build"),
         applyOrganizer: can(m, "organizer.apply"),
       },
       organizerRequest: m.organizerRequest,

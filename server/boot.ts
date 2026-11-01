@@ -21,6 +21,8 @@ app.get("/api/health", async (c) => {
     SUPABASE_AUTH: !!(env.supabaseUrl && env.supabaseAnonKey && env.supabaseServiceKey),
     APP_URL: env.appUrl,
     MEMBERSHIP_URL: !!env.membershipUrl,
+    NOTION_TOKEN: !!env.notionToken,
+    PRIVATE_DATA_KEY: !!env.privateDataKey,
     runtime: process.env.VERCEL ? "vercel" : process.env.RENDER ? "render" : "node",
   };
   if (!env.databaseUrl) return c.json({ ok: false, error: "DATABASE_URL manquante", config }, 500);
@@ -64,4 +66,6 @@ if (env.isProduction && !process.env.VERCEL) {
   serveStaticFiles(app);
   const port = parseInt(process.env.PORT || "3000");
   serve({ fetch: app.fetch, port }, () => console.log(`Présence : http://localhost:${port}/`));
+  const { startScheduler } = await import("./lib/scheduler");
+  startScheduler();
 }

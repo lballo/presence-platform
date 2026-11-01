@@ -4,8 +4,8 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
-  adminLog, coachMessages, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
-  honeyLedger, invitations, members, messages, notifications, reports, swipes, talks, type Member,
+  adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
+  honeyLedger, invitations, journalEntries, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, reports, swipes, talks, testResults, workflowRuns, type Member,
 } from "../../db/schema";
 import { logAdmin } from "../lib/adminLog";
 import { accountBlock } from "../lib/permissions";
@@ -86,6 +86,17 @@ async function anonymize(m: Member) {
     db.delete(notifications).where(eq(notifications.memberId, m.id)),
     db.delete(swipes).where(or(eq(swipes.fromId, m.id), eq(swipes.toId, m.id))),
     db.delete(hiveMembers).where(and(eq(hiveMembers.memberId, m.id), ne(hiveMembers.role, "founder"))),
+    // Formations : le journal, les tests, la mémoire du coach et la progression disparaissent avec le membre
+    db.delete(journalEntries).where(eq(journalEntries.memberId, m.id)),
+    db.delete(testResults).where(eq(testResults.memberId, m.id)),
+    db.delete(coachMemory).where(eq(coachMemory.memberId, m.id)),
+    db.delete(coachSettings).where(eq(coachSettings.memberId, m.id)),
+    db.delete(moduleProgress).where(eq(moduleProgress.memberId, m.id)),
+    db.delete(courseEnrollments).where(eq(courseEnrollments.memberId, m.id)),
+    db.delete(courseAssignments).where(eq(courseAssignments.memberId, m.id)),
+    db.delete(memberTagLinks).where(eq(memberTagLinks.memberId, m.id)),
+    db.delete(memberActivity).where(eq(memberActivity.memberId, m.id)),
+    db.delete(workflowRuns).where(eq(workflowRuns.memberId, m.id)),
   ]);
 }
 

@@ -2,7 +2,7 @@
 
 Plateforme communautaire de Laura Ballo : tableau de bord, analyse vidéo (Présence IA, reprise de PresenceAI), Talk Show, Forum & opportunités, Matching, Annuaire des membres, Ruches (communautés et ruches projet) et Événements.
 
-**État v1 :** pas d'authentification (membre courant fixé par configuration), onglet « Mon parcours » laissé vide, données de démonstration fournies.
+**État v1 :** données de démonstration fournies pour le développement.
 
 ## Stack
 
@@ -32,6 +32,8 @@ npm run dev                 # http://localhost:3000
 | `MEMBERSHIP_URL` | Page qui explique comment revenir, sur l'écran « Accès terminé », et bloc « Découvrir le réseau » des pages d'événements. Sans elle, le bouton propose d'écrire à Laura. |
 | `WELCOME_VIDEO_URL` | Courte vidéo de Laura dans le premier panneau d'accueil. Vide : panneau sans vidéo. |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Connexion des membres (obligatoires), invitations, et envoi des vidéos dans Supabase Storage. |
+| `NOTION_TOKEN` | Clé de l'intégration interne Notion, connectée à la seule page « Formations Présence » (droits : lecture, modification, insertion). Sans elle : rien ne se synchronise, Construire le signale. |
+| `PRIVATE_DATA_KEY` | Clé de chiffrement du journal, des résultats de tests et de la mémoire du coach : `openssl rand -base64 32`. À garder aussi en lieu sûr, car sans elle ces contenus deviennent illisibles. Sans cette variable, les membres ne peuvent pas écrire dans leur journal. |
 | `CALENDLY_URL` | Lien de réservation des séances de coaching (bandeau du tableau de bord) |
 | `CALENDLY_EXPLO_URL` | Lien « Réserver votre session exploratoire » (membres non accompagnés) |
 
@@ -64,16 +66,16 @@ server/
   boot.ts          serveur Hono (sert /api/trpc et le front en prod)
   router.ts        assemblage des routeurs tRPC
   routers/         members, forum, hashtags, hives, events, matching, coach, speech, dashboard,
-                   onboarding, honey, notifications, reports, admin
+                   onboarding, honey, notifications, reports, admin, courses, coachMemory, build
   lib/             intents (7 intentions + Espace Rencontre), gemini, coach, format
 db/
   schema.ts        tables Drizzle · relations.ts · seed.ts
 api/index.ts       point d’entrée Vercel (fonction serverless) — voir vercel.json
 src/
-  pages/           Dashboard, Parcours (vide), PresenceIA, Analysis, TalkShow, Forum,
+  pages/           Dashboard, Parcours et parcours/, PresenceIA, Analysis, TalkShow, Forum,
                    Matching, Membres, Ruches, Ruche, Evenements, EventPage, EventManage,
-                   onboarding/Accueil, admin/ (panneau d'administration)
-  components/      Layout (menu + thème clair/sombre), Avatar, ScoreRing, ui/, forum/, events/, onboarding/
+                   onboarding/Accueil, admin/ (panneau d'administration, dont admin/build : Construire)
+  components/      Layout (menu + thème clair/sombre), Avatar, ScoreRing, ui/, forum/, events/, onboarding/, course/
   content/         accueil.ts : les textes de l'accueil, repris dans docs/textes-accueil.md
   lib/format.ts    dates et libellés en français
 ```
@@ -118,6 +120,19 @@ Panneau `/admin` (`src/pages/admin/`, `server/routers/admin.ts`), réservé au d
 - **Modération** : masquer (`hidden_at`), rétablir, supprimer, classer sans suite, suspendre l'auteur. `admin.reportContext` renvoie pour un message privé ce message et les deux avant et après, jamais le reste ; chaque première lecture va au journal.
 - **Journal** : `admin_log` via `server/lib/adminLog.ts`. Toute nouvelle action d'administration doit appeler `logAdmin` (ou `logIfOnBehalf` quand une administratrice agit sur le contenu d'un autre).
 
+## Formations
+
+Connectées à Notion (espace « Formations Présence », bases Formations et Modules). **Notion fait foi pour les contenus**, l'application en garde une copie et enregistre ce qui appartient aux membres, qui n'est jamais écrit dans Notion.
+
+- **Modèle** : `courses`, `course_modules` (contenu en blocs JSON, par section), `course_assignments`, `member_tags`, `course_enrollments`, `module_progress`, `journal_entries`, `test_results`, `coach_memory`, `coach_settings`, `notion_sync_runs`, `member_activity`, `workflows`. Migration `0015_elearning.sql` ; rien n'est accessible directement par la base (RLS, aucun droit).
+- **Notion** : `server/lib/notion.ts` (client, version `2026-03-11`, environ 3 requêtes par seconde), `notionBlocks.ts` (conversions, textes provisoires), `notionSync.ts` (lecture), `notionWrite.ts` (écriture bloc par bloc). Un bloc que l'application ne sait pas afficher est gardé et signalé, jamais supprimé. Les fichiers hébergés par Notion sont recopiés dans Supabase Storage, car leurs liens expirent. Contrôle du vrai Notion : `npm run notion:check` (lecture seule), `npm run notion:check -- --ecriture` (crée puis met à la corbeille un module ESSAI).
+- **Synchronisation** : toutes les 15 minutes et au démarrage (`server/lib/scheduler.ts`), bouton « Synchroniser maintenant » dans Construire. Sur l'offre gratuite de Render, le serveur s'endort : rien ne tourne pendant son sommeil. Enregistrer depuis Construire écrit dans Notion puis relit la page ; si la page a changé dans Notion entre-temps, l'enregistrement est refusé.
+- **Accès et calendrier** : `server/lib/courseAccess.ts` et `courseState.ts`, seule source des droits de lecture. Le module n s'ouvre n−1 semaines après le démarrage, à minuit heure de Paris. Accès complet réversible : ce qui n'a été ouvert que par lui se referme, les réponses restent.
+- **Données privées** : chiffrées par `server/lib/privateBox.ts`, chaque texte lié à son membre. L'administration ne lit que ce qui est partagé (`build.memberShared`). Le journal d'activité ne contient aucun texte de membre.
+- **Coach** : après un module terminé, `server/lib/coachMemory.ts` retient l'essentiel en suivant « Ce que le coach IA retient », si le membre a accepté (`COACH_CONSENT`, version gardée avec l'accord). Un élément effacé ne revient pas. Les conversations du coach (`coach_messages`) ne sont pas chiffrées.
+- **Tests intégrés** : pages HTML sur un autre domaine, résultat par `postMessage`, tout message d'une autre origine est ignoré. Voir [docs/integrer-un-test.md](docs/integrer-un-test.md).
+- **Relances** : `server/lib/workflows.ts`, modèles « Nouveau module disponible » et « Formation en pause depuis 14 jours », notifications dans l'application uniquement.
+
 ## Profils
 
 Chaque membre renseigne son intention, son ambition, ses valeurs, ses passions et son lien LinkedIn. L’annuaire ouvre une fiche résumée et une page de profil complet (`/membres/:id`) : présentation, ruches, talks publiés, événements animés et lien avec la personne (matchs, messages échangés).
@@ -154,4 +169,4 @@ Les vidéos (Talk Show, forum), les images et pièces jointes du forum (buckets 
 ## Prochaine session (feuille de route)
 
 - **Analyse vidéo des longues vidéos** : aujourd’hui la vidéo est envoyée au serveur en un seul bloc (héritage PresenceAI), ce qui limite la taille. Prévu : envoi direct du navigateur vers Supabase Storage (comme pour le Talk Show), puis traitement asynchrone côté serveur avec l’API Files de Gemini (statut « en cours » → « terminé »).
-- Ensuite : onglet « Mon parcours », réponses aux discussions des ruches, notifications par e-mail ou push.
+- Ensuite : réponses aux discussions des ruches, notifications par e-mail ou push.

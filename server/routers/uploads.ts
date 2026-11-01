@@ -15,4 +15,9 @@ export const uploadsRouter = createRouter({
   create: uploadProc
     .input(z.object({ kind: z.enum(["forum", "forumImage", "forumFile", "eventImage", "avatar", "message"]), filename: z.string().min(1).max(200), contentType: z.string().max(120), size: z.number().int().min(0) }))
     .mutation(({ ctx, input }) => createSignedUpload(input.kind, ctx.memberId, input.filename, input.contentType, input.size)),
+
+  /** Médias des formations : réservés à l'onglet Construire. */
+  createCourse: procFor("course.build")
+    .input(z.object({ kind: z.enum(["courseImage", "courseVideo", "courseFile"]), filename: z.string().min(1).max(200), contentType: z.string().max(120), size: z.number().int().min(0) }))
+    .mutation(({ ctx, input }) => createSignedUpload(input.kind, ctx.memberId, input.filename, input.contentType, input.size)),
 });

@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
 
-type Kind = "forum" | "forumImage" | "forumFile" | "eventImage" | "avatar" | "message";
+type MemberKind = "forum" | "forumImage" | "forumFile" | "eventImage" | "avatar" | "message";
+type CourseKind = "courseImage" | "courseVideo" | "courseFile";
+type Kind = MemberKind | CourseKind;
+const isCourseKind = (k: Kind): k is CourseKind => k.startsWith("course");
 export type Uploaded = { path: string; publicUrl: string | null; name: string; type: string; size: number };
 
 /** Envoi direct d'un fichier vers Supabase Storage (URL signée), avec progression. */
 export function useUpload(kind: Kind) {
   const create = trpc.uploads.create.useMutation();
+  const createCourse = trpc.uploads.createCourse.useMutation();
   const [progress, setProgress] = useState<number | null>(null);
   const upload = async (file: File): Promise<Uploaded> => {
     setProgress(0);
     try {
-      const u = await create.mutateAsync({ kind, filename: file.name, contentType: file.type || "application/octet-stream", size: file.size });
+      const meta = { filename: file.name, contentType: file.type || "application/octet-stream", size: file.size };
+      const u = isCourseKind(kind) ? await createCourse.mutateAsync({ kind, ...meta }) : await create.mutateAsync({ kind, ...meta });
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", u.uploadUrl);

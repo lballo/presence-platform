@@ -6,6 +6,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { parisIso, parisToDate } from "@/lib/format";
 import { InviteForm } from "./AdminMembers";
+import { MemberLearning } from "./MemberLearning";
 import { Badge, ConfirmButton, Select } from "./shared";
 import { ACCESS_LABEL, ROLE_LABEL, STATE_LABEL, fullDate, stateTone } from "./labels";
 
@@ -46,6 +47,7 @@ export default function AdminMember() {
 
       {!deleted && <AccessForm m={m} isMe={isMe} />}
       {!deleted && <Invitation m={m} />}
+      {!deleted && <MemberLearning memberId={m.id} name={m.name} />}
       {!deleted && !isMe && <AccountActions m={m} />}
     </div>
   );

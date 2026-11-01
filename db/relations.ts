@@ -20,6 +20,10 @@ import {
   coachingSessions,
   messages,
   forumReplies,
+  courses,
+  courseModules,
+  courseHashtags,
+  courseModuleHashtags,
 } from "./schema";
 
 export const membersRelations = relations(members, ({ many }) => ({
@@ -123,4 +127,24 @@ export const forumRepliesRelations = relations(forumReplies, ({ one }) => ({
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
   member: one(members, { fields: [invitations.memberId], references: [members.id] }),
+}));
+
+export const coursesRelations = relations(courses, ({ many }) => ({
+  modules: many(courseModules),
+  hashtags: many(courseHashtags),
+}));
+
+export const courseModulesRelations = relations(courseModules, ({ one, many }) => ({
+  course: one(courses, { fields: [courseModules.courseId], references: [courses.id] }),
+  hashtags: many(courseModuleHashtags),
+}));
+
+export const courseHashtagsRelations = relations(courseHashtags, ({ one }) => ({
+  course: one(courses, { fields: [courseHashtags.courseId], references: [courses.id] }),
+  hashtag: one(hashtags, { fields: [courseHashtags.hashtagId], references: [hashtags.id] }),
+}));
+
+export const courseModuleHashtagsRelations = relations(courseModuleHashtags, ({ one }) => ({
+  module: one(courseModules, { fields: [courseModuleHashtags.moduleId], references: [courseModules.id] }),
+  hashtag: one(hashtags, { fields: [courseModuleHashtags.hashtagId], references: [hashtags.id] }),
 }));

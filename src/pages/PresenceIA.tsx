@@ -68,6 +68,12 @@ function Coach() {
         </form>
       </section>
       <aside className="flex-[1_1_280px] min-w-0 flex flex-col gap-3">
+        <span className="p-eyebrow">Mon chemin</span>
+        <article className="p-card p-4 flex flex-col gap-2">
+          <p className="m-0 text-[14px] leading-relaxed p-muted">Le coach peut garder le fil de votre formation et relier ce que vous découvrez.</p>
+          <button type="button" className="p-btn-ghost text-[13.5px]" disabled={send.isPending} onClick={() => submit("Retrace mon chemin depuis le début de ma formation.")}>Retracer mon chemin <ArrowRight size={14} /></button>
+          <Link to="/parcours/coach" className="p-btn-ghost text-[13.5px] no-underline">Ce que le coach retient de moi <ArrowRight size={14} /></Link>
+        </article>
         <span className="p-eyebrow">Exercices courts</span>
         {exercises.data?.map((ex) => (
           <article key={ex.id} className="p-card p-4 flex flex-col gap-2">

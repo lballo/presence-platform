@@ -5,6 +5,7 @@ import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { coachMessages, members } from "../../db/schema";
 import { coachReply, EXERCISES, type ChatTurn } from "../lib/coach";
+import { coachContext } from "../lib/coachMemory";
 
 const coachProc = procFor("coach.use");
 
@@ -23,7 +24,7 @@ export const coachRouter = createRouter({
     await db.insert(coachMessages).values({ memberId: ctx.memberId, role: "user", text: input.text });
     const prev = await db.query.coachMessages.findMany({ where: eq(coachMessages.memberId, ctx.memberId), orderBy: [asc(coachMessages.createdAt)] });
     const history: ChatTurn[] = prev.slice(-16).map((p) => ({ role: p.role as "user" | "coach", text: p.text }));
-    const reply = await coachReply(history, m);
+    const reply = await coachReply(history, m, await coachContext(m));
     const [row] = await db.insert(coachMessages).values({ memberId: ctx.memberId, role: "coach", text: reply }).returning();
     return row;
   }),

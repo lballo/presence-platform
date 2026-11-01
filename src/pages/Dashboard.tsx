@@ -6,6 +6,7 @@ import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
 import { AgendaCalendar } from "@/components/events/AgendaCalendar";
 import { FirstSteps } from "@/components/onboarding/FirstSteps";
+import { WeekModule } from "@/components/course/WeekModule";
 import { ReplayTour } from "@/components/onboarding/Tour";
 import { Avatar } from "@/components/Avatar";
 import { useUpload } from "@/lib/upload";
@@ -36,6 +37,8 @@ export default function Dashboard() {
       </header>
 
       <PinnedAnnouncements />
+
+      {!editing && <WeekModule />}
 
       {!editing && <FirstSteps />}
 
@@ -190,7 +193,7 @@ function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
           {!me.visibleInDirectory && <span className="text-[12.5px] p-faint">· profil masqué dans l’annuaire</span>}
         </div>
         <div className="mt-auto pt-4 border-t flex flex-wrap items-center justify-between gap-4" style={{ borderColor: "var(--p-line)" }}>
-          <span className="text-[13.5px] p-muted">Votre parcours individuel arrive bientôt.</span>
+          <span className="text-[13.5px] p-muted">Vos formations et votre journal privé.</span>
           <Link to="/parcours" className="p-btn-outline p-btn-sm no-underline"><Compass size={15} /> Mon parcours</Link>
         </div>
       </div>

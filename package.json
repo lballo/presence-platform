@@ -16,6 +16,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx db/seed.ts",
     "invite": "tsx scripts/invite.ts",
+    "notion:check": "tsx scripts/notion-check.ts",
     "test": "vitest run",
     "build:vercel": "vite build && esbuild server/boot.ts --platform=node --bundle --format=esm --outfile=api/_server.mjs --banner:js=\"import { createRequire } from 'module';const require = createRequire(import.meta.url);\""
   },

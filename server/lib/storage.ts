@@ -9,7 +9,7 @@ import { env } from "./env";
  */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
-export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "message" | "eventImage" | "avatar", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
+export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "message" | "eventImage" | "avatar" | "courseImage" | "courseVideo" | "courseFile", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
   talk: { bucket: "talks", maxMb: 500, types: "video", public: true },
   forum: { bucket: "forum", maxMb: 500, types: "video", public: true },
   forumImage: { bucket: "forum-images", maxMb: 10, types: IMAGE_TYPES, public: true },
@@ -17,11 +17,15 @@ export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "me
   eventImage: { bucket: "event-images", maxMb: 10, types: PHOTO_TYPES, public: true },
   avatar: { bucket: "avatars", maxMb: 5, types: PHOTO_TYPES, public: true },
   message: { bucket: "messages", maxMb: 50, public: false },
+  // Médias des formations : ajoutés depuis Construire, ou recopiés depuis Notion (ses liens expirent)
+  courseImage: { bucket: "course-images", maxMb: 10, types: IMAGE_TYPES, public: true },
+  courseVideo: { bucket: "course-videos", maxMb: 500, types: "video", public: true },
+  courseFile: { bucket: "course-files", maxMb: 50, public: true },
 };
 export type UploadKind = keyof typeof BUCKETS;
 
 /** Une image chargée dans ce bucket public de notre stockage, jamais une image externe. */
-export const isOurImage = (kind: "eventImage" | "avatar" | "forumImage", url: string) => url.startsWith(`${env.supabaseUrl}/storage/v1/object/public/${BUCKETS[kind].bucket}/`) && !url.includes("..");
+export const isOurImage = (kind: "eventImage" | "avatar" | "forumImage" | "courseImage", url: string) => url.startsWith(`${env.supabaseUrl}/storage/v1/object/public/${BUCKETS[kind].bucket}/`) && !url.includes("..");
 
 export const storageReady = () => !!(env.supabaseUrl && env.supabaseServiceKey);
 
@@ -45,6 +49,18 @@ export async function createSignedUpload(kind: UploadKind, memberId: number, fil
     path,
     publicUrl: cfg.public ? `${env.supabaseUrl}/storage/v1/object/public/${cfg.bucket}/${path}` : null,
   };
+}
+
+/** Enregistre un fichier côté serveur (recopie depuis Notion) et renvoie son adresse publique. */
+export async function uploadBuffer(kind: UploadKind, path: string, data: Buffer, contentType: string): Promise<string> {
+  const { bucket } = BUCKETS[kind];
+  const res = await fetch(`${env.supabaseUrl}/storage/v1/object/${bucket}/${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.supabaseServiceKey}`, apikey: env.supabaseServiceKey, "Content-Type": contentType, "x-upsert": "true" },
+    body: new Uint8Array(data),
+  });
+  if (!res.ok) throw new Error(`Supabase Storage : ${res.status}`);
+  return `${env.supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
 }
 
 /** Lien de téléchargement temporaire pour un fichier d'un bucket privé. */

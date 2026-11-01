@@ -16,6 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { CourseContent, ModuleContent } from "../server/lib/courseBlocks";
 
 // Schéma Postgres : "public" par défaut, ou celui de DB_SCHEMA (ex. "presence" sur Supabase,
 // pour cohabiter avec d'autres applications dans la même base).
@@ -652,4 +653,241 @@ export const messages = pgTable(
     pairIdx: index("messages_pair_idx").on(t.fromId, t.toId, t.createdAt),
     toIdx: index("messages_to_idx").on(t.toId, t.readAt),
   })
+);
+
+// ─────────────────────────────────────────────────────────────
+// Formations : Notion fait foi pour les contenus, ces tables en gardent une copie
+// et enregistrent ce qui appartient aux membres (server/lib/notionSync.ts).
+// ─────────────────────────────────────────────────────────────
+
+export const coursePublicEnum = pgEnum("course_public", ["tous", "attribution"]);
+export const courseRhythmEnum = pgEnum("course_rhythm", ["hebdo", "complet"]);
+export const contentStatusEnum = pgEnum("content_status", ["brouillon", "relecture", "publie"]);
+
+export const courses = pgTable("courses", {
+  id: serial("id").primaryKey(),
+  notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+  title: varchar("title", { length: 200 }).notNull(),
+  tagline: text("tagline").notNull().default(""),
+  emoji: varchar("emoji", { length: 16 }).notNull().default(""),
+  coverUrl: text("cover_url").notNull().default(""),
+  coverKey: text("cover_key").notNull().default(""), // identifie le fichier Notion déjà recopié dans notre stockage
+  public: coursePublicEnum("public").notNull().default("tous"),
+  rhythm: courseRhythmEnum("rhythm").notNull().default("hebdo"),
+  status: contentStatusEnum("status").notNull().default("brouillon"),
+  position: integer("position").notNull().default(0),
+  content: jsonb("content").$type<CourseContent>().notNull().default({}),
+  issues: jsonb("issues").$type<string[]>().notNull().default([]),
+  notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type Course = typeof courses.$inferSelect;
+
+export const courseModules = pgTable(
+  "course_modules",
+  {
+    id: serial("id").primaryKey(),
+    courseId: integer("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+    notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+    title: varchar("title", { length: 200 }).notNull(),
+    position: integer("position").notNull().default(0), // « Ordre » dans Notion : fixe la semaine d'ouverture
+    status: contentStatusEnum("status").notNull().default("brouillon"),
+    intention: text("intention").notNull().default(""),
+    durationMin: integer("duration_min"),
+    videoUrl: text("video_url").notNull().default(""),
+    testUrl: text("test_url").notNull().default(""),
+    coachBrief: text("coach_brief").notNull().default(""), // « Ce que le coach IA retient » : jamais envoyé aux membres
+    content: jsonb("content").$type<ModuleContent>().notNull().default({}),
+    issues: jsonb("issues").$type<string[]>().notNull().default([]),
+    notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ courseIdx: index("course_modules_course_idx").on(t.courseId, t.position) })
+);
+
+export type CourseModule = typeof courseModules.$inferSelect;
+
+export const courseHashtags = pgTable(
+  "course_hashtags",
+  {
+    courseId: integer("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+    hashtagId: integer("hashtag_id").notNull().references(() => hashtags.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.courseId, t.hashtagId] }) })
+);
+
+export const courseModuleHashtags = pgTable(
+  "course_module_hashtags",
+  {
+    moduleId: integer("module_id").notNull().references(() => courseModules.id, { onDelete: "cascade" }),
+    hashtagId: integer("hashtag_id").notNull().references(() => hashtags.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.moduleId, t.hashtagId] }), tagIdx: index("course_module_hashtags_tag_idx").on(t.hashtagId) })
+);
+
+// Étiquettes de membres : servent à attribuer une formation à un groupe
+export const memberTags = pgTable(
+  "member_tags",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 60 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ nameUniq: uniqueIndex("member_tags_name_unique").on(sql`lower(${t.name})`) })
+);
+
+export const memberTagLinks = pgTable(
+  "member_tag_links",
+  {
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id").notNull().references(() => memberTags.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.tagId] }) })
+);
+
+// Une formation « sur attribution » : à un membre, à un type d'accès ou à une étiquette
+export const courseAssignments = pgTable("course_assignments", {
+  id: serial("id").primaryKey(),
+  courseId: integer("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  memberId: integer("member_id").references(() => members.id, { onDelete: "cascade" }),
+  accessType: accessTypeEnum("access_type"),
+  tagId: integer("tag_id").references(() => memberTags.id, { onDelete: "cascade" }),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const courseEnrollments = pgTable(
+  "course_enrollments",
+  {
+    id: serial("id").primaryKey(),
+    courseId: integer("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    fullAccessAt: timestamp("full_access_at", { withTimezone: true }), // accès complet donné par l'administration, réversible
+    fullAccessBy: integer("full_access_by"),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => ({ uniq: uniqueIndex("course_enrollments_course_id_member_id_key").on(t.courseId, t.memberId), memberIdx: index("course_enrollments_member_idx").on(t.memberId) })
+);
+
+export const moduleProgress = pgTable(
+  "module_progress",
+  {
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    moduleId: integer("module_id").notNull().references(() => courseModules.id, { onDelete: "cascade" }),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    openedViaFullAccess: boolean("opened_via_full_access").notNull().default(false), // ouvert avant sa date : se referme si l'accès complet est retiré
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    challengeDoneAt: timestamp("challenge_done_at", { withTimezone: true }),
+    challengeNoteEnc: text("challenge_note_enc").notNull().default(""),
+    memoryStatus: varchar("memory_status", { length: 12 }).notNull().default(""), // "" | en_attente | fait | echec
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.memberId, t.moduleId] }), moduleIdx: index("module_progress_module_idx").on(t.moduleId) })
+);
+
+// Données privées, chiffrées par server/lib/privateBox.ts : visibles du seul membre, sauf ce qu'il partage.
+export const journalEntries = pgTable(
+  "journal_entries",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }),
+    courseTitle: varchar("course_title", { length: 200 }).notNull().default(""),
+    moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""),
+    questionId: varchar("question_id", { length: 64 }).notNull(), // identifiant du bloc Notion, ou « note » pour une réflexion libre
+    questionText: text("question_text").notNull().default(""), // copie : la question peut changer dans Notion
+    answerEnc: text("answer_enc").notNull(),
+    sharedAt: timestamp("shared_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ uniq: uniqueIndex("journal_entries_member_id_module_id_question_id_key").on(t.memberId, t.moduleId, t.questionId) })
+);
+
+export const testResults = pgTable("test_results", {
+  id: serial("id").primaryKey(),
+  memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }),
+  courseTitle: varchar("course_title", { length: 200 }).notNull().default(""),
+  moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""),
+  resultEnc: text("result_enc").notNull(),
+  sharedAt: timestamp("shared_at", { withTimezone: true }),
+  passedAt: timestamp("passed_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coachMemory = pgTable("coach_memory", {
+  id: serial("id").primaryKey(),
+  memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  source: varchar("source", { length: 20 }).notNull(), // module | test | defi
+  sourceLabel: varchar("source_label", { length: 240 }).notNull().default(""), // « Module 1 · Faire le point »
+  courseId: integer("course_id").references(() => courses.id, { onDelete: "set null" }),
+  moduleId: integer("module_id").references(() => courseModules.id, { onDelete: "set null" }),
+  contentEnc: text("content_enc").notNull(),
+  correctedAt: timestamp("corrected_at", { withTimezone: true }),
+  sharedAt: timestamp("shared_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coachSettings = pgTable("coach_settings", {
+  memberId: integer("member_id").primaryKey().references(() => members.id, { onDelete: "cascade" }),
+  consentAt: timestamp("consent_at", { withTimezone: true }),
+  consentVersion: varchar("consent_version", { length: 20 }).notNull().default(""),
+  refusedAt: timestamp("refused_at", { withTimezone: true }),
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const notionSyncRuns = pgTable("notion_sync_runs", {
+  id: serial("id").primaryKey(),
+  trigger: varchar("trigger", { length: 20 }).notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  status: varchar("status", { length: 12 }).notNull().default("en_cours"), // en_cours | ok | erreur
+  pagesChanged: integer("pages_changed").notNull().default(0),
+  detail: text("detail").notNull().default(""),
+});
+
+// Ce que fait un membre, sans jamais aucun contenu privé
+export const memberActivity = pgTable(
+  "member_activity",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 40 }).notNull(),
+    courseId: integer("course_id"),
+    moduleId: integer("module_id"),
+    label: text("label").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ memberIdx: index("member_activity_member_idx").on(t.memberId, t.createdAt) })
+);
+
+// Relances automatiques : des modèles que l'administration active et dont elle règle le texte
+export const workflows = pgTable("workflows", {
+  key: varchar("key", { length: 60 }).primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description").notNull().default(""),
+  active: boolean("active").notNull().default(true),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  delayDays: integer("delay_days").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const workflowRuns = pgTable(
+  "workflow_runs",
+  {
+    id: serial("id").primaryKey(),
+    workflowKey: varchar("workflow_key", { length: 60 }).notNull().references(() => workflows.key, { onDelete: "cascade" }),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    ref: varchar("ref", { length: 80 }).notNull(), // une relance ne part qu'une fois pour un même objet
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ once: uniqueIndex("workflow_runs_workflow_key_member_id_ref_key").on(t.workflowKey, t.memberId, t.ref) })
 );
