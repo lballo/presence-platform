@@ -1,21 +1,28 @@
-import { useState } from "react";
-import { ImagePlus, Plus, Search, Trash2, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowLeft, Eye, ImagePlus, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { AccessFields, accessReady } from "@/components/EventAccess";
+import { eventCover } from "@/components/events/cover";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { useLeaveWarning } from "@/pages/admin/construire/EditorParts";
+import { EventBody, type Ev } from "@/pages/EventPage";
+import { COVERS } from "@/pages/Ruches";
 import { useUpload } from "@/lib/upload";
 import { parisInputs, parisToDate } from "@/lib/format";
 
 type Managed = RouterOutputs["events"]["manage"];
+type CoverKey = "" | "rouge" | "or" | "vin" | "bronze" | "nuit" | "braise";
 const KINDS = [["onsite", "Présentiel"], ["online", "Visio"], ["salon", "Salon live"]] as const;
 const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp";
 const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
 /**
- * Créer ou modifier un événement. Le formulaire s'adapte : « Proposer » pour un membre, « Publier » pour un organisateur
- * ou une administratrice. Depuis une ruche (hive), aucun réglage de visibilité : l'événement reste réservé à ses membres.
+ * Créer ou modifier un événement, dans une fenêtre au centre de l'écran : les détails, le visuel, et l'aperçu de la page avant de publier.
+ * Le formulaire s'adapte : « Proposer » pour un membre, « Publier » pour un organisateur ou une administratrice.
+ * Depuis une ruche (hive), aucun réglage de visibilité : l'événement reste réservé à ses membres.
  */
 export function EventForm({ initial, hive, onDone }: { initial?: Managed | null; hive?: { id: number; name: string } | null; onDone: (r?: { slug: string; status?: string }) => void }) {
   const utils = trpc.useUtils();
@@ -44,6 +51,7 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
     takeaways: (initial?.takeaways ?? []).join("\n"),
     faq: initial?.faq ?? ([] as { q: string; a: string }[]),
     photoUrl: initial?.photoUrl ?? "",
+    cover: (initial?.cover ?? "") as CoverKey,
     date: start.date,
     time: start.time,
     durationMin: initial?.durationMin ?? 60,
@@ -59,7 +67,14 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }));
   const [search, setSearch] = useState("");
   const [editSlug, setEditSlug] = useState(false);
+  const [view, setView] = useState<"details" | "apercu">("details");
+  const [leaving, setLeaving] = useState(false);
   const pending = create.isPending || update.isPending;
+  const startValues = useRef(JSON.stringify(f));
+  const dirty = JSON.stringify(f) !== startValues.current;
+  useLeaveWarning(dirty);
+  // Fermer par erreur ne doit pas faire perdre ce qui est saisi
+  const leave = () => { if (dirty) setLeaving(true); else onDone(); };
 
   const pickPhoto = async (file?: File) => {
     if (!file) return;
@@ -69,7 +84,7 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const submit = () => {
     const data = {
       kind: f.kind, title: f.title, tagline: f.tagline, description: f.description, program: f.program, takeaways: lines(f.takeaways),
-      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl, startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin,
+      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl, cover: f.cover, startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin,
       city: f.kind === "onsite" ? f.city : undefined, address: f.kind === "onsite" ? f.address : "", meetingUrl: f.kind === "onsite" ? "" : f.meetingUrl,
       maxSeats: f.maxSeats === "" ? null : f.maxSeats, visibility: f.visibility, type: f.type, speakerIds: f.speakerIds, slug: f.slug.trim() || undefined, hiveId,
     };
@@ -81,29 +96,62 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const needle = search.trim().toLowerCase();
   const found = needle ? people.filter((p) => !f.speakerIds.includes(p.id) && p.name.toLowerCase().includes(needle)).slice(0, 6) : [];
   const ready = f.title.trim() && f.date && accessReady(f.kind, f.address, f.meetingUrl) && !pending && !photo.busy;
+  const missing = [!f.title.trim() && "le titre", !f.date && "la date", !accessReady(f.kind, f.address, f.meetingUrl) && (f.kind === "onsite" ? "l’adresse" : "le lien de la visio")].filter(Boolean);
+  const canPreview = !!f.title.trim() && !!f.date;
   const title = initial ? "Modifier l’événement" : hive ? `Créer un événement de ${hive.name}` : canPublish ? "Créer un événement" : "Proposer un événement";
   const intro = initial ? "Les personnes inscrites verront les nouvelles informations." : hive ? "Il reste réservé aux membres de la ruche." : canPublish ? "Il sera publié directement." : "Votre proposition sera relue par l’équipe Présence.";
 
-  return (
-    <section className="p-card p-5 sm:p-6 flex flex-col gap-4 mb-7" style={{ borderColor: "var(--p-accent-line)" }} aria-label={title}>
-      <div>
-        <h2 className="m-0 text-[30px]">{title}</h2>
-        <p className="m-0 text-[14.5px] p-muted">{intro} L’adresse et le lien de la visio ne sont communiqués qu’aux personnes inscrites.</p>
-      </div>
+  /** L'événement tel qu'un membre connecté, pas encore inscrit, le verra. */
+  const previewEvent = (): Ev => {
+    const hostId = initial?.hostId ?? me.data?.id;
+    return {
+      id: initial?.id ?? 0, slug: f.slug || "apercu", title: f.title, tagline: f.tagline, description: f.description, program: f.program, takeaways: lines(f.takeaways),
+      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl || null, cover: f.cover, kind: f.kind, type: f.type, visibility: hiveId ? "membres" : f.visibility, status: "published",
+      startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin, days: initial?.days ?? 1, city: f.kind === "onsite" ? f.city : null, where: f.kind === "onsite" ? f.city || "Présentiel" : "En ligne",
+      hive: initial?.hive ?? hive ?? null, host: people.find((p) => p.id === hostId) ?? { id: hostId ?? 0, name: "", initials: "", photoUrl: null, jobTitle: "" }, speakers: chosen,
+      maxSeats: f.maxSeats === "" ? null : f.maxSeats, taken: 0, seatsLeft: f.maxSeats === "" ? null : f.maxSeats, cancelled: false, past: false, registered: false, waitlisted: false, canRegister: false, canManage: false,
+      address: "", meetingUrl: "", hasAccessInfo: !!(f.kind === "onsite" ? f.address : f.meetingUrl),
+    };
+  };
 
-      {f.photoUrl ? (
-        <div className="relative">
-          <img src={f.photoUrl} alt="Photo de couverture" className="w-full aspect-[16/9] sm:aspect-[21/9] object-cover rounded-2xl" />
-          <button type="button" aria-label="Retirer la photo" className="absolute right-2 top-2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center" onClick={() => set({ photoUrl: "" })}><X size={16} /></button>
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) leave(); }}>
+      <DialogContent showCloseButton={false} aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}
+        className={`p-0 gap-0 flex flex-col overflow-hidden rounded-2xl w-full max-w-[calc(100%-1rem)] max-h-[94dvh] ${view === "apercu" ? "sm:max-w-[min(94vw,1120px)]" : "sm:max-w-[760px]"}`}
+        style={{ background: "var(--p-bg)", color: "var(--p-ink)", borderColor: "var(--p-line)" }}>
+        <header className="flex items-center gap-3 px-5 py-3.5 border-b flex-none" style={{ borderColor: "var(--p-line)", background: "var(--p-surface)" }}>
+          <DialogTitle className="serif text-[26px] font-normal leading-tight flex-1 min-w-0">{view === "apercu" ? "Aperçu de la page" : title}</DialogTitle>
+          <button type="button" aria-label="Fermer" className="w-9 h-9 rounded-full flex items-center justify-center flex-none p-muted hover:bg-black/5 dark:hover:bg-white/5" onClick={leave}><X size={18} /></button>
+        </header>
+
+        <div key={view} className="flex-1 min-h-0 overflow-y-auto">
+          {view === "apercu" ? (
+            <>
+              <p className="m-0 px-5 py-2.5 text-[13.5px] text-center" style={{ background: "var(--p-accent-soft)" }}>Voici la page telle que la verront les membres. {initial ? "Vos changements ne sont pas encore enregistrés." : "Rien n’est encore publié."}</p>
+              <EventBody e={previewEvent()} connected retour="" preview />
+            </>
+          ) : (
+    <div className="p-5 sm:p-6 flex flex-col gap-4">
+      <p className="m-0 text-[14.5px] p-muted">{intro} L’adresse et le lien de la visio ne sont communiqués qu’aux personnes inscrites.</p>
+
+      <div className="flex flex-col gap-2" aria-label="Visuel de l’événement">
+        <span className="text-[13.5px] p-muted">Visuel</span>
+        <div className="relative overflow-hidden rounded-2xl h-[170px] sm:h-[190px]" style={{ background: eventCover(f) }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pickPhoto(e.dataTransfer.files[0]); }}>
+          {f.photoUrl && <img src={f.photoUrl} alt="Visuel de l’événement" className="absolute inset-0 w-full h-full object-cover" />}
+          <div className="absolute right-2.5 bottom-2.5 flex flex-wrap justify-end gap-2">
+            <label className="p-btn-white p-btn-sm cursor-pointer">
+              <input type="file" accept={PHOTO_ACCEPT} className="hidden" aria-label="Importer une image" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+              <ImagePlus size={15} /> {photo.busy ? `Envoi… ${photo.progress ?? 0} %` : f.photoUrl ? "Changer l’image" : "Importer une image"}
+            </label>
+            {f.photoUrl && <button type="button" className="p-btn-white p-btn-sm" onClick={() => set({ photoUrl: "" })}><X size={15} /> Retirer</button>}
+          </div>
         </div>
-      ) : (
-        <label className="flex flex-col items-center justify-center gap-1 h-[130px] rounded-2xl border-2 border-dashed cursor-pointer text-center" style={{ borderColor: "var(--p-line-2)" }}>
-          <input type="file" accept={PHOTO_ACCEPT} className="hidden" aria-label="Importer une photo de couverture" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
-          <ImagePlus size={22} style={{ color: "var(--p-accent-text)" }} />
-          <span className="text-[14px] font-medium">{photo.busy ? `Envoi… ${photo.progress ?? 0} %` : "Importer une photo de couverture"}</span>
-          <span className="text-[12px] p-muted">jpg, png ou webp · jusqu’à {cfg.data?.maxMb.eventImage ?? 10} Mo</span>
-        </label>
-      )}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12.5px] p-muted">Ou une couleur :</span>
+          {(Object.keys(COVERS) as CoverKey[]).map((k) => <button key={k} type="button" aria-label={`Couleur ${k}`} aria-pressed={!f.photoUrl && f.cover === k} className="w-[52px] h-8 rounded-lg" style={{ background: COVERS[k], boxShadow: !f.photoUrl && f.cover === k ? "0 0 0 2px var(--p-bg), 0 0 0 4px var(--p-ink)" : "none" }} onClick={() => set({ cover: k, photoUrl: "" })} />)}
+        </div>
+        <span className="text-[12px] p-muted">Image jpg, png ou webp, jusqu’à {cfg.data?.maxMb.eventImage ?? 10} Mo. Vous pouvez aussi la déposer sur le visuel.</span>
+      </div>
 
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Titre</span><input className="p-field" maxLength={200} value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="Ex. Dîner du cercle à Lyon" /></label>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Accroche <span className="p-faint">· une phrase qui donne envie de venir</span></span><input className="p-field" maxLength={240} value={f.tagline} onChange={(e) => set({ tagline: e.target.value })} /></label>
@@ -161,11 +209,28 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
       {editSlug || initial ? (
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Adresse de la page <span className="p-faint">· {initial ? "l’ancien lien ne fonctionnera plus si vous la changez" : "lettres, chiffres et tirets"}</span></span><span className="flex items-center gap-1.5"><span className="flex-none p-faint">/e/</span><input className="p-field flex-1 min-w-0" maxLength={100} value={f.slug} onChange={(e) => set({ slug: e.target.value })} placeholder="generee-depuis-le-titre" /></span></label>
       ) : <button type="button" className="p-btn-ghost self-start" onClick={() => setEditSlug(true)}>Choisir l’adresse de la page</button>}
+    </div>
+          )}
+        </div>
 
-      <div className="flex flex-wrap gap-2.5">
-        <button type="button" className="p-btn-primary" disabled={!ready} onClick={submit}>{initial ? "Enregistrer" : canPublish ? "Publier" : "Proposer"}</button>
-        <button type="button" className="p-btn-outline" onClick={() => onDone()}>Annuler</button>
-      </div>
-    </section>
+        <footer className="flex flex-wrap items-center justify-end gap-2.5 px-5 py-3.5 border-t flex-none" style={{ borderColor: "var(--p-line)", background: "var(--p-surface)" }}>
+          {leaving ? (
+            <>
+              <span className="flex-[1_1_200px] text-[14px]">Abandonner ce que vous avez saisi ?</span>
+              <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setLeaving(false)}>Continuer</button>
+              <button type="button" className="p-btn-primary p-btn-sm" onClick={() => onDone()}>Abandonner</button>
+            </>
+          ) : (
+            <>
+              <span className="flex-[1_1_180px] min-w-0 text-[13px] p-muted">{missing.length ? `Il manque ${missing.join(", ")}.` : ""}</span>
+              {view === "details"
+                ? <button type="button" className="p-btn-outline p-btn-sm" disabled={!canPreview} title={canPreview ? undefined : "Indiquez d’abord le titre et la date"} onClick={() => setView("apercu")}><Eye size={15} /> Aperçu de la page</button>
+                : <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setView("details")}><ArrowLeft size={15} /> Revenir aux détails</button>}
+              <button type="button" className="p-btn-primary p-btn-sm" disabled={!ready} onClick={submit}>{pending ? "Envoi…" : initial ? "Enregistrer" : canPublish ? "Publier" : "Proposer"}</button>
+            </>
+          )}
+        </footer>
+      </DialogContent>
+    </Dialog>
   );
 }

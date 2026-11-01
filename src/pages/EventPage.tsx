@@ -7,13 +7,13 @@ import { Avatar } from "@/components/Avatar";
 import { AccessInfo } from "@/components/EventAccess";
 import { Brand, useTheme } from "@/components/Layout";
 import { HoneyToast } from "@/components/onboarding/HoneyToast";
-import { COVERS } from "@/pages/Ruches";
+import { eventCover } from "@/components/events/cover";
 import { membershipUrl } from "@/lib/supabase";
 import { downloadIcs, googleCalendarUrl } from "@/lib/calendar";
 import { addMin, parisHour, parisLongDate, plural } from "@/lib/format";
 
 type Ok = Extract<RouterOutputs["events"]["page"], { state: "ok" }>;
-type Ev = Ok["event"];
+export type Ev = Ok["event"];
 
 /** Page de destination d'un événement : ouverte sans compte si l'événement est public. */
 export default function EventPage() {
@@ -140,14 +140,16 @@ function PersonCard({ p, connected }: { p: Ev["host"]; connected: boolean }) {
   return connected ? <Link to={`/membres/${p.id}`} className="flex items-center gap-3.5 no-underline" style={{ color: "var(--p-ink)" }}>{inner}</Link> : <span className="flex items-center gap-3.5">{inner}</span>;
 }
 
-function EventBody({ e, connected, retour }: { e: Ev; connected: boolean; retour: string }) {
+/** Le corps de la page. En aperçu (fenêtre de création), mêmes rubriques, mais rien n'est cliquable : l'événement n'existe pas encore. */
+export function EventBody({ e, connected, retour, preview }: { e: Ev; connected: boolean; retour: string; preview?: boolean }) {
   const steps = e.program.split("\n").map((s) => s.trim()).filter(Boolean);
   const speakers = e.speakers.length ? e.speakers : [e.host];
+  const action = (compact: boolean) => (preview ? <button type="button" className="p-btn-primary w-full" style={{ opacity: 1, cursor: "default" }} disabled>{e.seatsLeft === 0 ? "Rejoindre la liste d’attente" : "Je m’inscris"}</button> : <Action e={e} connected={connected} retour={retour} compact={compact} />);
   return (
-    <main className="flex-1 pb-28 lg:pb-16">
+    <main className={`flex-1 ${preview ? "pb-8" : "pb-28 lg:pb-16"}`}>
       {e.photoUrl
         ? <img src={e.photoUrl} alt="" className="w-full aspect-[16/10] sm:aspect-[21/9] max-h-[520px] object-cover" />
-        : <div className="w-full h-[150px] sm:h-[220px]" style={{ background: COVERS[e.kind === "onsite" ? "or" : e.kind === "salon" ? "rouge" : "nuit"] }} />}
+        : <div className="w-full h-[150px] sm:h-[220px]" style={{ background: eventCover(e) }} />}
       <div className="max-w-[1040px] mx-auto px-4 sm:px-8 pt-6 sm:pt-9 flex flex-wrap gap-x-10 gap-y-7 items-start">
         <div className="flex-[2_1_480px] min-w-0 flex flex-col gap-7">
           <header className="flex flex-col gap-3">
@@ -166,7 +168,7 @@ function EventBody({ e, connected, retour }: { e: Ev; connected: boolean; retour
           <AccessInfo e={e} />
           {e.description && <p className="m-0 text-[16.5px] leading-relaxed whitespace-pre-line">{e.description}</p>}
           {steps.length > 0 && <Section title="Programme"><ol className="m-0 p-0 list-none flex flex-col gap-2">{steps.map((s, i) => <li key={i} className="flex gap-3 text-[15.5px] leading-relaxed"><span className="w-1.5 h-1.5 rounded-full mt-[11px] flex-none" style={{ background: "var(--p-accent)" }} />{s}</li>)}</ol></Section>}
-          <Section title={speakers.length > 1 ? "Intervenants" : e.speakers.length ? "Intervenant" : "Organisé par"}><div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(260px, 100%), 1fr))" }}>{speakers.map((p) => <PersonCard key={p.id} p={p} connected={connected} />)}</div></Section>
+          <Section title={speakers.length > 1 ? "Intervenants" : e.speakers.length ? "Intervenant" : "Organisé par"}><div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(260px, 100%), 1fr))" }}>{speakers.map((p) => <PersonCard key={p.id} p={p} connected={connected && !preview} />)}</div></Section>
           {e.takeaways.length > 0 && <Section title="Ce que vous repartez avec"><ul className="m-0 p-0 list-none flex flex-col gap-2">{e.takeaways.map((t) => <li key={t} className="flex gap-2.5 text-[15.5px] leading-relaxed"><CheckCircle2 size={18} className="flex-none mt-0.5" style={{ color: "var(--p-accent-text)" }} />{t}</li>)}</ul></Section>}
           {e.faq.length > 0 && <Section title="Questions fréquentes"><div className="flex flex-col gap-2">{e.faq.map((x) => <details key={x.q} className="p-soft px-4 py-3"><summary className="cursor-pointer text-[15.5px] font-medium">{x.q}</summary><p className="m-0 mt-2 text-[15px] leading-relaxed p-muted whitespace-pre-line">{x.a}</p></details>)}</div></Section>}
           {e.canManage && <Link to={`/e/${e.slug}/gerer`} className="p-btn-outline p-btn-sm no-underline self-start lg:hidden"><Settings size={15} /> Gérer</Link>}
@@ -175,14 +177,14 @@ function EventBody({ e, connected, retour }: { e: Ev; connected: boolean; retour
 
         <aside className="hidden lg:flex flex-[1_1_320px] min-w-0 flex-col gap-4 p-card p-5 sticky top-6">
           <Facts e={e} />
-          <Action e={e} connected={connected} retour={retour} />
+          {action(false)}
           {e.canManage && <Link to={`/e/${e.slug}/gerer`} className="p-btn-outline p-btn-sm no-underline"><Settings size={15} /> Gérer</Link>}
         </aside>
       </div>
 
       {/* Sur téléphone, l'inscription reste à portée de pouce */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 p-3 border-t" style={{ background: "var(--p-surface)", borderColor: "var(--p-line)", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-        <Action e={e} connected={connected} retour={retour} compact />
+      <div className={preview ? "lg:hidden px-4 sm:px-8 pt-6" : "lg:hidden fixed bottom-0 inset-x-0 z-30 p-3 border-t"} style={preview ? undefined : { background: "var(--p-surface)", borderColor: "var(--p-line)", paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+        {action(true)}
       </div>
     </main>
   );

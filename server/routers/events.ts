@@ -22,6 +22,7 @@ const eventInput = z.object({
   takeaways: z.array(z.string().trim().min(1).max(200)).max(8).default([]),
   faq: z.array(z.object({ q: z.string().trim().min(1).max(200), a: z.string().trim().min(1).max(1000) })).max(10).default([]),
   photoUrl: z.string().trim().max(1000).default(""),
+  cover: z.enum(["", "rouge", "or", "vin", "bronze", "nuit", "braise"]).default(""),
   startsAt: z.coerce.date(),
   durationMin: z.number().int().min(15).max(1440).default(60),
   city: z.string().trim().max(80).optional(),
@@ -146,7 +147,7 @@ export const eventsRouter = createRouter({
         const taken = e.registrations.filter((r) => !r.waitlist).length;
         const mine = e.registrations.find((r) => r.memberId === ctx.memberId);
         return {
-          id: e.id, slug: e.slug, kind: e.kind, type: e.type, visibility: e.visibility, title: e.title, tagline: e.tagline, photoUrl: e.photoUrl, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days,
+          id: e.id, slug: e.slug, kind: e.kind, type: e.type, visibility: e.visibility, title: e.title, tagline: e.tagline, photoUrl: e.photoUrl, cover: e.cover, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days,
           city: e.city, where: e.where, maxSeats: e.maxSeats, featured: e.featured, live: e.live, cancelled: !!e.cancelledAt, host: person(e.host),
           taken, seatsLeft: e.maxSeats ? Math.max(0, e.maxSeats - taken) : null,
           registered: !!mine && !mine.waitlist, waitlisted: !!mine && mine.waitlist,
@@ -198,7 +199,7 @@ export const eventsRouter = createRouter({
       state: "ok" as const,
       connected: !!member,
       event: {
-        id: e.id, slug: e.slug, title: e.title, tagline: e.tagline, description: e.description, program: e.program, takeaways: e.takeaways, faq: e.faq, photoUrl: e.photoUrl,
+        id: e.id, slug: e.slug, title: e.title, tagline: e.tagline, description: e.description, program: e.program, takeaways: e.takeaways, faq: e.faq, photoUrl: e.photoUrl, cover: e.cover,
         kind: e.kind, type: e.type, visibility: e.visibility, status: e.status, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days, city: e.city, where: e.where,
         hive: e.hive ? { id: e.hive.id, name: e.hive.name } : null,
         host: person(e.host),

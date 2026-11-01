@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, ChevronDown, Megaphone, Newspaper, PenLine, Settings, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Megaphone, Newspaper, PenLine, Pencil, Plus, Settings, X } from "lucide-react";
 import { AdminPendingLink } from "@/components/AdminPendingLink";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PostCard } from "@/components/forum/PostCard";
 import { ComposerHost, PostList } from "@/components/forum/PostList";
 import type { ComposerTarget } from "@/components/forum/Composer";
+import { SpaceDialog } from "@/components/forum/SpaceDialog";
 import { OPP, SPACE_GROUPS, TagLabel, UnreadDot, type OppType, type Post, type Space } from "@/components/forum/shared";
 
 type Spaces = RouterOutputs["forum"]["spaces"];
@@ -17,6 +18,8 @@ export default function Forum() {
   const [params] = useSearchParams();
   const spaces = trpc.forum.spaces.useQuery();
   const [composer, setComposer] = useState<ComposerTarget | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(false);
   const navigate = useNavigate();
   const data = spaces.data;
   const tag = Number(params.get("tag")) || undefined;
@@ -27,11 +30,11 @@ export default function Forum() {
   return (
     <div className="flex gap-6 lg:gap-8 items-start">
       <aside className="hidden md:block w-[216px] flex-none sticky top-6 max-h-[calc(100vh-48px)] overflow-y-auto lg:top-0 lg:w-[236px] lg:h-screen lg:max-h-none lg:px-3 lg:py-6 lg:border-r" style={{ borderColor: "var(--p-menu-line)" }} aria-label="Espaces du forum">
-        {data && <SpaceNav data={data} />}
+        {data && <SpaceNav data={data} onAdd={() => setAdding(true)} />}
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col gap-4 lg:max-w-[860px] lg:mx-auto lg:pt-10">
-        <div className="md:hidden">{data && <SpaceDropdown data={data} label={id ? "Espaces du forum" : space ? `${space.emoji} ${space.name}` : FEED_NAME} />}</div>
+        <div className="md:hidden">{data && <SpaceDropdown data={data} onAdd={() => setAdding(true)} label={id ? "Espaces du forum" : space ? `${space.emoji} ${space.name}` : FEED_NAME} />}</div>
 
         {id ? <SinglePost id={Number(id)} onEdit={editPost} /> : (
           <>
@@ -44,6 +47,7 @@ export default function Forum() {
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setComposer({ mode: "new", spaceSlug: slug })}><PenLine size={15} /> Nouvelle publication</button>
                 {data?.canAnnounce && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setComposer({ mode: "new", announcement: true })}><Megaphone size={15} /> Créer une annonce</button>}
+                {data?.canManage && space && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setEditing(true)}><Pencil size={15} /> Modifier cet espace</button>}
               </div>
             </header>
 
@@ -55,6 +59,8 @@ export default function Forum() {
       </div>
 
       <ComposerHost target={composer} onClose={() => setComposer(null)} onSaved={(postId) => { if (composer?.mode === "new" && !composer.hive) navigate(`/forum/publication/${postId}`); }} />
+      {adding && <SpaceDialog onClose={() => setAdding(false)} onCreated={(created) => navigate(`/forum/${created}`)} />}
+      {editing && space && <SpaceDialog key={space.id} space={space} onClose={() => setEditing(false)} onDeleted={() => navigate("/forum")} />}
     </div>
   );
 }
@@ -88,7 +94,7 @@ function SpaceLink({ to, end, label, icon, unread, pending, onPick }: { to: stri
 }
 
 /** Colonne des espaces (ordinateur) et contenu du menu déroulant (téléphone). */
-function SpaceNav({ data, onPick }: { data: Spaces; onPick?: () => void }) {
+function SpaceNav({ data, onPick, onAdd }: { data: Spaces; onPick?: () => void; onAdd?: () => void }) {
   return (
     <nav className="flex flex-col gap-0.5">
       <SpaceLink to="/forum" end label={FEED_NAME} icon={<Newspaper size={17} />} onPick={onPick} />
@@ -99,15 +105,16 @@ function SpaceNav({ data, onPick }: { data: Spaces; onPick?: () => void }) {
         </div>
       ))}
       {data.canManage && (
-        <div className="mt-3 pt-2 border-t" style={{ borderColor: "var(--p-line)" }}>
-          <SpaceLink to="/admin/forum" label="Gérer le forum" icon={<Settings size={16} />} onPick={onPick} />
+        <div className="mt-3 pt-2 border-t flex flex-col gap-0.5" style={{ borderColor: "var(--p-line)" }}>
+          <button type="button" className="flex items-center gap-2.5 min-h-[40px] px-2.5 rounded-xl text-[14.5px] text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { onPick?.(); onAdd?.(); }}><span className="w-[22px] flex justify-center flex-none"><Plus size={16} /></span>Ajouter un espace</button>
+          <SpaceLink to="/admin/forum?rubrique=espaces" label="Gérer le forum" icon={<Settings size={16} />} onPick={onPick} />
         </div>
       )}
     </nav>
   );
 }
 
-function SpaceDropdown({ data, label }: { data: Spaces; label: string }) {
+function SpaceDropdown({ data, label, onAdd }: { data: Spaces; label: string; onAdd: () => void }) {
   const [open, setOpen] = useState(false);
   const unread = data.spaces.reduce((n, s) => n + s.unread, 0);
   return (
@@ -121,7 +128,7 @@ function SpaceDropdown({ data, label }: { data: Spaces; label: string }) {
         <>
           <button type="button" aria-label="Fermer le menu des espaces" className="fixed inset-0 z-[44] cursor-default" onClick={() => setOpen(false)} />
           <div className="absolute z-[45] left-0 right-0 top-[54px] p-2 rounded-2xl shadow-xl max-h-[70vh] overflow-y-auto" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }}>
-            <SpaceNav data={data} onPick={() => setOpen(false)} />
+            <SpaceNav data={data} onPick={() => setOpen(false)} onAdd={onAdd} />
           </div>
         </>
       )}

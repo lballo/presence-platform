@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { ArrowDown, ArrowUp, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { EmojiGrid } from "@/components/forum/EmojiGrid";
+import { SpaceDialog } from "@/components/forum/SpaceDialog";
 import { SPACE_GROUPS, TagLabel, type Space } from "@/components/forum/shared";
 import { ComposerHost } from "@/components/forum/PostList";
 import type { ComposerTarget } from "@/components/forum/Composer";
@@ -15,7 +16,8 @@ type Post = RouterOutputs["forum"]["announcements"][number];
 
 /** Forum et annonces : toutes les annonces, les espaces, les hashtags et les publications épinglées. */
 export default function AdminForum() {
-  const [section, setSection] = useState<Section>("annonces");
+  const [params] = useSearchParams();
+  const [section, setSection] = useState<Section>(params.get("rubrique") === "espaces" ? "espaces" : "annonces");
   return (
     <div className="flex flex-col gap-5">
       <h2 className="m-0 text-[30px]">Forum et annonces</h2>
@@ -61,9 +63,14 @@ function Announcements() {
 
 function Spaces() {
   const spaces = trpc.forum.spaces.useQuery();
+  const [adding, setAdding] = useState(false);
   return (
     <section className="flex flex-col gap-4" aria-label="Espaces">
-      <h3 className="m-0 text-[24px]">Espaces</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="m-0 text-[24px]">Espaces</h3>
+        <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setAdding(true)}><Plus size={15} /> Ajouter un espace</button>
+      </div>
+      {adding && <SpaceDialog onClose={() => setAdding(false)} />}
       {SPACE_GROUPS.map(([g, label]) => {
         const list = spaces.data?.spaces.filter((s) => s.groupKey === g) ?? [];
         return (
@@ -79,27 +86,24 @@ function Spaces() {
 
 function SpaceRow({ s, first, last }: { s: Space; first: boolean; last: boolean }) {
   const utils = trpc.useUtils();
-  const [f, setF] = useState({ name: s.name, emoji: s.emoji, description: s.description });
-  const [picking, setPicking] = useState(false);
-  const save = trpc.forum.updateSpace.useMutation({ onSuccess: () => { utils.forum.spaces.invalidate(); toast.success("Espace enregistré"); }, onError: (e) => toast.error(e.message) });
+  const [dialog, setDialog] = useState<"edit" | "delete" | null>(null);
   const move = trpc.forum.moveSpace.useMutation({ onSuccess: () => utils.forum.spaces.invalidate(), onError: (e) => toast.error(e.message) });
-  const dirty = f.name !== s.name || f.emoji !== s.emoji || f.description !== s.description;
+  const iconBtn = "w-10 h-10 rounded-lg border flex items-center justify-center disabled:opacity-30";
   return (
-    <article className="p-card p-4 flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <button type="button" aria-label={`Changer l’emoji de ${s.name}`} aria-expanded={picking} className="w-[46px] h-[46px] rounded-xl border text-[22px] flex-none" style={{ borderColor: "var(--p-line-2)" }} onClick={() => setPicking(!picking)}>{f.emoji || "＋"}</button>
-        <input className="p-field flex-[1_1_180px] min-w-0" value={f.name} maxLength={80} aria-label="Nom de l’espace" onChange={(e) => setF({ ...f, name: e.target.value })} />
-        <span className="flex gap-1 flex-none">
-          <button type="button" aria-label={`Monter ${s.name}`} disabled={first || move.isPending} className="w-10 h-10 rounded-lg border flex items-center justify-center disabled:opacity-30" style={{ borderColor: "var(--p-line-2)" }} onClick={() => move.mutate({ id: s.id, direction: "up" })}><ArrowUp size={16} /></button>
-          <button type="button" aria-label={`Descendre ${s.name}`} disabled={last || move.isPending} className="w-10 h-10 rounded-lg border flex items-center justify-center disabled:opacity-30" style={{ borderColor: "var(--p-line-2)" }} onClick={() => move.mutate({ id: s.id, direction: "down" })}><ArrowDown size={16} /></button>
-        </span>
-      </div>
-      {picking && <div className="p-2 rounded-xl max-h-[190px] overflow-y-auto" style={{ background: "var(--p-surface-2)" }}><EmojiGrid onPick={(emoji) => { setF({ ...f, emoji }); setPicking(false); }} /></div>}
-      <textarea className="p-field text-[14.5px]" rows={2} maxLength={400} value={f.description} aria-label="Description de l’espace" placeholder="Une phrase affichée en tête de l’espace" onChange={(e) => setF({ ...f, description: e.target.value })} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[12.5px] p-faint">{s.adminOnly ? "Publication réservée aux administrateurs" : s.kind === "opportunites" ? "Relue avant publication" : s.kind === "video" ? "Une vidéo est demandée" : "Ouvert à tous les membres"}</span>
-        <button type="button" className="p-btn-primary p-btn-sm" disabled={!dirty || !f.name.trim() || save.isPending} onClick={() => save.mutate({ id: s.id, ...f })}>Enregistrer</button>
-      </div>
+    <article className="p-card p-3.5 flex flex-wrap items-center gap-3">
+      <span className="w-[46px] h-[46px] rounded-xl flex items-center justify-center text-[22px] flex-none" style={{ background: "var(--p-surface-2)" }}>{s.emoji}</span>
+      <span className="flex-[1_1_220px] min-w-0 flex flex-col gap-0.5">
+        <span className="font-semibold text-[16px] break-words">{s.name}</span>
+        {s.description && <span className="text-[13.5px] p-muted">{s.description}</span>}
+        <span className="text-[12.5px] p-faint">{plural(s.posts, "publication", "publications")} · {s.adminOnly ? "Publication réservée à l’équipe" : s.kind === "opportunites" ? "Relue avant publication" : s.kind === "video" ? "Une vidéo est demandée" : "Ouvert à tous les membres"}</span>
+      </span>
+      <span className="flex flex-wrap gap-1 flex-none">
+        <button type="button" aria-label={`Monter ${s.name}`} disabled={first || move.isPending} className={iconBtn} style={{ borderColor: "var(--p-line-2)" }} onClick={() => move.mutate({ id: s.id, direction: "up" })}><ArrowUp size={16} /></button>
+        <button type="button" aria-label={`Descendre ${s.name}`} disabled={last || move.isPending} className={iconBtn} style={{ borderColor: "var(--p-line-2)" }} onClick={() => move.mutate({ id: s.id, direction: "down" })}><ArrowDown size={16} /></button>
+        <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setDialog("edit")}><Pencil size={14} /> Modifier</button>
+        {!s.required && <button type="button" aria-label={`Supprimer ${s.name}`} className={iconBtn} style={{ borderColor: "var(--p-line-2)", color: "var(--p-accent-text)" }} onClick={() => setDialog("delete")}><Trash2 size={15} /></button>}
+      </span>
+      {dialog && <SpaceDialog space={s} startDeleting={dialog === "delete"} onClose={() => setDialog(null)} />}
     </article>
   );
 }

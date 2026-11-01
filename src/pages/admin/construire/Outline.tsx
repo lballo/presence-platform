@@ -1,4 +1,5 @@
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { Link, useNavigate } from "react-router";
 import { ArrowDown, ArrowUp, Copy, Eye, FileText, GripVertical, Pencil, Plus, Trash2, Video } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +7,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { LESSON_TYPE_LABEL, LESSON_TYPES, type LessonType } from "../../../../server/lib/courseBlocks";
 import { Badge, ConfirmButton, Select } from "../shared";
+import { useLeaveWarning } from "./EditorParts";
 import { LESSON_STATUS_LABEL, statusTone } from "./labels";
 
 type Course = RouterOutputs["build"]["course"];
@@ -16,7 +18,7 @@ type Drag = { kind: "section"; id: number } | { kind: "lesson"; id: number };
 type Target = { kind: "section"; index: number } | { kind: "lesson"; sectionId: number; index: number };
 
 const iconBtn = "w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30";
-const mouse = window.matchMedia("(pointer: fine)").matches; // au doigt, les flèches suffisent : un appui long ne doit rien saisir
+const mouse = window.matchMedia("(pointer: fine)").matches; // au doigt, les flèches suffisent
 const typeOptions = LESSON_TYPES.map((t): [LessonType, string] => [t, LESSON_TYPE_LABEL[t]]);
 const isPublished = (l: { status: string }) => l.status === "publie";
 
@@ -26,18 +28,15 @@ export function Outline({ c }: { c: Course }) {
   const navigate = useNavigate();
   const [drag, setDrag] = useState<Drag | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
-  // Le nouvel ordre se voit tout de suite : l'écriture dans Notion prend quelques secondes
+  // Le nouvel ordre se voit tout de suite : l'écriture dans Notion suit, sans bloquer le déplacement suivant
   const [moving, setMoving] = useState<Section[] | null>(null);
+  const [writing, setWriting] = useState(false);
   const [landed, setLanded] = useState<string | null>(null);
   const [addingSection, setAddingSection] = useState(false);
   const [addingLesson, setAddingLesson] = useState<Section | null>(null);
   const refresh = () => utils.build.invalidate();
-  const afterMove = {
-    onSuccess: async () => { await refresh(); setMoving(null); toast.success("Nouvel ordre enregistré dans Notion"); },
-    onError: async (e: { message: string }) => { toast.error(e.message, { duration: 8000 }); await refresh(); setMoving(null); },
-  };
-  const moved = trpc.build.reorderSections.useMutation(afterMove);
-  const movedLesson = trpc.build.reorderLessons.useMutation(afterMove);
+  const moved = trpc.build.reorderSections.useMutation();
+  const movedLesson = trpc.build.reorderLessons.useMutation();
   const dupSection = trpc.build.duplicateSection.useMutation({ onSuccess: () => { refresh(); toast.success("Section et leçons copiées dans Notion, leçons en brouillon"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   const dupLesson = trpc.build.duplicateLesson.useMutation({ onSuccess: () => { refresh(); toast.success("Leçon copiée dans Notion, en brouillon"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   // Une section apparaît dès qu'une de ses leçons est publiée : le message le dit quand cela change
@@ -53,16 +52,38 @@ export function Outline({ c }: { c: Course }) {
   });
   const archiveSection = trpc.build.archiveSection.useMutation({ onSuccess: () => { refresh(); toast.success("Section et leçons à la corbeille de Notion"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   const archiveLesson = trpc.build.archiveLesson.useMutation({ onSuccess: () => { refresh(); toast.success("Leçon à la corbeille de Notion"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
-  const busy = moved.isPending || movedLesson.isPending || dupSection.isPending || dupLesson.isPending;
+  const busy = dupSection.isPending || dupLesson.isPending;
 
   const sections = moving ?? c.sections;
+  useLeaveWarning(writing);
 
   // La ligne déplacée reste marquée un instant une fois Notion à jour : on voit où elle est arrivée
   useEffect(() => {
-    if (!landed || busy) return;
+    if (!landed || writing) return;
     const t = setTimeout(() => setLanded(null), 1800);
     return () => clearTimeout(t);
-  }, [landed, busy]);
+  }, [landed, writing]);
+
+  /** Les écritures partent une à une, dans l'ordre des gestes. Si l'une échoue, on repart de ce que Notion a vraiment reçu. */
+  const queue = useRef({ chain: Promise.resolve(), waiting: 0, failed: false });
+  const enqueue = (write: () => Promise<unknown>) => {
+    const q = queue.current;
+    q.waiting++;
+    setWriting(true);
+    q.chain = q.chain.then(async () => {
+      if (!q.failed) {
+        try { await write(); } catch (e) { q.failed = true; toast.error(e instanceof Error ? e.message : "L’écriture dans Notion a échoué.", { duration: 8000 }); }
+      }
+      if (--q.waiting > 0) return;
+      const failed = q.failed;
+      q.failed = false;
+      await refresh();
+      if (q.waiting > 0) return; // un autre geste est arrivé pendant la relecture
+      setMoving(null);
+      setWriting(false);
+      if (!failed) toast.success("Nouvel ordre enregistré dans Notion");
+    });
+  };
 
   const moveSection = (id: number, to: number) => {
     const rest = sections.filter((s) => s.id !== id);
@@ -70,7 +91,7 @@ export function Outline({ c }: { c: Course }) {
     const next = rest.map((s, i) => ({ ...s, position: i + 1 }));
     setMoving(next);
     setLanded(`s${id}`);
-    moved.mutate({ courseId: c.id, sectionIds: next.map((s) => s.id) });
+    enqueue(() => moved.mutateAsync({ courseId: c.id, sectionIds: next.map((s) => s.id) }));
   };
 
   /** Placer une leçon à un rang d'une section, la sienne ou une autre. */
@@ -81,7 +102,8 @@ export function Outline({ c }: { c: Course }) {
     list.splice(to, 0, lesson);
     setMoving(next);
     setLanded(`l${lessonId}`);
-    movedLesson.mutate({ sectionId: dest.id, lessonIds: list.map((l) => l.id) });
+    const lessonIds = list.map((l) => l.id);
+    enqueue(() => movedLesson.mutateAsync({ sectionId: dest.id, lessonIds }));
   };
 
   /** Les flèches suivent le même chemin : au bout d'une section, la leçon passe dans la section voisine. */
@@ -97,31 +119,41 @@ export function Outline({ c }: { c: Course }) {
     if (sections[i + direction]) moveSection(s.id, i + direction);
   };
 
-  /** Toute la ligne se saisit et suit le curseur, depuis l'endroit où on l'a prise. */
-  const grab = (next: Drag, label: string) => (e: DragEvent<HTMLElement>) => {
-    e.stopPropagation();
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", label); // sans cela, Firefox ne commence pas le glissement
-    const box = e.currentTarget.getBoundingClientRect();
-    e.dataTransfer.setDragImage(e.currentTarget, e.clientX - box.left, e.clientY - box.top);
-    setDrag(next);
-  };
-  const finish = () => { setDrag(null); setTarget(null); };
+  const pointer = useRef({ x: 0, y: 0 });
+  const grabbed = useRef({ width: 0, title: "" });
+  const ghost = useRef<HTMLDivElement>(null);
+  const targetNow = useRef<Target | null>(null);
 
-  /** D'après le curseur : moitié haute d'une ligne, on arrive avant elle ; moitié basse, après elle. */
-  const targetFrom = (e: DragEvent): Target | null => {
-    const el = e.target as HTMLElement;
-    const card = el.closest<HTMLElement>("[data-section]");
-    if (!drag || !card) return null;
-    const i = Number(card.dataset.section);
-    const after = (box: HTMLElement) => { const r = box.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
-    if (drag.kind === "section") return { kind: "section", index: after(card) ? i + 1 : i };
-    const s = sections[i];
-    if (el.closest("[data-section-head]")) return { kind: "lesson", sectionId: s.id, index: 0 };
-    const row = el.closest<HTMLElement>("[data-lesson]");
-    if (!row) return { kind: "lesson", sectionId: s.id, index: s.lessons.length };
-    const n = Number(row.dataset.lesson);
-    return { kind: "lesson", sectionId: s.id, index: after(row) ? n + 1 : n };
+  /** Clic tenu, léger déplacement : la ligne part. Un simple clic reste un clic. Les boutons de la ligne gardent leur rôle. */
+  const press = (next: Drag, title: string) => (e: ReactPointerEvent<HTMLElement>) => {
+    if (busy || e.button !== 0 || e.pointerType !== "mouse") return;
+    if ((e.target as HTMLElement).closest("button, input, select, textarea, [role='dialog']")) return;
+    const width = e.currentTarget.getBoundingClientRect().width;
+    const { clientX: x0, clientY: y0 } = e;
+    const stop = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", stop); };
+    const onMove = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      stop();
+      pointer.current = { x: ev.clientX, y: ev.clientY };
+      grabbed.current = { width, title };
+      flushSync(() => setDrag(next)); // le glissement écoute dès maintenant : un geste vif ne doit perdre ni un mouvement, ni le relâchement
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+  };
+
+  /** Seule la hauteur du curseur compte : moitié haute d'une ligne, on arrive avant elle ; moitié basse, après elle. */
+  const targetAt = (y: number): Target | null => {
+    const middle = (el: Element) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+    const cards = [...document.querySelectorAll("[data-section]")];
+    if (!drag || !cards.length) return null;
+    if (drag.kind === "section") return { kind: "section", index: cards.filter((card) => y > middle(card)).length };
+    const i = cards.findIndex((card) => y <= card.getBoundingClientRect().bottom + 6);
+    const card = cards[i === -1 ? cards.length - 1 : i];
+    const s = sections[i === -1 ? cards.length - 1 : i];
+    const head = card.querySelector("[data-section-head]");
+    if (head && y < head.getBoundingClientRect().bottom) return { kind: "lesson", sectionId: s.id, index: 0 };
+    return { kind: "lesson", sectionId: s.id, index: [...card.querySelectorAll("[data-lesson]")].filter((row) => y > middle(row)).length };
   };
 
   /** Le rang final, une fois retiré ce qu'on déplace. Rien si la ligne ne bouge pas. */
@@ -139,25 +171,56 @@ export function Outline({ c }: { c: Course }) {
     return to === from ? null : { to, section };
   };
 
-  const onDragOver = (e: DragEvent) => {
+  // Pendant le glissement : la ligne suit le curseur sans repeindre la page, et la page défile près des bords de l'écran
+  useEffect(() => {
     if (!drag) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    const next = targetFrom(e); // dans l'espace entre deux sections, le trait reste où il est
-    if (next && JSON.stringify(next) !== JSON.stringify(target)) setTarget(next);
-  };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    const goal = landing(targetFrom(e) ?? target);
-    if (goal && drag) {
-      if (goal.section) moveLesson(drag.id, goal.section, goal.to);
-      else moveSection(drag.id, goal.to);
-    }
-    finish();
-  };
+    const locate = () => {
+      const { x, y } = pointer.current;
+      if (ghost.current) ghost.current.style.transform = `translate3d(${x - 20}px, ${y - 20}px, 0)`;
+      const next = targetAt(y);
+      if (JSON.stringify(next) !== JSON.stringify(targetNow.current)) { targetNow.current = next; setTarget(next); }
+    };
+    const onMove = (e: PointerEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; locate(); };
+    const stop = () => { targetNow.current = null; setDrag(null); setTarget(null); };
+    const onUp = (e: PointerEvent) => {
+      onMove(e); // la ligne tombe là où on la lâche
+      const goal = landing(targetNow.current);
+      if (goal?.section) moveLesson(drag.id, goal.section, goal.to);
+      else if (goal) moveSection(drag.id, goal.to);
+      stop();
+      // Le clic qui suit le relâchement ne doit pas ouvrir la fiche survolée
+      const swallow = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") stop(); };
+    let frame = 0;
+    const scroll = () => {
+      const y = pointer.current.y;
+      const zone = 90;
+      const speed = y < zone ? (y - zone) / 5 : y > window.innerHeight - zone ? (y - window.innerHeight + zone) / 5 : 0;
+      if (speed) { window.scrollBy(0, speed); locate(); }
+      frame = requestAnimationFrame(scroll);
+    };
+    frame = requestAnimationFrame(scroll);
+    document.documentElement.classList.add("p-dragging");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("keydown", onKey);
+    locate();
+    return () => {
+      cancelAnimationFrame(frame);
+      document.documentElement.classList.remove("p-dragging");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag, sections]);
 
   const goal = landing(target);
-  const goalLabel = !goal ? "" : goal.section ? `Arrivera ici : leçon ${goal.to + 1} de « ${goal.section.title} »` : `Arrivera ici : section ${goal.to + 1}${c.rhythm === "hebdo" ? `, ouverte en semaine ${goal.to + 1}` : ""}`;
   const sectionMark = (index: number) => !!goal && target?.kind === "section" && target.index === index;
   const lessonMark = (sectionId: number, index: number) => !!goal && target?.kind === "lesson" && target.sectionId === sectionId && target.index === index;
   const held = (kind: Drag["kind"], id: number) => (drag?.kind === kind && drag.id === id ? { opacity: 0.4 } : {});
@@ -165,18 +228,19 @@ export function Outline({ c }: { c: Course }) {
   return (
     <section className="flex flex-col gap-3" aria-label="Sections et leçons">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-[14px] p-muted flex-[1_1_260px]">L’ordre des sections fixe la semaine d’ouverture : la section 1 s’ouvre au démarrage, la section 2 une semaine plus tard. Toutes ses leçons s’ouvrent ensemble. Une section apparaît dès qu’une de ses leçons est publiée. {mouse ? "Pour déplacer une section ou une leçon, saisissez sa ligne et glissez-la : un trait rouge montre où elle arrivera. La touche Échap annule." : "Déplacez une section ou une leçon avec ses flèches."}</p>
+        <p className="m-0 text-[14px] p-muted flex-[1_1_260px]">L’ordre des sections fixe la semaine d’ouverture : la section 1 s’ouvre au démarrage, la section 2 une semaine plus tard. Toutes ses leçons s’ouvrent ensemble. Une section apparaît dès qu’une de ses leçons est publiée. {mouse ? "Pour déplacer une section ou une leçon, gardez le clic sur sa ligne et glissez : un trait rouge montre où elle arrivera. La touche Échap annule." : "Déplacez une section ou une leçon avec ses flèches."}</p>
         <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setAddingSection(true)}><Plus size={15} /> Ajouter une section</button>
       </div>
-      {busy && <p className="m-0 text-[13.5px] p-muted" role="status">Écriture dans Notion…</p>}
+      {(busy || writing) && <p className="m-0 text-[13.5px] p-muted" role="status">Écriture dans Notion…</p>}
       {sections.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucune section pour l’instant.</div>}
-      <ol className="list-none m-0 p-0 flex flex-col gap-3" onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setTarget(null); }} onDrop={onDrop}>
+      {/* Un lien ne doit pas lancer le glissement du navigateur à la place du nôtre */}
+      <ol className="list-none m-0 p-0 flex flex-col gap-3" onDragStart={(e) => e.preventDefault()}>
         {sections.map((s, i) => (
           <li key={s.id} data-section={i} className="relative">
-            {sectionMark(i) && <DropMarker label={goalLabel} edge="top" offset={12} />}
-            {i === sections.length - 1 && sectionMark(i + 1) && <DropMarker label={goalLabel} edge="bottom" offset={12} />}
+            {sectionMark(i) && <DropMarker edge="top" offset={12} />}
+            {i === sections.length - 1 && sectionMark(i + 1) && <DropMarker edge="bottom" offset={12} />}
             <div className="p-card overflow-hidden" style={{ ...held("section", s.id), ...(goal?.section?.id === s.id ? { outline: "2px solid var(--p-accent)" } : {}) }}>
-            <div data-section-head draggable={mouse && !busy} onDragStart={grab({ kind: "section", id: s.id }, s.title)} onDragEnd={finish} className="p-3 flex flex-wrap items-center gap-x-3 gap-y-2 lg:cursor-grab" style={{ background: landed === `s${s.id}` ? "var(--p-accent-soft)" : "var(--p-surface-2)" }}>
+            <div data-section-head onPointerDown={press({ kind: "section", id: s.id }, s.title)} className="p-3 flex flex-wrap items-center gap-x-3 gap-y-2 lg:cursor-grab lg:select-none" style={{ background: landed === `s${s.id}` ? "var(--p-accent-soft)" : "var(--p-surface-2)" }}>
               <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex p-muted"><GripVertical size={18} /></span>
               <span className="w-9 h-9 rounded-full flex items-center justify-center flex-none font-semibold text-[14px]" style={{ background: "var(--p-surface)" }}>{s.position}</span>
               <Link to={`/admin/construire/${c.id}/section/${s.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
@@ -187,17 +251,17 @@ export function Outline({ c }: { c: Course }) {
               <span className="flex items-center gap-0.5 flex-none">
                 <button type="button" aria-label={`Monter la section ${s.title}`} disabled={i === 0 || busy} className={iconBtn} onClick={() => stepSection(s, -1)}><ArrowUp size={16} /></button>
                 <button type="button" aria-label={`Descendre la section ${s.title}`} disabled={i === sections.length - 1 || busy} className={iconBtn} onClick={() => stepSection(s, 1)}><ArrowDown size={16} /></button>
-                <button type="button" aria-label={`Dupliquer la section ${s.title}`} title="Dupliquer avec ses leçons" disabled={busy} className={iconBtn} onClick={() => dupSection.mutate({ id: s.id })}><Copy size={16} /></button>
+                <button type="button" aria-label={`Dupliquer la section ${s.title}`} title="Dupliquer avec ses leçons" disabled={busy || writing} className={iconBtn} onClick={() => dupSection.mutate({ id: s.id })}><Copy size={16} /></button>
                 <Link to={`/admin/construire/${c.id}/section/${s.id}`} aria-label={`Modifier la section ${s.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
               </span>
               <ConfirmButton label={<Trash2 size={16} />} className={`${iconBtn} flex-none`} question={`Supprimer « ${s.title} » et ses ${s.lessons.length} leçon(s) ? Elles partent à la corbeille de Notion et disparaissent pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveSection.isPending} onConfirm={() => archiveSection.mutate({ id: s.id })} />
             </div>
             <ul className="list-none m-0 p-2 flex flex-col gap-1" aria-label={`Leçons de ${s.title}`}>
-              {s.lessons.length === 0 && <li className="relative p-3 text-center text-[14px] p-muted">{lessonMark(s.id, 0) && <DropMarker label={goalLabel} edge="top" offset={8} />}Aucune leçon : cette section reste invisible pour les membres. Déposez une leçon ici ou ajoutez-en une.</li>}
+              {s.lessons.length === 0 && <li className="relative p-3 text-center text-[14px] p-muted">{lessonMark(s.id, 0) && <DropMarker edge="top" offset={8} />}Aucune leçon : cette section reste invisible pour les membres. Déposez une leçon ici ou ajoutez-en une.</li>}
               {s.lessons.map((l, n) => (
-                <li key={l.id} data-lesson={n} draggable={mouse && !busy} onDragStart={grab({ kind: "lesson", id: l.id }, l.title)} onDragEnd={finish} className="relative p-2 rounded-lg flex flex-wrap items-center gap-x-2.5 gap-y-1.5 lg:cursor-grab hover:bg-black/5 dark:hover:bg-white/5" style={{ ...held("lesson", l.id), ...(landed === `l${l.id}` ? { background: "var(--p-accent-soft)" } : {}) }}>
-                  {lessonMark(s.id, n) && <DropMarker label={goalLabel} edge="top" offset={8} />}
-                  {n === s.lessons.length - 1 && lessonMark(s.id, n + 1) && <DropMarker label={goalLabel} edge="bottom" offset={8} />}
+                <li key={l.id} data-lesson={n} onPointerDown={press({ kind: "lesson", id: l.id }, l.title)} className={`relative p-2 rounded-lg flex flex-wrap items-center gap-x-2.5 gap-y-1.5 lg:cursor-grab lg:select-none ${drag ? "" : "hover:bg-black/5 dark:hover:bg-white/5"}`} style={{ ...held("lesson", l.id), ...(landed === `l${l.id}` ? { background: "var(--p-accent-soft)" } : {}) }}>
+                  {lessonMark(s.id, n) && <DropMarker edge="top" offset={8} />}
+                  {n === s.lessons.length - 1 && lessonMark(s.id, n + 1) && <DropMarker edge="bottom" offset={8} />}
                   <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex p-muted"><GripVertical size={16} /></span>
                   <span className="w-5 text-center text-[13px] font-medium p-muted flex-none">{n + 1}</span>
                   <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} className="flex-[1_1_200px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
@@ -209,7 +273,7 @@ export function Outline({ c }: { c: Course }) {
                   <span className="flex items-center gap-0.5 flex-none">
                     <button type="button" aria-label={`Monter ${l.title}`} disabled={busy || (i === 0 && n === 0)} className={iconBtn} onClick={() => stepLesson(l, s, -1)}><ArrowUp size={16} /></button>
                     <button type="button" aria-label={`Descendre ${l.title}`} disabled={busy || (i === sections.length - 1 && n === s.lessons.length - 1)} className={iconBtn} onClick={() => stepLesson(l, s, 1)}><ArrowDown size={16} /></button>
-                    <button type="button" aria-label={`Dupliquer ${l.title}`} title="Dupliquer" disabled={busy} className={iconBtn} onClick={() => dupLesson.mutate({ id: l.id })}><Copy size={16} /></button>
+                    <button type="button" aria-label={`Dupliquer ${l.title}`} title="Dupliquer" disabled={busy || writing} className={iconBtn} onClick={() => dupLesson.mutate({ id: l.id })}><Copy size={16} /></button>
                     <Link to={`/admin/construire/${c.id}/apercu/${l.id}`} aria-label={`Aperçu de ${l.title}`} title="Aperçu comme un membre" className={iconBtn}><Eye size={16} /></Link>
                     <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} aria-label={`Modifier ${l.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
                   </span>
@@ -222,6 +286,12 @@ export function Outline({ c }: { c: Course }) {
           </li>
         ))}
       </ol>
+      {drag && createPortal(
+        <div ref={ghost} aria-hidden="true" className="p-card fixed left-0 top-0 z-[60] flex items-center gap-2 px-3 py-2.5 font-medium pointer-events-none" style={{ width: Math.min(grabbed.current.width, 480), boxShadow: "0 12px 32px rgba(0, 0, 0, .18)", transform: `translate3d(${pointer.current.x - 20}px, ${pointer.current.y - 20}px, 0)` }}>
+          <GripVertical size={16} className="flex-none p-muted" /><span className="truncate">{grabbed.current.title}</span>
+        </div>,
+        document.body,
+      )}
       <AddSection c={c} open={addingSection} onClose={() => setAddingSection(false)} onCreated={(id) => navigate(`/admin/construire/${c.id}/section/${id}`)} />
       <AddLesson c={c} section={addingLesson} onClose={() => setAddingLesson(null)} onCreated={(id) => navigate(`/admin/construire/${c.id}/lecon/${id}`)} />
     </section>
@@ -229,12 +299,11 @@ export function Outline({ c }: { c: Course }) {
 }
 
 /** Le trait qui montre où tombera ce qu'on déplace. Il ne prend aucune place : la liste ne bouge pas sous le curseur. */
-function DropMarker({ label, edge, offset }: { label: string; edge: "top" | "bottom"; offset: number }) {
+function DropMarker({ edge, offset }: { edge: "top" | "bottom"; offset: number }) {
   return (
     <div aria-hidden="true" className="absolute left-0 right-0 z-20 h-3 flex items-center pointer-events-none" style={{ [edge]: -offset }}>
       <span className="w-3 h-3 rounded-full flex-none" style={{ background: "var(--p-accent)" }} />
       <span className="flex-1 h-[3px]" style={{ background: "var(--p-accent)" }} />
-      <span className="absolute left-6 max-w-[calc(100%-2.5rem)] truncate px-2.5 py-0.5 rounded-full text-[12.5px] font-medium text-white" style={{ background: "var(--p-accent)" }}>{label}</span>
     </div>
   );
 }

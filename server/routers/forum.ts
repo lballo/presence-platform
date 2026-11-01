@@ -8,6 +8,7 @@ import { cleanHtml, htmlToText, isForumImage } from "../lib/richText";
 import { signedDownloadUrl } from "../lib/storage";
 import { getDb } from "../queries/connection";
 import { forumDrafts, forumLikes, forumPostHashtags, forumPostInterests, forumPostReads, forumPosts, forumReplies, forumSpaces, hashtags, hiveMembers, hives, type ForumPost, type Member } from "../../db/schema";
+import { slugify } from "../lib/eventAccess";
 import { publicMember } from "../lib/format";
 import { award } from "../lib/honey";
 import { logAdmin, logIfOnBehalf } from "../lib/adminLog";
@@ -238,14 +239,31 @@ export async function deleteForumPosts(ids: number[]) {
   await db.delete(forumPosts).where(inArray(forumPosts.id, ids));
 }
 
+const spaceFields = z.object({
+  name: z.string().trim().min(1, "Indiquez un nom.").max(80),
+  emoji: z.string().trim().max(16),
+  description: z.string().trim().max(400),
+  groupKey: z.enum(["arriver", "echanger"]),
+  adminOnly: z.boolean(),
+});
+
+/** Ces espaces font tourner une fonction du site (annonces, relecture, retours vidéo, présentations) : on les renomme, on ne les supprime pas. */
+const spaceIsRequired = (s: { kind: string; slug: string }) => s.kind !== "libre" || s.slug === "presentations";
+
+async function nextSpacePosition(groupKey: string) {
+  const [{ last }] = await getDb().select({ last: sql<number>`coalesce(max(${forumSpaces.position}), 0)::int` }).from(forumSpaces).where(eq(forumSpaces.groupKey, groupKey));
+  return last + 1;
+}
+
 export const forumRouter = createRouter({
   /** Les espaces, ce que le membre peut y faire, et le point de couleur des annonces non lues. */
   spaces: forumProc.query(async ({ ctx }) => {
     const db = getDb();
     const list = await db.select().from(forumSpaces).orderBy(asc(forumSpaces.position), asc(forumSpaces.id));
-    const [unread, pending] = await Promise.all([
+    const [unread, pending, counts] = await Promise.all([
       unreadCounts(ctx.member),
       can(ctx.member, "opportunity.validate") ? db.select({ n: sql<number>`count(*)::int` }).from(forumPosts).where(eq(forumPosts.status, "pending")) : Promise.resolve([{ n: 0 }]),
+      can(ctx.member, "forum.manage") ? db.select({ spaceId: forumPosts.spaceId, n: sql<number>`count(*)::int` }).from(forumPosts).where(isNotNull(forumPosts.spaceId)).groupBy(forumPosts.spaceId) : Promise.resolve([]),
     ]);
     return {
       spaces: list.map((s) => ({
@@ -253,6 +271,8 @@ export const forumRouter = createRouter({
         canPost: !s.adminOnly || can(ctx.member, "forum.post_restricted"),
         unread: s.kind === "annonces" ? unread.annonces : 0,
         pending: s.kind === "opportunites" ? pending[0]?.n ?? 0 : 0,
+        required: spaceIsRequired(s),
+        posts: counts.find((c) => c.spaceId === s.id)?.n ?? 0,
       })),
       canManage: can(ctx.member, "forum.manage"),
       canAnnounce: can(ctx.member, "forum.post_restricted"),
@@ -486,15 +506,54 @@ export const forumRouter = createRouter({
   }),
 
   // ─── Administration : espaces et épingles ───────────────────
+  /** Ajouter un espace, à la fin de son groupe. Son adresse vient de son nom et ne changera plus : les liens restent bons après un renommage. */
+  createSpace: manageProc.input(spaceFields).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const base = slugify(input.name).slice(0, 54);
+    const taken = (await db.select({ slug: forumSpaces.slug }).from(forumSpaces)).map((s) => s.slug);
+    let slug = base;
+    for (let i = 2; taken.includes(slug); i++) slug = `${base}-${i}`;
+    const [space] = await db.insert(forumSpaces).values({ ...input, slug, position: await nextSpacePosition(input.groupKey), kind: "libre" }).returning();
+    await logAdmin(ctx.member, { action: "Espace du forum ajouté", targetType: "espace", targetId: space.id, label: space.name });
+    return { id: space.id, slug: space.slug };
+  }),
+
   updateSpace: manageProc
-    .input(z.object({ id: z.number().int(), name: z.string().trim().min(1).max(80), emoji: z.string().trim().max(16), description: z.string().trim().max(400) }))
+    .input(spaceFields.extend({ id: z.number().int() }))
     .mutation(async ({ ctx, input }) => {
+      const db = getDb();
       const { id, ...values } = input;
-      const [before] = await getDb().select().from(forumSpaces).where(eq(forumSpaces.id, id)).limit(1);
-      await getDb().update(forumSpaces).set(values).where(eq(forumSpaces.id, id));
-      await logAdmin(ctx.member, { action: "Espace du forum modifié", targetType: "espace", targetId: id, label: values.name, detail: before && before.name !== values.name ? `Ancien nom : ${before.name}` : "" });
+      const [before] = await db.select().from(forumSpaces).where(eq(forumSpaces.id, id)).limit(1);
+      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Espace introuvable" });
+      await db.update(forumSpaces).set({
+        ...values,
+        adminOnly: before.kind === "libre" ? values.adminOnly : before.adminOnly, // les annonces restent à l'équipe, les opportunités restent relues
+        position: before.groupKey === values.groupKey ? before.position : await nextSpacePosition(values.groupKey),
+      }).where(eq(forumSpaces.id, id));
+      await logAdmin(ctx.member, { action: "Espace du forum modifié", targetType: "espace", targetId: id, label: values.name, detail: before.name !== values.name ? `Ancien nom : ${before.name}` : "" });
       return { ok: true };
     }),
+
+  /** Supprimer un espace : ses publications ne disparaissent pas, elles rejoignent l'espace choisi. */
+  deleteSpace: manageProc.input(z.object({ id: z.number().int(), moveTo: z.number().int().nullable().default(null) })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const [space] = await db.select().from(forumSpaces).where(eq(forumSpaces.id, input.id)).limit(1);
+    if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espace introuvable" });
+    if (spaceIsRequired(space)) throw badRequest("Le site a besoin de cet espace : vous pouvez le renommer, pas le supprimer.");
+    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(forumPosts).where(eq(forumPosts.spaceId, space.id));
+    let dest: typeof space | undefined;
+    if (n) {
+      [dest] = input.moveTo && input.moveTo !== space.id ? await db.select().from(forumSpaces).where(eq(forumSpaces.id, input.moveTo)).limit(1) : [];
+      if (!dest || dest.kind !== "libre") throw badRequest("Choisissez l’espace qui accueillera ses publications.");
+    }
+    await db.transaction(async (tx) => {
+      // Une épingle valait pour l'ancien espace : elle ne passe pas devant les publications du nouveau
+      if (dest) await tx.update(forumPosts).set({ spaceId: dest.id, pinnedAt: null }).where(eq(forumPosts.spaceId, space.id));
+      await tx.delete(forumSpaces).where(eq(forumSpaces.id, space.id));
+    });
+    await logAdmin(ctx.member, { action: "Espace du forum supprimé", targetType: "espace", targetId: space.id, label: space.name, detail: dest ? `${n} publication(s) déplacée(s) vers ${dest.name}` : "" });
+    return { ok: true, moved: n };
+  }),
 
   /** Monter ou descendre un espace dans son groupe. */
   moveSpace: manageProc.input(z.object({ id: z.number().int(), direction: z.enum(["up", "down"]) })).mutation(async ({ ctx, input }) => {

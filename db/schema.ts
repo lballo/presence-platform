@@ -451,6 +451,7 @@ export const events = pgTable(
     maxSeats: integer("max_seats"),
     featured: boolean("featured").notNull().default(false),
     photoUrl: text("photo_url"),
+    cover: varchar("cover", { length: 20 }).notNull().default(""), // couleur d'un événement sans photo ; vide, elle suit le format
     withLine: text("with_line").notNull().default(""),
     inAgenda: boolean("in_agenda").notNull().default(true), // aussi dans l'agenda du cercle
     live: boolean("live").notNull().default(false),

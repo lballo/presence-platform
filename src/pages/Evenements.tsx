@@ -6,8 +6,8 @@ import { AdminPendingLink } from "@/components/AdminPendingLink";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
-import { COVERS } from "@/pages/Ruches";
 import { AgendaCalendar } from "@/components/events/AgendaCalendar";
+import { eventCover } from "@/components/events/cover";
 import { EventForm } from "@/components/events/EventForm";
 import { duration, parisHour, parisLongDate, plural } from "@/lib/format";
 
@@ -28,7 +28,7 @@ export default function Evenements() {
   return (
     <>
       <PageHeader eyebrow="Le programme" title="Événements Présence" intro="Salons live, ateliers en visio et rencontres en présentiel. Les rendez-vous de vos ruches se retrouvent dans votre agenda."
-        action={<button type="button" className={creating ? "p-btn-outline" : "p-btn-primary"} onClick={() => setCreating(!creating)}><Plus size={17} /> {creating ? "Fermer" : "Créer un événement"}</button>} />
+        action={<button type="button" className="p-btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Créer un événement</button>} />
 
       <AdminPendingLink kind="event" one="proposition d’événement" many="propositions d’événement" />
       {creating && <EventForm onDone={(r) => { setCreating(false); if (r?.status === "published") navigate(`/e/${r.slug}`); }} />}
@@ -60,7 +60,7 @@ function EventCard({ e }: { e: Ev }) {
   return (
     <article className="p-card overflow-hidden flex flex-col">
       <Link to={`/e/${e.slug}`} className="flex flex-col flex-1 no-underline" style={{ color: "var(--p-ink)" }}>
-        {e.photoUrl ? <img src={e.photoUrl} alt="" className="w-full h-[150px] object-cover" /> : <span className="block w-full h-[90px]" style={{ background: COVERS[e.kind === "onsite" ? "or" : e.kind === "salon" ? "rouge" : "nuit"] }} />}
+        {e.photoUrl ? <img src={e.photoUrl} alt="" className="w-full h-[150px] object-cover" /> : <span className="block w-full h-[90px]" style={{ background: eventCover(e) }} />}
         <span className="p-4 flex flex-col gap-2 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="p-pill">{e.live ? "● En direct" : e.type === "bienvenue" ? "Bienvenue" : KIND[e.kind]}</span>
