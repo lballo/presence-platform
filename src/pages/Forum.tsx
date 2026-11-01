@@ -84,7 +84,7 @@ function Posts({ space, slug, tag, onEdit }: { space?: Space; slug?: string; tag
 
 function SpaceLink({ to, end, label, icon, unread, pending, onPick }: { to: string; end?: boolean; label: string; icon: React.ReactNode; unread?: number; pending?: number; onPick?: () => void }) {
   return (
-    <NavLink to={to} end={end} onClick={onPick} className="flex items-center gap-2.5 min-h-[40px] px-2.5 rounded-xl text-[14.5px] no-underline transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={({ isActive }) => ({ background: isActive ? "var(--p-pill)" : undefined, color: isActive ? "var(--p-accent-text)" : "var(--p-ink)", fontWeight: isActive ? 600 : 400 })}>
+    <NavLink to={to} end={end} onClick={onPick} className="flex items-center gap-2.5 min-h-[40px] px-2.5 rounded-xl text-[16.5px] no-underline transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={({ isActive }) => ({ background: isActive ? "var(--p-pill)" : undefined, color: isActive ? "var(--p-accent-text)" : "var(--p-ink)", fontWeight: isActive ? 600 : 400 })}>
       <span className="w-[22px] flex justify-center flex-none text-[16px]">{icon}</span>
       <span className="flex-1 min-w-0 truncate">{label}</span>
       {!!unread && <UnreadDot label={`${unread} annonce${unread > 1 ? "s" : ""} non lue${unread > 1 ? "s" : ""}`} />}
@@ -106,7 +106,7 @@ function SpaceNav({ data, onPick, onAdd }: { data: Spaces; onPick?: () => void; 
       ))}
       {data.canManage && (
         <div className="mt-3 pt-2 border-t flex flex-col gap-0.5" style={{ borderColor: "var(--p-line)" }}>
-          <button type="button" className="flex items-center gap-2.5 min-h-[40px] px-2.5 rounded-xl text-[14.5px] text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { onPick?.(); onAdd?.(); }}><span className="w-[22px] flex justify-center flex-none"><Plus size={16} /></span>Ajouter un espace</button>
+          <button type="button" className="flex items-center gap-2.5 min-h-[40px] px-2.5 rounded-xl text-[16.5px] text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { onPick?.(); onAdd?.(); }}><span className="w-[22px] flex justify-center flex-none"><Plus size={16} /></span>Ajouter un espace</button>
           <SpaceLink to="/admin/forum?rubrique=espaces" label="Gérer le forum" icon={<Settings size={16} />} onPick={onPick} />
         </div>
       )}
@@ -119,7 +119,7 @@ function SpaceDropdown({ data, label, onAdd }: { data: Spaces; label: string; on
   const unread = data.spaces.reduce((n, s) => n + s.unread, 0);
   return (
     <div className="relative">
-      <button type="button" aria-expanded={open} aria-haspopup="true" className="w-full flex items-center gap-2.5 h-12 px-3.5 rounded-xl border text-[15px] font-medium text-left" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => setOpen(!open)}>
+      <button type="button" aria-expanded={open} aria-haspopup="true" className="w-full flex items-center gap-2.5 h-12 px-3.5 rounded-xl border text-[17px] font-medium text-left" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => setOpen(!open)}>
         <span className="flex-1 min-w-0 truncate">{label}</span>
         {unread > 0 && !open && <UnreadDot label={`${unread} annonce${unread > 1 ? "s" : ""} non lue${unread > 1 ? "s" : ""}`} />}
         <ChevronDown size={18} className="flex-none transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />

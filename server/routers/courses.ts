@@ -3,12 +3,13 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
-import { courseEnrollments, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, journalEntries, lessonProgress, members, sectionProgress, testResults } from "../../db/schema";
+import { coachingSessions, courseEnrollments, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, journalEntries, lessonProgress, members, sectionProgress, testResults } from "../../db/schema";
 import { logActivity, touchEnrollment } from "../lib/activity";
 import { answerMemory, challengeMemory, testMemory } from "../lib/coach";
 import { consentNeeded, forget, memoryLabel, memoryOrigin, memorySettings, remember } from "../lib/coachMemory";
 import { isQuestion, memberBlocks, plainOf, type CourseBlock } from "../lib/courseBlocks";
 import { lessonView, memberCourses, readableLesson, readableSection } from "../lib/courseState";
+import { env } from "../lib/env";
 import { notify } from "../lib/notify";
 import { open, seal } from "../lib/privateBox";
 
@@ -17,14 +18,14 @@ const NOTE = "note"; // une réflexion libre, en plus des questions de l'exercic
 const fullName = (m: { firstName: string; lastName: string }) => `${m.firstName} ${m.lastName}`.trim();
 
 /** Prévenir l'administration qu'un membre vient de lui partager quelque chose. */
-async function notifyShared(member: { id: number; firstName: string; lastName: string }, what: string) {
+async function notifyShared(member: { id: number; firstName: string; lastName: string }, title: string, href: string) {
   const admins = await getDb().select({ id: members.id }).from(members).where(and(eq(members.role, "administrateur"), eq(members.status, "actif"), isNull(members.deletedAt)));
-  await notify(admins.map((a) => a.id).filter((id) => id !== member.id), { title: `${fullName(member)} a partagé ${what} avec vous`, href: `/admin/membres/${member.id}` });
+  await notify(admins.map((a) => a.id).filter((id) => id !== member.id), { title, href });
 }
 
 const flatten = (blocks: CourseBlock[]): CourseBlock[] => blocks.flatMap((b) => [b, ...("children" in b && b.children ? flatten(b.children) : [])]);
 
-const resultSchema = z.object({
+export const resultSchema = z.object({
   label: z.string().trim().max(200).default(""),
   summary: z.string().trim().max(4000).default(""),
   score: z.union([z.number(), z.string().max(40)]).nullable().optional(),
@@ -137,7 +138,7 @@ export const coursesRouter = createRouter({
       const answerEnc = seal(ctx.memberId, answer);
       const questionText = question && "html" in question ? plainOf(question.html) : "";
       const [row] = await db.insert(journalEntries)
-        .values({ memberId: ctx.memberId, lessonId: lesson.id, courseTitle: state.course.title, lessonTitle: lesson.title, questionId: input.questionId, questionText, answerEnc })
+        .values({ memberId: ctx.memberId, lessonId: lesson.id, courseTitle: state.course.title, lessonTitle: lesson.title, questionId: input.questionId, questionText, answerEnc, kind: input.questionId === NOTE ? "reflexion" : "exercice" })
         .onConflictDoUpdate({ target: [journalEntries.memberId, journalEntries.lessonId, journalEntries.questionId], set: { answerEnc, questionText, courseTitle: state.course.title, lessonTitle: lesson.title, updatedAt: new Date() } })
         .returning({ id: journalEntries.id });
       await remember(ctx.memberId, { origin: memoryOrigin.answer(row.id), source: questionText ? "exercice" : "reflexion", sourceLabel: memoryLabel(section.title, lesson.title), courseId: section.courseId, sectionId: section.id, lessonId: lesson.id, text: answerMemory(questionText, answer) });
@@ -145,18 +146,26 @@ export const coursesRouter = createRouter({
       return { id: row.id };
     }),
 
-  /** Partager une réponse avec Laura, ou reprendre ce partage. */
+  /** « À travailler en coaching avec Laura » : la seule porte par laquelle une réponse devient lisible de l'administration. Retirée, elle redevient privée. */
   shareAnswer: courseProc.input(z.object({ id: z.number().int(), shared: z.boolean() })).mutation(async ({ ctx, input }) => {
-    const [row] = await getDb().update(journalEntries).set({ sharedAt: input.shared ? new Date() : null }).where(and(eq(journalEntries.id, input.id), eq(journalEntries.memberId, ctx.memberId))).returning({ id: journalEntries.id });
-    if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Cette réponse n’existe plus." });
-    if (input.shared) await notifyShared(ctx.member, "une réponse de son journal");
+    const db = getDb();
+    const [entry] = await db.select({ sharedAt: journalEntries.sharedAt, lessonId: journalEntries.lessonId, lessonTitle: journalEntries.lessonTitle, sectionId: courseSections.id, courseId: courseSections.courseId })
+      .from(journalEntries).leftJoin(courseLessons, eq(courseLessons.id, journalEntries.lessonId)).leftJoin(courseSections, eq(courseSections.id, courseLessons.sectionId))
+      .where(and(eq(journalEntries.id, input.id), eq(journalEntries.memberId, ctx.memberId))).limit(1);
+    if (!entry) throw new TRPCError({ code: "NOT_FOUND", message: "Cette réponse n’existe plus." });
+    if (input.shared === !!entry.sharedAt) return { ok: true };
+    await db.update(journalEntries).set({ sharedAt: input.shared ? new Date() : null, coachingDiscussedAt: null }).where(and(eq(journalEntries.id, input.id), eq(journalEntries.memberId, ctx.memberId)));
+    if (input.shared) {
+      await logActivity(ctx.memberId, "coaching_marque", { courseId: entry.courseId, sectionId: entry.sectionId, lessonId: entry.lessonId, label: entry.lessonTitle });
+      await notifyShared(ctx.member, `${fullName(ctx.member)} a marqué une réponse à travailler en coaching`, `/admin/coaching/${ctx.memberId}`);
+    }
     return { ok: true };
   }),
 
   shareTest: courseProc.input(z.object({ id: z.number().int(), shared: z.boolean() })).mutation(async ({ ctx, input }) => {
     const [row] = await getDb().update(testResults).set({ sharedAt: input.shared ? new Date() : null }).where(and(eq(testResults.id, input.id), eq(testResults.memberId, ctx.memberId))).returning({ id: testResults.id });
     if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Ce résultat n’existe plus." });
-    if (input.shared) await notifyShared(ctx.member, "un résultat de test");
+    if (input.shared) await notifyShared(ctx.member, `${fullName(ctx.member)} a partagé un résultat de test avec vous`, `/admin/membres/${ctx.memberId}`);
     return { ok: true };
   }),
 
@@ -228,22 +237,28 @@ export const coursesRouter = createRouter({
     return { finished, sectionDone };
   }),
 
-  /** Tout mon journal : réponses, réflexions, résultats de tests et notes de défis. Visible de moi seul·e. */
+  /**
+   * Mon journal personnel : les réponses aux exercices et aux questions des leçons. Visible de moi seul·e.
+   * `kind` prépare les entrées libres et les questions du jour : elles viendront sans leçon, donc sans section.
+   */
   journal: courseProc.query(async ({ ctx }) => {
     const db = getDb();
-    const [entries, tests, lessonChallenges, sectionChallenges] = await Promise.all([
-      db.select().from(journalEntries).where(eq(journalEntries.memberId, ctx.memberId)).orderBy(desc(journalEntries.updatedAt)),
-      db.select().from(testResults).where(eq(testResults.memberId, ctx.memberId)).orderBy(desc(testResults.passedAt)),
-      db.select({ lessonId: lessonProgress.lessonId, note: lessonProgress.challengeNoteEnc, doneAt: lessonProgress.challengeDoneAt, title: courseLessons.title }).from(lessonProgress).innerJoin(courseLessons, eq(courseLessons.id, lessonProgress.lessonId)).where(eq(lessonProgress.memberId, ctx.memberId)),
-      db.select({ sectionId: sectionProgress.sectionId, note: sectionProgress.challengeNoteEnc, doneAt: sectionProgress.challengeDoneAt, title: courseSections.title }).from(sectionProgress).innerJoin(courseSections, eq(courseSections.id, sectionProgress.sectionId)).where(eq(sectionProgress.memberId, ctx.memberId)),
+    const [rows, [session]] = await Promise.all([
+      db.select({ e: journalEntries, sectionId: courseSections.id, sectionTitle: courseSections.title, sectionPosition: courseSections.position })
+        .from(journalEntries)
+        .leftJoin(courseLessons, eq(courseLessons.id, journalEntries.lessonId))
+        .leftJoin(courseSections, eq(courseSections.id, courseLessons.sectionId))
+        .where(eq(journalEntries.memberId, ctx.memberId))
+        .orderBy(desc(journalEntries.updatedAt)),
+      db.select({ id: coachingSessions.id }).from(coachingSessions).where(and(eq(coachingSessions.memberId, ctx.memberId), eq(coachingSessions.done, false))).limit(1),
     ]);
     return {
-      entries: entries.map((e) => ({ id: e.id, lessonId: e.lessonId, courseTitle: e.courseTitle, lessonTitle: e.lessonTitle, question: e.questionText, isNote: e.questionId === NOTE, answer: open(ctx.memberId, e.answerEnc), sharedAt: e.sharedAt, updatedAt: e.updatedAt })),
-      tests: tests.map((t) => ({ id: t.id, lessonId: t.lessonId, courseTitle: t.courseTitle, lessonTitle: t.lessonTitle, result: parseResult(open(ctx.memberId, t.resultEnc)), sharedAt: t.sharedAt, passedAt: t.passedAt })),
-      challenges: [
-        ...lessonChallenges.filter((c) => c.doneAt).map((c) => ({ key: `lecon-${c.lessonId}`, title: c.title, doneAt: c.doneAt, note: c.note ? open(ctx.memberId, c.note) : "" })),
-        ...sectionChallenges.filter((c) => c.doneAt).map((c) => ({ key: `section-${c.sectionId}`, title: c.title, doneAt: c.doneAt, note: c.note ? open(ctx.memberId, c.note) : "" })),
-      ],
+      entries: rows.map(({ e, sectionId, sectionTitle, sectionPosition }) => ({
+        id: e.id, kind: e.kind, lessonId: e.lessonId, courseTitle: e.courseTitle, sectionId, sectionTitle: sectionTitle ?? "", sectionPosition, lessonTitle: e.lessonTitle, question: e.questionText,
+        answer: open(ctx.memberId, e.answerEnc), sharedAt: e.sharedAt, discussedAt: e.coachingDiscussedAt, createdAt: e.createdAt, updatedAt: e.updatedAt,
+      })),
+      // Sans accompagnement individuel en cours, l'option reste disponible et propose aussi un appel découverte
+      coaching: { active: ctx.member.accessType !== "collectif" || !!session, discoveryUrl: env.calendlyExploUrl },
     };
   }),
 

@@ -1,22 +1,23 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, ExternalLink, Mail, Trash2 } from "lucide-react";
+import { BarChart3, BookOpen, CheckCircle2, Clock, ExternalLink, Eye, Layers, Leaf, Mail, Pencil, SlidersHorizontal, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { useUpload } from "@/lib/upload";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import type { CourseBlock } from "../../../../server/lib/courseBlocks";
-import { Badge, Chips, ConfirmButton, Rows, Select, type Column } from "../shared";
+import { LESSON_TYPE_LABEL, type CourseBlock } from "../../../../server/lib/courseBlocks";
+import { Badge, ConfirmButton, Rows, Select, type Column } from "../shared";
 import { ACCESS_LABEL, fullDate } from "../labels";
-import { BlockEditor, HashtagPicker } from "./BlockEditor";
+import { BlockEditor, DocProvider, DocToolbar, HashtagPicker, sendableBlocks } from "./BlockEditor";
+import { CreatorShell } from "./CreatorShell";
 import { useFreshNotion } from "./useFreshNotion";
 import { Outline } from "./Outline";
-import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, notionUrl, statusTone } from "./labels";
+import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, notionUrl } from "./labels";
 
 type Course = RouterOutputs["build"]["course"];
 type Tab = "sections" | "reglages" | "participants" | "stats";
 
-/** Une formation dans Construire : ses sections et leçons, ses réglages, ses participants et ses chiffres. */
+/** Une formation dans Construire : son parcours, ses informations, ses participants et ses chiffres. */
 export default function BuildCourse() {
   const id = Number(useParams().id);
   const q = trpc.build.course.useQuery({ id }, { retry: false });
@@ -24,36 +25,79 @@ export default function BuildCourse() {
   const [tab, setTab] = useState<Tab>("sections");
   useFreshNotion(status.data);
   const [revision, setRevision] = useState(0);
-  const back = <Link to="/admin/construire" className="p-btn-outline p-btn-sm no-underline self-start"><ArrowLeft size={15} /> Toutes les formations</Link>;
-  if (q.isLoading) return <p className="p-muted text-center py-10 m-0">Chargement…</p>;
-  if (!q.data) return <div className="flex flex-col gap-4">{back}<p className="p-muted m-0">{q.error?.message ?? "Formation introuvable"}</p></div>;
+  const crumbs = [{ label: "Mes formations", to: "/admin/construire" }];
+  if (!q.data) return <CreatorShell crumbs={crumbs}><p className="p-muted text-center py-16 m-0">{q.isLoading ? "Chargement…" : (q.error?.message ?? "Formation introuvable")}</p></CreatorShell>;
   const c = q.data;
+  const lessons = c.sections.flatMap((s) => s.lessons);
+  const total = lessons.reduce((n, l) => n + (l.durationMin ?? 0), 0);
+  const tabs: { id: Tab; label: string; icon: ReactNode; n?: number }[] = [
+    { id: "sections", label: "Contenu de la formation", icon: <Layers size={16} /> },
+    { id: "reglages", label: "Informations", icon: <SlidersHorizontal size={16} /> },
+    { id: "participants", label: "Participants", icon: <Users size={16} />, n: c.participants.length },
+    { id: "stats", label: "Statistiques", icon: <BarChart3 size={16} /> },
+  ];
   return (
-    <div className="flex flex-col gap-5">
-      {back}
-      <header className="flex flex-wrap items-start gap-3">
-        <div className="flex-[1_1_300px] min-w-0 flex flex-col gap-1.5">
-          <h2 className="m-0 text-[32px] leading-tight break-words">{c.emoji ? `${c.emoji} ` : ""}{c.title}</h2>
-          <span className="flex flex-wrap items-center gap-1.5"><Badge tone={statusTone(c.status)}>{COURSE_STATUS_LABEL[c.status]}</Badge><Badge>{PUBLIC_LABEL[c.public]}</Badge><Badge>{RHYTHM_LABEL[c.rhythm]}</Badge></span>
+    <CreatorShell crumbs={[...crumbs, { label: c.title }]} actions={<>{lessons[0] && <Link to={`/admin/construire/${c.id}/apercu/${lessons[0].id}`} className="cr-btn"><Eye size={16} /> Aperçu</Link>}<CourseActions c={c} /></>}>
+      <main className="w-full max-w-[1350px] mx-auto px-4 lg:px-10 pt-8 pb-14">
+        <div className="mb-7 flex flex-wrap items-start justify-between gap-3">
+          <div><p className="m-0 mb-2 text-[12px] font-medium" style={{ color: "var(--p-accent)" }}>VOTRE ESPACE DE TRANSMISSION</p><h1 className="m-0 text-[30px] leading-9">Un savoir à partager.</h1><p className="m-0 mt-2 text-[14px] p-muted">Donnez vie à votre formation, à votre rythme.</p></div>
+          <StatusPill status={c.status} />
         </div>
-        <span className="flex flex-wrap items-center gap-2"><CourseActions c={c} /><a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a></span>
-      </header>
-      {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses leçons le sont.</p>}
-      <Chips value={tab} onChange={setTab} label="Rubriques de la formation" options={[["sections", "Sections", c.sections.length], ["reglages", "Réglages"], ["participants", "Participants", c.participants.length], ["stats", "Statistiques"]]} />
-      {tab === "sections" && <Outline c={c} />}
-      {tab === "reglages" && <Settings key={`${revision}-${c.status}`} c={c} onSaved={() => setRevision((r) => r + 1)} />}
-      {tab === "participants" && <Participants c={c} />}
-      {tab === "stats" && <Stats c={c} />}
-    </div>
+        <div className="relative h-[190px] overflow-hidden rounded-2xl flex items-center justify-center" style={{ background: "#F3ECE8" }}>
+          {c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <span aria-hidden="true" className="text-[64px]">{c.emoji || "🌱"}</span>}
+          {c.tagline && <span className="absolute bottom-4 left-4 right-4 sm:right-auto sm:left-5 flex items-center gap-2 rounded-[14px] px-3 py-1.5 text-[12px] font-medium" style={{ background: "rgba(253, 251, 249, .95)" }}><Leaf size={14} className="flex-none" style={{ color: "var(--p-accent)" }} /><span className="truncate">{PUBLIC_LABEL[c.public]} · {RHYTHM_LABEL[c.rhythm]}</span></span>}
+        </div>
+        <div className="mt-6 flex items-start justify-between gap-4">
+          <div className="min-w-0"><h2 className="m-0 text-[24px] leading-8 break-words">{c.emoji && c.coverUrl ? `${c.emoji} ` : ""}{c.title}</h2>{c.tagline && <p className="m-0 mt-2 max-w-[672px] text-[14px] leading-relaxed p-muted">{c.tagline}</p>}</div>
+          <button type="button" aria-label="Modifier les informations de la formation" className="cr-icon w-9 h-9" onClick={() => setTab("reglages")}><Pencil size={16} /></button>
+        </div>
+        {c.status !== "publie" && <p className="m-0 mt-4 p-3 rounded-xl text-[13px]" style={{ background: "#F3ECE8" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses leçons le sont.</p>}
+        <div role="tablist" aria-label="Rubriques de la formation" className="mt-7 flex gap-7 border-b overflow-x-auto" style={{ borderColor: "var(--p-line)", scrollbarWidth: "none" }}>
+          {tabs.map((t) => <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className="cr-tab" onClick={() => setTab(t.id)}>{t.icon} {t.label}{t.n ? ` · ${t.n}` : ""}</button>)}
+        </div>
+        <div className="mt-7">
+          {tab === "sections" && (
+            <div className="flex flex-wrap gap-7 items-start">
+              <div className="flex-[999_1_520px] min-w-0"><Outline c={c} /></div>
+              <aside aria-label="La formation en un regard" className="flex-[1_1_200px] lg:max-w-[235px] lg:border-l lg:pl-6 pt-1" style={{ borderColor: "var(--p-line)" }}>
+                <h3 className="m-0 text-[14px]">La formation en un regard</h3>
+                <div className="mt-5 pb-5 border-b flex flex-col gap-4 text-[12px]" style={{ borderColor: "var(--p-line)" }}>
+                  <span className="flex items-center gap-2.5"><Layers size={16} className="p-muted" /><span className="p-muted">Sections</span><span className="ml-auto font-semibold">{c.sections.length}</span></span>
+                  <span className="flex items-center gap-2.5"><BookOpen size={16} className="p-muted" /><span className="p-muted">Leçons</span><span className="ml-auto font-semibold">{lessons.length}</span></span>
+                  <span className="flex items-center gap-2.5"><CheckCircle2 size={16} className="p-muted" /><span className="p-muted">Publiées</span><span className="ml-auto font-semibold">{lessons.filter((l) => l.status === "publie").length}</span></span>
+                  <span className="flex items-center gap-2.5"><Clock size={16} className="p-muted" /><span className="p-muted">Durée totale</span><span className="ml-auto font-semibold">{total} min</span></span>
+                </div>
+                <p className="m-0 mt-5 text-[10px] font-medium tracking-[0.12em] p-muted">FORMATS DE LEÇONS</p>
+                <div className="mt-3 flex flex-wrap gap-2">{[...new Set(lessons.map((l) => l.type))].map((t) => <span key={t} className="rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: "var(--p-line)", background: "#FDFBF9" }}>{LESSON_TYPE_LABEL[t]}</span>)}</div>
+                <a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="mt-5 flex items-center gap-1.5 text-[12px] no-underline p-muted"><ExternalLink size={14} /> Ouvrir dans Notion</a>
+                <div className="mt-7 border-t pt-5" style={{ borderColor: "var(--p-line)" }}>
+                  <Leaf size={24} className="mb-3" style={{ color: "var(--p-accent)" }} />
+                  <p className="m-0 text-[20px] leading-snug" style={{ fontFamily: "Newsreader, Georgia, serif" }}>Les belles idées méritent d’être transmises.</p>
+                  <p className="m-0 mt-3 text-[12px] leading-relaxed p-muted">Un pas après l’autre, votre expérience devient un chemin pour les autres.</p>
+                </div>
+              </aside>
+            </div>
+          )}
+          {tab === "reglages" && <Settings key={`${revision}-${c.status}`} c={c} onSaved={() => setRevision((r) => r + 1)} />}
+          {tab === "participants" && <Participants c={c} />}
+          {tab === "stats" && <Stats c={c} />}
+        </div>
+      </main>
+    </CreatorShell>
   );
+}
+
+function StatusPill({ status }: { status: Course["status"] }) {
+  const on = status === "publie";
+  return <span className="mt-2 flex items-center gap-1.5 rounded-full border bg-white px-3 py-1 text-[12px] whitespace-nowrap" style={{ borderColor: "var(--p-line)", color: on ? "#2b7a4b" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{COURSE_STATUS_LABEL[status]}</span>;
 }
 
 /** Publier ou dépublier en un clic : le statut change d'abord dans Notion. */
 function CourseActions({ c }: { c: Course }) {
   const utils = trpc.useUtils();
   const set = trpc.build.setCourseStatus.useMutation({ onSuccess: (_r, v) => { utils.build.invalidate(); toast.success(v.status === "publie" ? "Formation publiée dans Notion et ici" : "Formation dépubliée dans Notion et ici"); }, onError: (e) => toast.error(e.message) });
-  if (c.status === "publie") return <ConfirmButton label="Dépublier" question="Les membres ne verront plus cette formation. Leurs réponses restent dans leur journal." confirm="Dépublier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "brouillon" })} />;
-  return <ConfirmButton label="Publier la formation" className="p-btn-primary p-btn-sm" question="Les membres verront cette formation, avec ses leçons publiées." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
+  if (c.status === "publie") return <ConfirmButton label="Dépublier" className="cr-btn" question="Les membres ne verront plus cette formation. Leurs réponses restent dans leur journal." confirm="Dépublier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "brouillon" })} />;
+  return <ConfirmButton label="Publier la formation" className="cr-btn cr-btn-primary" question="Les membres verront cette formation, avec ses leçons publiées." confirm="Publier" disabled={set.isPending} onConfirm={() => set.mutate({ id: c.id, status: "publie" })} />;
 }
 
 function Settings({ c, onSaved }: { c: Course; onSaved: () => void }) {
@@ -81,8 +125,8 @@ function Settings({ c, onSaved }: { c: Course; onSaved: () => void }) {
           {f.coverUrl && <button type="button" className="p-btn-ghost" onClick={() => setF({ ...f, coverUrl: "" })}>Retirer</button>}
         </div>
         <div className="flex flex-col gap-1.5"><span className="text-[13px] p-muted">Hashtags</span><HashtagPicker all={tags.data ?? []} value={f.hashtagIds} onChange={(hashtagIds) => setF({ ...f, hashtagIds })} /></div>
-        <div className="flex flex-col gap-1.5"><span className="text-[13px] p-muted">Présentation de la formation</span><BlockEditor label="Présentation" blocks={f.description} onChange={(description) => setF({ ...f, description })} /></div>
-        <button type="button" className="p-btn-primary p-btn-sm self-start" disabled={!f.title.trim() || save.isPending} onClick={() => save.mutate({ id: c.id, ...f, description: f.description as never })}>{save.isPending ? "Écriture dans Notion…" : "Enregistrer"}</button>
+        <div className="flex flex-col gap-1.5"><span className="text-[13px] p-muted">Présentation de la formation</span><DocProvider className="cr-doc flex flex-col rounded-xl border p-3 lg:pl-[70px]"><DocToolbar /><BlockEditor label="Présentation" blocks={f.description} onChange={(description) => setF((x) => ({ ...x, description }))} /></DocProvider></div>
+        <button type="button" className="p-btn-primary p-btn-sm self-start" disabled={!f.title.trim() || save.isPending} onClick={() => save.mutate({ id: c.id, ...f, description: sendableBlocks(f.description) as never })}>{save.isPending ? "Écriture dans Notion…" : "Enregistrer"}</button>
       </section>
       {c.public === "attribution" && <Assignments c={c} />}
       <DeleteCourse c={c} />

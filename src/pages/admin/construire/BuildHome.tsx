@@ -1,53 +1,94 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Plus, RefreshCw } from "lucide-react";
+import { ArrowRight, Eye, Leaf, Plus, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useUpload } from "@/lib/upload";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { Badge, Select } from "../shared";
+import { Select } from "../shared";
 import { dateTime } from "../labels";
 import { HashtagPicker } from "./BlockEditor";
+import { CreatorShell } from "./CreatorShell";
 import { useFreshNotion } from "./useFreshNotion";
-import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL, statusTone } from "./labels";
+import { COURSE_STATUS_LABEL, PUBLIC_LABEL, RHYTHM_LABEL } from "./labels";
 
 type Flow = RouterOutputs["build"]["workflows"][number];
 
-/** Construire : les formations, la liaison avec Notion et les relances. */
+type Filter = "tous" | "publies" | "brouillons";
+
+/** Mes formations : tout ce que vous transmettez, au même endroit. */
 export default function BuildHome() {
   const list = trpc.build.courses.useQuery();
   const status = trpc.build.status.useQuery();
   const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState<Filter>("tous");
+  const [search, setSearch] = useState("");
   useFreshNotion(status.data);
+  const all = list.data ?? [];
+  const isOn = (c: { status: string }) => c.status === "publie";
+  const tabs: [Filter, string, number][] = [["tous", "Toutes", all.length], ["publies", "Publiées", all.filter(isOn).length], ["brouillons", "Brouillons", all.filter((c) => !isOn(c)).length]];
+  const folded = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const shown = all.filter((c) => (filter === "tous" || (filter === "publies") === isOn(c)) && folded(`${c.title} ${c.tagline}`).includes(folded(search.trim())));
+  const canCreate = !!status.data?.notionReady;
   return (
-    <div className="flex flex-col gap-6">
-      <NotionBar />
-      <section className="flex flex-col gap-3" aria-label="Formations">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="m-0 text-[28px]">Formations</h2>
-          <button type="button" className="p-btn-primary p-btn-sm" disabled={!status.data?.notionReady} onClick={() => setCreating(true)}><Plus size={15} /> Créer une formation</button>
+    <CreatorShell crumbs={[{ label: "Mes formations" }]} actions={<button type="button" className="cr-btn cr-btn-primary" disabled={!canCreate} onClick={() => setCreating(true)}><Plus size={16} /> Nouvelle formation</button>}>
+      <main className="w-full max-w-[1350px] mx-auto px-4 lg:px-10 pt-8 pb-14">
+        <div className="mb-7"><p className="m-0 mb-2 text-[12px] font-medium" style={{ color: "var(--p-accent)" }}>VOTRE ESPACE DE TRANSMISSION</p><h1 className="m-0 text-[30px] leading-9">Vos formations.</h1><p className="m-0 mt-2 text-[14px] p-muted">Tous vos savoirs au même endroit, prêts à être transmis.</p></div>
+        <NotionBar />
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-b" style={{ borderColor: "var(--p-line)" }}>
+          <div role="tablist" aria-label="Filtrer les formations" className="flex-[1_1_320px] flex gap-7">
+            {tabs.map(([id, label, n]) => <button key={id} type="button" role="tab" aria-selected={filter === id} className="cr-tab" onClick={() => setFilter(id)}>{label} · {n}</button>)}
+          </div>
+          <label className="mb-2.5 flex-[0_1_260px] flex items-center gap-2 rounded-md border px-3 py-2 bg-white p-muted" style={{ borderColor: "var(--p-line)" }}>
+            <Search size={14} className="flex-none" />
+            <input type="search" aria-label="Rechercher une formation" placeholder="Rechercher une formation" className="w-full border-0 outline-none bg-transparent text-[13px]" style={{ color: "var(--p-ink)" }} value={search} onChange={(e) => setSearch(e.target.value)} />
+          </label>
         </div>
-        {list.data?.length === 0 && <div className="p-soft p-8 text-center p-muted">Aucune formation pour l’instant. {status.data?.notionReady ? "Synchronisez pour reprendre celles de Notion." : "Elles apparaîtront quand la clé Notion sera configurée."}</div>}
-        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(300px, 100%), 1fr))" }}>
-          {list.data?.map((c) => (
-            <Link key={c.id} to={`/admin/construire/${c.id}`} className="p-card overflow-hidden flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
-              <div className="aspect-[16/7] flex items-center justify-center" style={{ background: "var(--p-band)" }}>{c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <span className="text-[42px]" aria-hidden="true">{c.emoji || "🌱"}</span>}</div>
-              <div className="p-4 flex flex-col gap-2 flex-1">
-                <span className="flex flex-wrap items-center gap-1.5"><Badge tone={statusTone(c.status)}>{COURSE_STATUS_LABEL[c.status]}</Badge><Badge>{PUBLIC_LABEL[c.public]}</Badge></span>
-                <span className="serif text-[23px] leading-tight">{c.title}</span>
-                <span className="mt-auto text-[13.5px] p-muted">{c.sectionCount} section{c.sectionCount > 1 ? "s" : ""} · {c.publishedCount} leçon{c.publishedCount > 1 ? "s" : ""} publiée{c.publishedCount > 1 ? "s" : ""} sur {c.lessonCount} · {c.participants} participant{c.participants > 1 ? "s" : ""}{c.issueCount ? ` · ${c.issueCount} point${c.issueCount > 1 ? "s" : ""} à regarder` : ""}</span>
+        <section aria-label="Formations" className="mt-7 grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))" }}>
+          {shown.map((c) => (
+            <article key={c.id} className="overflow-hidden rounded-2xl border bg-white flex flex-col" style={{ borderColor: "var(--p-line)" }}>
+              <Link to={`/admin/construire/${c.id}`} aria-label={`Ouvrir ${c.title}`} className="relative block h-[150px] no-underline" style={{ background: "#F3ECE8" }}>
+                {c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <span aria-hidden="true" className="w-full h-full flex items-center justify-center text-[52px]">{c.emoji || "🌱"}</span>}
+                <span className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px]" style={{ color: isOn(c) ? "#2b7a4b" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{COURSE_STATUS_LABEL[c.status]}</span>
+              </Link>
+              <div className="px-5 pt-[18px] pb-4 flex flex-col gap-2 flex-1">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium p-muted"><Leaf size={12} style={{ color: "var(--p-accent)" }} />{PUBLIC_LABEL[c.public]} · {RHYTHM_LABEL[c.rhythm]}</span>
+                <h2 className="m-0 text-[17px] leading-[1.35]">{c.title}</h2>
+                {c.tagline && <p className="m-0 text-[13px] leading-relaxed p-muted">{c.tagline}</p>}
+                <p className="m-0 mt-1 text-[11px] p-muted">{c.sectionCount} section{c.sectionCount > 1 ? "s" : ""} · {c.lessonCount} leçon{c.lessonCount > 1 ? "s" : ""}{c.totalMin ? ` · ${c.totalMin} min` : ""} · {c.publishedCount} publiée{c.publishedCount > 1 ? "s" : ""} · {c.participants} participant{c.participants > 1 ? "s" : ""}{c.issueCount ? ` · ${c.issueCount} point${c.issueCount > 1 ? "s" : ""} à regarder` : ""}</p>
+                <div className="mt-auto pt-3 flex items-center gap-1 border-t" style={{ borderColor: "#F3ECE8" }}>
+                  <Link to={`/admin/construire/${c.id}`} className="flex-1 flex items-center gap-1.5 text-[13px] font-medium no-underline" style={{ color: "var(--p-accent)" }}>Ouvrir l’éditeur <ArrowRight size={14} /></Link>
+                  {c.firstLessonId && <Link to={`/admin/construire/${c.id}/apercu/${c.firstLessonId}`} aria-label={`Aperçu de ${c.title}`} title="Aperçu comme un membre" className="cr-icon w-8 h-8"><Eye size={16} /></Link>}
+                </div>
               </div>
-            </Link>
+            </article>
           ))}
-        </div>
-      </section>
-      <Workflows />
+          {shown.length === 0 && all.length > 0 && <div className="rounded-2xl border bg-white px-6 py-8 flex flex-col gap-1.5 justify-center" style={{ borderColor: "var(--p-line)" }}><p className="m-0 text-[15px] font-semibold">{search ? "Aucune formation ne correspond" : filter === "publies" ? "Aucune formation publiée pour l’instant" : "Aucun brouillon pour l’instant"}</p><p className="m-0 text-[13px] leading-relaxed p-muted">{filter === "publies" ? "Publiez une formation depuis son éditeur pour la rendre visible à vos membres." : "Tout est publié, ou votre recherche est trop précise."}</p></div>}
+          <button type="button" disabled={!canCreate} className="min-h-[340px] rounded-2xl border border-dashed flex flex-col items-center justify-center gap-2.5 p-6 disabled:opacity-60" style={{ borderColor: "var(--p-line-2)" }} onClick={() => setCreating(true)}>
+            <span className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "#F3ECE8", color: "var(--p-accent)" }}><Plus size={20} /></span>
+            <span className="text-[14px] font-semibold">Créer une nouvelle formation</span>
+            <span className="text-[12px] leading-relaxed p-muted max-w-[220px] text-center">{canCreate ? "Commencez par un titre, vous construirez le parcours ensuite." : "Possible quand la clé Notion sera configurée."}</span>
+          </button>
+        </section>
+      </main>
       <CreateCourse open={creating} onClose={() => setCreating(false)} />
-    </div>
+    </CreatorShell>
   );
 }
 
-function NotionBar() {
+/** Les relances : une page à part, le plan des formations reste au calme. */
+export function BuildWorkflows() {
+  return (
+    <CreatorShell crumbs={[{ label: "Relances" }]}>
+      <main className="w-full max-w-[1350px] mx-auto px-4 lg:px-10 pt-8 pb-14 flex flex-col gap-6">
+        <div><p className="m-0 mb-2 text-[12px] font-medium" style={{ color: "var(--p-accent)" }}>VOTRE ESPACE DE TRANSMISSION</p><h1 className="m-0 text-[30px] leading-9">Vos relances.</h1><p className="m-0 mt-2 text-[14px] p-muted">Ce que vos membres reçoivent quand une section s’ouvre, ou quand ils s’éloignent.</p></div>
+        <Workflows />
+      </main>
+    </CreatorShell>
+  );
+}
+
+export function NotionBar() {
   const utils = trpc.useUtils();
   const status = trpc.build.status.useQuery();
   const sync = trpc.build.syncNow.useMutation({
@@ -58,24 +99,22 @@ function NotionBar() {
   if (!s) return null;
   const last = s.lastSync;
   return (
-    <section className="p-card p-4 sm:p-5 flex flex-col gap-3" aria-label="Liaison avec Notion">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex-[1_1_280px] min-w-0 flex flex-col gap-1">
-          <span className="font-semibold">Notion fait foi pour les contenus</span>
-          {!s.notionReady
-            ? <span className="text-[14px]" style={{ color: "var(--p-accent-text)" }}>La clé Notion (NOTION_TOKEN) n’est pas encore configurée : rien ne peut être lu ni enregistré pour l’instant.</span>
-            : <span className="text-[14px] p-muted">{last ? `Dernière synchronisation : ${dateTime(last.startedAt)}${last.status === "erreur" ? " · échec" : ""}` : "Pas encore synchronisé."}</span>}
-          {last?.status === "erreur" && <span className="text-[13.5px]" style={{ color: "var(--p-accent-text)" }}>{last.detail}</span>}
-          {last?.status === "ok" && last.detail && <span className="text-[13.5px] p-muted">{last.detail}</span>}
-        </div>
-        <span className="flex flex-wrap gap-2">
-          <button type="button" className="p-btn-primary p-btn-sm" disabled={!s.notionReady || sync.isPending} onClick={() => sync.mutate({ full: false })}><RefreshCw size={14} className={sync.isPending ? "animate-spin" : ""} /> {sync.isPending ? "Synchronisation…" : "Synchroniser maintenant"}</button>
-          <button type="button" className="p-btn-outline p-btn-sm" disabled={!s.notionReady || sync.isPending} onClick={() => sync.mutate({ full: true })}>Tout relire</button>
+    <section className="flex flex-col gap-2 rounded-xl border bg-white px-4 py-2.5" aria-label="Liaison avec Notion" style={{ borderColor: "var(--p-line)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <span className="flex-[1_1_260px] min-w-0 text-[12.5px] p-muted">
+          <span className="font-medium" style={{ color: "var(--p-ink)" }}>Notion fait foi pour les contenus.</span>{" "}
+          {!s.notionReady ? <span style={{ color: "var(--p-accent)" }}>La clé Notion (NOTION_TOKEN) n’est pas encore configurée : rien ne peut être lu ni enregistré pour l’instant.</span> : last ? `Dernière synchronisation : ${dateTime(last.startedAt)}${last.status === "erreur" ? " · échec" : ""}.` : "Pas encore synchronisé."}
+        </span>
+        <span className="flex flex-wrap items-center gap-1">
+          <button type="button" className="cr-btn h-8 px-3 text-[13px]" disabled={!s.notionReady || sync.isPending} onClick={() => sync.mutate({ full: false })}><RefreshCw size={13} className={sync.isPending ? "animate-spin" : ""} /> {sync.isPending ? "Synchronisation…" : "Synchroniser"}</button>
+          <button type="button" className="h-8 px-2 text-[12.5px] p-muted hover:underline disabled:opacity-50" disabled={!s.notionReady || sync.isPending} onClick={() => sync.mutate({ full: true })}>Tout relire</button>
         </span>
       </div>
-      {!s.privateBoxReady && <p className="m-0 text-[13.5px]" style={{ color: "var(--p-accent-text)" }}>La clé de chiffrement (PRIVATE_DATA_KEY) manque : les membres ne peuvent pas encore écrire dans leur journal.</p>}
-      {!s.aiReady && <p className="m-0 text-[13.5px] p-muted">Sans clé Gemini, le coach répond par un message de secours.</p>}
-      {!s.emailReady && <p className="m-0 text-[13.5px] p-muted">L’envoi d’e-mails n’est pas encore configuré (RESEND_API_KEY) : les relances restent des notifications dans l’application.</p>}
+      {last?.status === "erreur" && <span className="text-[12.5px]" style={{ color: "var(--p-accent)" }}>{last.detail}</span>}
+      {last?.status === "ok" && last.detail && <span className="text-[12.5px] p-muted">{last.detail}</span>}
+      {!s.privateBoxReady && <p className="m-0 text-[12.5px]" style={{ color: "var(--p-accent)" }}>La clé de chiffrement (PRIVATE_DATA_KEY) manque : les membres ne peuvent pas encore écrire dans leur journal.</p>}
+      {!s.aiReady && <p className="m-0 text-[12.5px] p-muted">Sans clé Gemini, le coach répond par un message de secours.</p>}
+      {!s.emailReady && <p className="m-0 text-[12.5px] p-muted">L’envoi d’e-mails n’est pas encore configuré (RESEND_API_KEY) : les relances restent des notifications dans l’application.</p>}
     </section>
   );
 }
@@ -126,7 +165,7 @@ function Workflows() {
   return (
     <section className="flex flex-col gap-3" aria-label="Relances automatiques">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col min-w-0 flex-[1_1_300px]"><h2 className="m-0 text-[28px]">Relances automatiques</h2><span className="text-[14px] p-muted">Une notification dans l’application, et un e-mail si vous l’activez. Pour relancer vous-même, passez par les participants d’une formation. Variables : {"{{prenom}}"}, {"{{section}}"}, {"{{lecon}}"}, {"{{formation}}"}.</span></div>
+        <div className="flex flex-col min-w-0 flex-[1_1_300px]"><h2 className="m-0 text-[20px]">Relances automatiques</h2><span className="text-[14px] p-muted">Une notification dans l’application, et un e-mail si vous l’activez. Pour relancer vous-même, passez par les participants d’une formation. Variables : {"{{prenom}}"}, {"{{section}}"}, {"{{lecon}}"}, {"{{formation}}"}.</span></div>
         <button type="button" className="p-btn-outline p-btn-sm" disabled={run.isPending} onClick={() => run.mutate()}>Lancer maintenant</button>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">{flows.data?.map((w) => <FlowCard key={`${w.key}${+new Date(w.updatedAt)}`} w={w} emailReady={!!status.data?.emailReady} />)}</div>

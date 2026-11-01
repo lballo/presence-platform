@@ -9,6 +9,7 @@ export const ACTIVITY_LABEL: Record<string, string> = {
   lecon_terminee: "Leçon terminée",
   section_terminee: "Section terminée",
   test_passe: "Test passé",
+  coaching_marque: "Réponse marquée pour le coaching",
   defi_releve: "Défi relevé",
   formation_terminee: "Formation terminée",
   formation_en_pause: "Formation en pause depuis 14 jours",

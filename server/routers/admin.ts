@@ -5,7 +5,7 @@ import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
   adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, emailPreferences, emailSends, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
-  honeyLedger, invitations, journalEntries, lessonProgress, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, reports, sectionProgress, swipes, talks, testResults, workflowRuns, type Member,
+  honeyLedger, invitations, journalEntries, lessonProgress, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, profileThemeShares, reports, sectionProgress, swipes, talks, testResults, workflowRuns, type Member,
 } from "../../db/schema";
 import { logAdmin } from "../lib/adminLog";
 import { accountBlock } from "../lib/permissions";
@@ -89,6 +89,7 @@ async function anonymize(m: Member) {
     // Formations : le journal, les tests, la mémoire du coach et la progression disparaissent avec le membre
     db.delete(journalEntries).where(eq(journalEntries.memberId, m.id)),
     db.delete(testResults).where(eq(testResults.memberId, m.id)),
+    db.delete(profileThemeShares).where(eq(profileThemeShares.memberId, m.id)),
     db.delete(coachMemory).where(eq(coachMemory.memberId, m.id)),
     db.delete(coachSettings).where(eq(coachSettings.memberId, m.id)),
     db.delete(moduleProgress).where(eq(moduleProgress.memberId, m.id)),
@@ -150,14 +151,15 @@ export const adminRouter = createRouter({
   overview: adminProc.query(async () => {
     const db = getDb();
     const now = new Date();
-    const [[active], [recent], [open], [ending], pending] = await Promise.all([
+    const [[active], [recent], [open], [ending], [coaching], pending] = await Promise.all([
       db.select({ n: count() }).from(members).where(hasAccess(now)),
       db.select({ n: count() }).from(members).where(and(hasAccess(now), gte(members.passwordChosenAt, new Date(now.getTime() - 30 * DAY)))),
       db.select({ n: count() }).from(reports).where(eq(reports.status, "ouvert")),
       db.select({ n: count() }).from(members).where(and(eq(members.status, "actif"), isNull(members.deletedAt), gt(members.accessEndsAt, now), lte(members.accessEndsAt, new Date(now.getTime() + 15 * DAY)))),
+      db.select({ n: count() }).from(journalEntries).where(and(isNotNull(journalEntries.sharedAt), isNull(journalEntries.coachingDiscussedAt))),
       pendingCounts(),
     ]);
-    return { activeMembers: active.n, newMembers: recent.n, openReports: open.n, endingAccess: ending.n, pending };
+    return { activeMembers: active.n, newMembers: recent.n, openReports: open.n, endingAccess: ending.n, coachingToDiscuss: coaching.n, pending };
   }),
 
   /* ───────────── Membres ───────────── */

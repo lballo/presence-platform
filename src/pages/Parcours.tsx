@@ -1,7 +1,6 @@
 import { Link } from "react-router";
-import { ArrowRight, BookOpen, Check, Compass, Lock } from "lucide-react";
+import { ArrowRight, Check, Compass, Lock } from "lucide-react";
 import { PageHeader } from "@/components/Layout";
-import { CoachMascot } from "@/components/CoachMascot";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { parisLongDate } from "@/lib/format";
 
@@ -13,10 +12,6 @@ export default function Parcours() {
   return (
     <>
       <PageHeader eyebrow="Mon parcours" title="Mes formations" intro="Une section s’ouvre chaque semaine. Avancez à votre rythme : tout ce que vous écrivez reste dans votre journal privé." />
-      <div className="flex flex-wrap gap-2 mb-6">
-        <Link to="/parcours/journal" className="p-chip no-underline"><BookOpen size={15} /> Mon journal</Link>
-        <Link to="/parcours/coach" className="p-chip no-underline"><span className="flex-none"><CoachMascot size={18} /></span> Ce que le coach retient de moi</Link>
-      </div>
       {list.isLoading && <p className="p-muted text-center py-10 m-0">Chargement…</p>}
       {list.data?.length === 0 && <div className="p-soft p-10 text-center p-muted flex flex-col items-center gap-3"><Compass size={28} /><span>Votre première formation arrive bientôt.</span></div>}
       <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))" }}>

@@ -148,13 +148,14 @@ export function EventBody({ e, connected, retour, preview }: { e: Ev; connected:
   return (
     <main className={`flex-1 ${preview ? "pb-8" : "pb-28 lg:pb-16"}`}>
       {e.photoUrl
-        ? <img src={e.photoUrl} alt="" className="w-full aspect-[16/10] sm:aspect-[21/9] max-h-[520px] object-cover" />
+        ? <img src={e.photoUrl} alt="" className="w-full aspect-[16/10] sm:aspect-[21/9] max-h-[520px] object-cover" style={{ objectPosition: e.photoPosition }} />
         : <div className="w-full h-[150px] sm:h-[220px]" style={{ background: eventCover(e) }} />}
       <div className="max-w-[1040px] mx-auto px-4 sm:px-8 pt-6 sm:pt-9 flex flex-wrap gap-x-10 gap-y-7 items-start">
         <div className="flex-[2_1_480px] min-w-0 flex flex-col gap-7">
           <header className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="p-pill">{e.type === "bienvenue" ? "Réunion de bienvenue" : e.hive ? `Ruche ${e.hive.name}` : "Événement du réseau"}</span>
+              {e.series && <span className="p-chip h-7 text-[12.5px] cursor-default p-muted">{e.series.label}</span>}
               {e.visibility === "public" && !e.hive && <span className="p-chip h-7 text-[12.5px] cursor-default p-muted">Public</span>}
               {e.status === "pending" && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted">En attente de validation</span>}
               {e.status === "rejected" && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted">Non retenu</span>}
@@ -170,6 +171,17 @@ export function EventBody({ e, connected, retour, preview }: { e: Ev; connected:
           {steps.length > 0 && <Section title="Programme"><ol className="m-0 p-0 list-none flex flex-col gap-2">{steps.map((s, i) => <li key={i} className="flex gap-3 text-[15.5px] leading-relaxed"><span className="w-1.5 h-1.5 rounded-full mt-[11px] flex-none" style={{ background: "var(--p-accent)" }} />{s}</li>)}</ol></Section>}
           <Section title={speakers.length > 1 ? "Intervenants" : e.speakers.length ? "Intervenant" : "Organisé par"}><div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(260px, 100%), 1fr))" }}>{speakers.map((p) => <PersonCard key={p.id} p={p} connected={connected && !preview} />)}</div></Section>
           {e.takeaways.length > 0 && <Section title="Ce que vous repartez avec"><ul className="m-0 p-0 list-none flex flex-col gap-2">{e.takeaways.map((t) => <li key={t} className="flex gap-2.5 text-[15.5px] leading-relaxed"><CheckCircle2 size={18} className="flex-none mt-0.5" style={{ color: "var(--p-accent-text)" }} />{t}</li>)}</ul></Section>}
+          {!!e.series?.dates.length && (
+            <Section title="Autres dates">
+              <p className="m-0 text-[14.5px] p-muted">Cette date ne vous convient pas ? Choisissez-en une autre.</p>
+              <ul className="m-0 p-0 list-none flex flex-wrap gap-2">
+                {e.series.dates.map((d) => {
+                  const label = `${parisLongDate(new Date(d.startsAt))} · ${parisHour(new Date(d.startsAt))}`;
+                  return <li key={d.slug}>{preview ? <span className="p-chip h-10 cursor-default">{label}</span> : <Link to={`/e/${d.slug}`} className="p-chip h-10 no-underline" style={{ color: "var(--p-ink)" }}>{label}</Link>}</li>;
+                })}
+              </ul>
+            </Section>
+          )}
           {e.faq.length > 0 && <Section title="Questions fréquentes"><div className="flex flex-col gap-2">{e.faq.map((x) => <details key={x.q} className="p-soft px-4 py-3"><summary className="cursor-pointer text-[15.5px] font-medium">{x.q}</summary><p className="m-0 mt-2 text-[15px] leading-relaxed p-muted whitespace-pre-line">{x.a}</p></details>)}</div></Section>}
           {e.canManage && <Link to={`/e/${e.slug}/gerer`} className="p-btn-outline p-btn-sm no-underline self-start lg:hidden"><Settings size={15} /> Gérer</Link>}
           {!connected && <div className="lg:hidden"><DiscoverBlock /></div>}

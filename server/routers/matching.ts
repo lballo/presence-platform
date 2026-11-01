@@ -8,6 +8,7 @@ import { publicMember } from "../lib/format";
 import { isListed } from "../lib/listed";
 import { complement, intentKey, intentLabel, myIntentLabel } from "../lib/intents";
 import { labelOf, PROFILE_TYPES, SECTORS } from "../lib/onboardingOptions";
+import { publicResults } from "../lib/testCatalog";
 
 async function me(id: number) {
   const m = await getDb().query.members.findFirst({ where: eq(members.id, id) });
@@ -44,10 +45,15 @@ export const matchingRouter = createRouter({
       const code = complement(input.goal);
       candidates = others.filter((o) => o.visibleInDirectory && o.intents.includes(code));
     }
-    return candidates
-      .filter((o) => !seenIds.has(o.id))
+    const fresh = candidates.filter((o) => !seenIds.has(o.id));
+    // Un résultat de test ne sert au matching que si le membre l'affiche publiquement
+    const shown = await publicResults([ctx.memberId, ...fresh.map((o) => o.id)]);
+    const mine = new Map((shown.get(ctx.memberId) ?? []).map((r) => [r.themeId, r.title]));
+    return fresh
       .map((o) => {
         const common = o.values.filter((v) => m.values.includes(v));
+        const results = shown.get(o.id) ?? [];
+        const shared = results.filter((r) => mine.get(r.themeId) === r.title);
         const wanted = [
           ...(m.matchSectors.includes(o.sector) ? [`Secteur recherché : ${labelOf(SECTORS, o.sector)}`] : []),
           ...(m.matchProfiles.includes(o.profileType) ? [`Profil recherché : ${labelOf(PROFILE_TYPES, o.profileType)}`] : []),
@@ -56,10 +62,10 @@ export const matchingRouter = createRouter({
           ...publicMember(o),
           rencontreEnabled: undefined, rencontrePref: undefined,
           reason: input.goal === "amour" ? "Espace Rencontre" : intentLabel(complement(input.goal), o.gender),
-          common: [...wanted, ...(common.length ? common : (o.pole === m.pole ? [`Pôle ${o.pole.toLowerCase()} en commun`] : o.values.slice(0, 2)))],
+          common: [...wanted, ...results.map((r) => `${r.profileLabel} : ${r.title}${shared.includes(r) ? " (comme vous)" : ""}`), ...(common.length ? common : (o.pole === m.pole ? [`Pôle ${o.pole.toLowerCase()} en commun`] : o.values.slice(0, 2)))],
           blurb: input.goal === "amour" ? o.rencontreBlurb : o.bio,
           affinity: common.length + wanted.length >= 2 ? "très forte" : common.length + wanted.length === 1 || o.pole === m.pole ? "forte" : "bonne",
-          score: wanted.length * 2 + common.length,
+          score: wanted.length * 2 + common.length + shared.length,
         };
       })
       .sort((a, b) => b.score - a.score);

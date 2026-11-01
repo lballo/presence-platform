@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { ArrowLeft, Eye, ImagePlus, Plus, Search, Trash2, X } from "lucide-react";
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { ArrowLeft, Eye, ImagePlus, Move, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
@@ -11,10 +11,14 @@ import { useLeaveWarning } from "@/pages/admin/construire/EditorParts";
 import { EventBody, type Ev } from "@/pages/EventPage";
 import { COVERS } from "@/pages/Ruches";
 import { useUpload } from "@/lib/upload";
-import { parisInputs, parisToDate } from "@/lib/format";
+import { parisHour, parisInputs, parisLongDate, parisToDate } from "@/lib/format";
+import { datesBetween, HORIZON_DAYS, REPEAT_LABEL, REPEATS, type Repeat } from "../../../server/lib/recurrence";
 
 type Managed = RouterOutputs["events"]["manage"];
 type CoverKey = "" | "rouge" | "or" | "vin" | "bronze" | "nuit" | "braise";
+const CENTER = "50% 50%";
+const clampPercent = (n: number) => Math.round(Math.min(100, Math.max(0, n)));
+const percents = (position: string) => { const [x, y] = position.split(" ").map((p) => parseFloat(p)); return { x: x ?? 50, y: y ?? 50 }; };
 const KINDS = [["onsite", "Présentiel"], ["online", "Visio"], ["salon", "Salon live"]] as const;
 const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp";
 const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -34,11 +38,11 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const canPublish = !!me.data?.permissions.publishEventsDirectly || !!hiveId;
   const refresh = () => { utils.events.invalidate(); utils.hives.invalidate(); utils.dashboard.invalidate(); };
   const create = trpc.events.create.useMutation({
-    onSuccess: (r) => { refresh(); toast.success(r.status === "published" ? "Événement publié" : "Proposition envoyée à l’équipe Présence pour validation"); onDone(r); },
+    onSuccess: (r) => { refresh(); toast.success(r.status !== "published" ? "Proposition envoyée à l’équipe Présence pour validation" : r.dates > 1 ? `Série publiée : ${r.dates} dates créées, la suite viendra d’elle-même` : "Événement publié"); onDone(r); },
     onError: (e) => toast.error(e.message),
   });
   const update = trpc.events.update.useMutation({
-    onSuccess: (r) => { refresh(); toast.success(r.restricted && r.registered ? `Événement mis à jour : ${r.registered > 1 ? `les ${r.registered} personnes déjà inscrites gardent leur place` : "la personne déjà inscrite garde sa place"}.` : "Événement mis à jour"); onDone(r); },
+    onSuccess: (r) => { refresh(); toast.success(r.restricted && r.registered ? `Événement mis à jour : ${r.registered > 1 ? `les ${r.registered} personnes déjà inscrites gardent leur place` : "la personne déjà inscrite garde sa place"}.` : r.following ? `Événement mis à jour, avec ${r.following} autre${r.following > 1 ? "s" : ""} date${r.following > 1 ? "s" : ""}` : "Événement mis à jour"); onDone(r); },
     onError: (e) => toast.error(e.message),
   });
   const start = initial ? parisInputs(new Date(initial.startsAt)) : { date: "", time: "19:00" };
@@ -52,6 +56,10 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
     faq: initial?.faq ?? ([] as { q: string; a: string }[]),
     photoUrl: initial?.photoUrl ?? "",
     cover: (initial?.cover ?? "") as CoverKey,
+    photoPosition: initial?.photoPosition ?? CENTER,
+    repeat: "" as Repeat | "",
+    until: "",
+    scope: "one" as "one" | "following",
     date: start.date,
     time: start.time,
     durationMin: initial?.durationMin ?? 60,
@@ -79,16 +87,45 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const pickPhoto = async (file?: File) => {
     if (!file) return;
     if (file.size > (cfg.data?.maxMb.eventImage ?? 10) * 1048576) return void toast.error(`La photo dépasse ${cfg.data?.maxMb.eventImage ?? 10} Mo.`);
-    try { set({ photoUrl: (await photo.upload(file)).publicUrl ?? "" }); } catch (e) { toast.error(e instanceof Error ? e.message : "Envoi impossible"); }
+    try { set({ photoUrl: (await photo.upload(file)).publicUrl ?? "", photoPosition: CENTER }); } catch (e) { toast.error(e instanceof Error ? e.message : "Envoi impossible"); }
   };
+
+  // Cadrer la photo : elle suit le curseur ou le doigt sans repeindre le formulaire, et le cadrage s'enregistre au relâchement
+  const frame = useRef<HTMLImageElement>(null);
+  const grab = useRef<{ x: number; y: number; from: { x: number; y: number }; roomX: number; roomY: number } | null>(null);
+  const startFraming = (e: PointerEvent<HTMLDivElement>) => {
+    const img = frame.current;
+    if (!img || e.button !== 0 || (e.target as HTMLElement).closest("button, label")) return;
+    const box = img.getBoundingClientRect();
+    const scale = Math.max(box.width / img.naturalWidth, box.height / img.naturalHeight);
+    grab.current = { x: e.clientX, y: e.clientY, from: percents(f.photoPosition), roomX: img.naturalWidth * scale - box.width, roomY: img.naturalHeight * scale - box.height };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const positionAt = (e: PointerEvent<HTMLDivElement>) => {
+    const g = grab.current;
+    if (!g) return null;
+    const x = g.roomX > 0 ? clampPercent(g.from.x - ((e.clientX - g.x) / g.roomX) * 100) : g.from.x;
+    const y = g.roomY > 0 ? clampPercent(g.from.y - ((e.clientY - g.y) / g.roomY) * 100) : g.from.y;
+    return `${x}% ${y}%`;
+  };
+  const moveFraming = (e: PointerEvent<HTMLDivElement>) => { const p = positionAt(e); if (p && frame.current) frame.current.style.objectPosition = p; };
+  const endFraming = (e: PointerEvent<HTMLDivElement>) => { const p = positionAt(e); grab.current = null; if (p) set({ photoPosition: p }); };
+  const nudgeFraming = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowLeft: [-5, 0], ArrowRight: [5, 0], ArrowUp: [0, -5], ArrowDown: [0, 5] }[e.key];
+    if (!step || !f.photoUrl) return;
+    e.preventDefault();
+    const { x, y } = percents(f.photoPosition);
+    set({ photoPosition: `${clampPercent(x + step[0])}% ${clampPercent(y + step[1])}%` });
+  };
+
   const submit = () => {
     const data = {
       kind: f.kind, title: f.title, tagline: f.tagline, description: f.description, program: f.program, takeaways: lines(f.takeaways),
-      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl, cover: f.cover, startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin,
+      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl, cover: f.cover, photoPosition: f.photoPosition, repeat: f.repeat || null, until: f.repeat && f.until ? parisToDate(f.until, "23:59") : null, startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin,
       city: f.kind === "onsite" ? f.city : undefined, address: f.kind === "onsite" ? f.address : "", meetingUrl: f.kind === "onsite" ? "" : f.meetingUrl,
       maxSeats: f.maxSeats === "" ? null : f.maxSeats, visibility: f.visibility, type: f.type, speakerIds: f.speakerIds, slug: f.slug.trim() || undefined, hiveId,
     };
-    if (initial) update.mutate({ ...data, id: initial.id }); else create.mutate(data);
+    if (initial) update.mutate({ ...data, id: initial.id, scope: f.scope }); else create.mutate(data);
   };
 
   const people = choices.data ?? [];
@@ -98,6 +135,10 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const ready = f.title.trim() && f.date && accessReady(f.kind, f.address, f.meetingUrl) && !pending && !photo.busy;
   const missing = [!f.title.trim() && "le titre", !f.date && "la date", !accessReady(f.kind, f.address, f.meetingUrl) && (f.kind === "onsite" ? "l’adresse" : "le lien de la visio")].filter(Boolean);
   const canPreview = !!f.title.trim() && !!f.date;
+  // Les prochaines dates d'une série en cours de création : on voit tout de suite ce que le rythme donnera
+  const firstDate = f.date ? parisToDate(f.date, f.time) : null;
+  const nextDates = f.repeat && firstDate ? datesBetween(firstDate, f.repeat, firstDate, f.until ? parisToDate(f.until, "23:59") : new Date(firstDate.getTime() + HORIZON_DAYS * 86400000)) : [];
+  const canRepeat = canPublish && !initial?.seriesId && (!initial || initial.status === "published");
   const title = initial ? "Modifier l’événement" : hive ? `Créer un événement de ${hive.name}` : canPublish ? "Créer un événement" : "Proposer un événement";
   const intro = initial ? "Les personnes inscrites verront les nouvelles informations." : hive ? "Il reste réservé aux membres de la ruche." : canPublish ? "Il sera publié directement." : "Votre proposition sera relue par l’équipe Présence.";
 
@@ -106,7 +147,8 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
     const hostId = initial?.hostId ?? me.data?.id;
     return {
       id: initial?.id ?? 0, slug: f.slug || "apercu", title: f.title, tagline: f.tagline, description: f.description, program: f.program, takeaways: lines(f.takeaways),
-      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl || null, cover: f.cover, kind: f.kind, type: f.type, visibility: hiveId ? "membres" : f.visibility, status: "published",
+      faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl || null, photoPosition: f.photoPosition, cover: f.cover, kind: f.kind,
+      series: initial?.series ? { label: initial.series.label, dates: initial.series.dates.filter((d) => !d.cancelled && d.slug !== initial.slug).slice(0, 6) } : f.repeat ? { label: REPEAT_LABEL[f.repeat], dates: nextDates.slice(0, 6).map((d) => ({ slug: d.toISOString(), startsAt: d })) } : null, type: f.type, visibility: hiveId ? "membres" : f.visibility, status: "published",
       startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin, days: initial?.days ?? 1, city: f.kind === "onsite" ? f.city : null, where: f.kind === "onsite" ? f.city || "Présentiel" : "En ligne",
       hive: initial?.hive ?? hive ?? null, host: people.find((p) => p.id === hostId) ?? { id: hostId ?? 0, name: "", initials: "", photoUrl: null, jobTitle: "" }, speakers: chosen,
       maxSeats: f.maxSeats === "" ? null : f.maxSeats, taken: 0, seatsLeft: f.maxSeats === "" ? null : f.maxSeats, cancelled: false, past: false, registered: false, waitlisted: false, canRegister: false, canManage: false,
@@ -136,8 +178,13 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
 
       <div className="flex flex-col gap-2" aria-label="Visuel de l’événement">
         <span className="text-[13.5px] p-muted">Visuel</span>
-        <div className="relative overflow-hidden rounded-2xl h-[170px] sm:h-[190px]" style={{ background: eventCover(f) }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pickPhoto(e.dataTransfer.files[0]); }}>
-          {f.photoUrl && <img src={f.photoUrl} alt="Visuel de l’événement" className="absolute inset-0 w-full h-full object-cover" />}
+        {/* Même proportion que la page : le cadrage choisi ici est celui que les membres verront */}
+        <div className={`relative overflow-hidden rounded-2xl select-none ${f.photoUrl ? "aspect-[16/10] sm:aspect-[21/9] cursor-grab active:cursor-grabbing touch-none" : "h-[170px] sm:h-[190px]"}`} style={{ background: eventCover(f) }}
+          tabIndex={f.photoUrl ? 0 : undefined} aria-label={f.photoUrl ? "Cadrage de la photo : faites-la glisser, ou utilisez les flèches du clavier" : undefined}
+          onPointerDown={startFraming} onPointerMove={moveFraming} onPointerUp={endFraming} onPointerCancel={() => { grab.current = null; if (frame.current) frame.current.style.objectPosition = f.photoPosition; }} onKeyDown={nudgeFraming}
+          onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pickPhoto(e.dataTransfer.files[0]); }}>
+          {f.photoUrl && <img ref={frame} src={f.photoUrl} alt="Visuel de l’événement" draggable={false} className="absolute inset-0 w-full h-full object-cover pointer-events-none" style={{ objectPosition: f.photoPosition }} />}
+          {f.photoUrl && <span className="absolute left-2.5 top-2.5 flex items-center gap-1.5 px-2.5 h-8 rounded-full bg-black/60 text-white text-[12.5px] pointer-events-none"><Move size={14} /> Faites glisser la photo pour la cadrer</span>}
           <div className="absolute right-2.5 bottom-2.5 flex flex-wrap justify-end gap-2">
             <label className="p-btn-white p-btn-sm cursor-pointer">
               <input type="file" accept={PHOTO_ACCEPT} className="hidden" aria-label="Importer une image" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
@@ -163,6 +210,31 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
         <label className="flex-[1_1_110px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Durée (min)</span><input type="number" min={15} step={15} className="p-field" value={f.durationMin} onChange={(e) => set({ durationMin: Number(e.target.value) })} /></label>
         <label className="flex-[1_1_110px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Places <span className="p-faint">· facultatif</span></span><input type="number" min={2} className="p-field" value={f.maxSeats} onChange={(e) => set({ maxSeats: e.target.value === "" ? "" : Number(e.target.value) })} /></label>
       </div>
+      {initial?.series && !initial.series.stopped && (
+        <div className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
+          <span className="text-[14px]">Cette date fait partie d’une série : <b className="font-semibold">{initial.series.label.toLowerCase()}</b>. Appliquer mes changements à :</span>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" aria-pressed={f.scope === "one"} className={`p-chip h-9 ${f.scope === "one" ? "p-chip-on" : ""}`} onClick={() => set({ scope: "one" })}>Cette date seulement</button>
+            <button type="button" aria-pressed={f.scope === "following"} className={`p-chip h-9 ${f.scope === "following" ? "p-chip-on" : ""}`} onClick={() => set({ scope: "following" })}>Cette date et les suivantes{initial.series.following ? ` (${initial.series.following + 1})` : ""}</button>
+          </div>
+        </div>
+      )}
+      {canRepeat && (
+        <div className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
+          <span className="text-[13.5px] p-muted">Répétition</span>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" aria-pressed={!f.repeat} className={`p-chip h-9 ${!f.repeat ? "p-chip-on" : ""}`} onClick={() => set({ repeat: "" })}>Une seule fois</button>
+            {REPEATS.map((r) => <button key={r} type="button" aria-pressed={f.repeat === r} className={`p-chip h-9 ${f.repeat === r ? "p-chip-on" : ""}`} onClick={() => set({ repeat: r })}>{REPEAT_LABEL[r]}</button>)}
+          </div>
+          {f.repeat && (
+            <>
+              <label className="flex flex-col gap-1.5 text-[13.5px] p-muted sm:max-w-[260px]"><span>Jusqu’au <span className="p-faint">· facultatif</span></span><input type="date" className="p-field" min={f.date || undefined} value={f.until} onChange={(e) => set({ until: e.target.value })} /></label>
+              <span className="text-[13px] p-muted">{f.until ? "La série s’arrêtera à cette date." : "Sans date de fin, la série continue d’elle-même : les dates se créent trois mois à l’avance. Vous pourrez l’arrêter à tout moment."} Chaque date a sa page et ses inscrits.</span>
+              {nextDates.length > 0 && <span className="text-[13px]">Dates suivantes : {nextDates.slice(0, 3).map((d) => `${parisLongDate(d)} · ${parisHour(d)}`).join(", ")}{nextDates.length > 3 ? "…" : ""}</span>}
+            </>
+          )}
+        </div>
+      )}
       <AccessFields kind={f.kind} city={f.city} address={f.address} meetingUrl={f.meetingUrl} onChange={(p) => set(p)} />
 
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Présentation</span><textarea className="p-field" rows={3} maxLength={4000} value={f.description} onChange={(e) => set({ description: e.target.value })} placeholder="De quoi parlera-t-on, et pour qui ?" /></label>
@@ -200,7 +272,7 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
           {me.data?.permissions.publishEventsDirectly && (
             <label className="flex items-start gap-3 cursor-pointer">
               <Switch checked={f.type === "bienvenue"} onCheckedChange={(on) => set({ type: on ? "bienvenue" : "standard" })} aria-label="Réunion de bienvenue" className="mt-0.5" />
-              <span className="flex flex-col"><span className="text-[14.5px] font-medium">Réunion de bienvenue</span><span className="text-[12.5px] p-muted">Proposée aux nouveaux membres dans « Mes premiers pas ». Créez un événement par date.</span></span>
+              <span className="flex flex-col"><span className="text-[14.5px] font-medium">Réunion de bienvenue</span><span className="text-[12.5px] p-muted">Proposée aux nouveaux membres dans « Mes premiers pas ». Choisissez une répétition pour proposer une nouvelle date régulièrement.</span></span>
             </label>
           )}
         </div>

@@ -17,7 +17,7 @@ export default function EventManage() {
   const [confirm, setConfirm] = useState(false);
   const attendance = trpc.events.setAttendance.useMutation({ onSuccess: () => utils.events.manage.invalidate({ slug }), onError: (e) => toast.error(e.message) });
   const cancel = trpc.events.cancel.useMutation({
-    onSuccess: (r) => { utils.events.invalidate(); utils.dashboard.invalidate(); setConfirm(false); toast.success(r.notified ? `Événement annulé : ${plural(r.notified, "personne prévenue", "personnes prévenues")}` : "Événement annulé"); },
+    onSuccess: (r, v) => { utils.events.invalidate(); utils.dashboard.invalidate(); setConfirm(false); const what = v.following ? "Série arrêtée" : "Événement annulé"; toast.success(r.notified ? `${what} : ${plural(r.notified, "personne prévenue", "personnes prévenues")}` : what); },
     onError: (e) => toast.error(e.message),
   });
   if (q.isLoading) return <p className="p-muted py-20 text-center">Chargement…</p>;
@@ -38,6 +38,7 @@ export default function EventManage() {
         <p className="m-0 text-[15px] p-muted">{parisLongDate(start)} · {parisHour(start)} (heure de Paris){e.hive ? ` · Ruche ${e.hive.name}` : e.visibility === "public" ? " · Public" : " · Membres connectés"}</p>
         {e.cancelled && <span className="p-pill self-start" style={{ background: "var(--p-accent)", color: "#fff" }}>Annulé</span>}
         {e.status === "pending" && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted self-start">En attente de validation</span>}
+        {e.series && <span className="p-chip h-7 text-[12.5px] cursor-default p-muted self-start">{e.series.stopped ? "Série arrêtée" : e.series.label}</span>}
       </header>
 
       <div className="flex flex-wrap gap-2 mb-6">
@@ -49,8 +50,9 @@ export default function EventManage() {
 
       {confirm && (
         <div className="flex flex-wrap items-center gap-2.5 p-4 rounded-2xl mb-6" style={{ background: "var(--p-accent-soft)" }}>
-          <span className="flex-[1_1_240px] text-[14.5px]">Annuler cet événement ? {e.registrants.length > 1 ? `Les ${e.registrants.length} personnes inscrites seront prévenues.` : "Les personnes inscrites seront prévenues."}</span>
-          <button type="button" className="p-btn-primary p-btn-sm" disabled={cancel.isPending} onClick={() => cancel.mutate({ id: e.id })}>Oui, annuler</button>
+          <span className="flex-[1_1_240px] text-[14.5px]">Annuler {e.series ? "cette date" : "cet événement"} ? {e.registrants.length > 1 ? `Les ${e.registrants.length} personnes inscrites seront prévenues.` : "Les personnes inscrites seront prévenues."}</span>
+          <button type="button" className="p-btn-primary p-btn-sm" disabled={cancel.isPending} onClick={() => cancel.mutate({ id: e.id })}>{e.series ? "Cette date seulement" : "Oui, annuler"}</button>
+          {e.series && !e.series.stopped && <button type="button" className="p-btn-primary p-btn-sm" disabled={cancel.isPending} onClick={() => cancel.mutate({ id: e.id, following: true })}>Cette date et toute la suite</button>}
           <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setConfirm(false)}>Non</button>
         </div>
       )}
@@ -62,6 +64,23 @@ export default function EventManage() {
           <div key={label} className="p-soft p-4 flex flex-col gap-1"><span className="flex items-center gap-1.5 text-[13px] p-muted"><Icon size={14} /> {label}</span><span className="serif text-[34px] leading-none">{n}</span></div>
         ))}
       </div>
+
+      {!!e.series?.dates.length && (
+        <section className="flex flex-col gap-2.5 mb-7" aria-label="Les dates de la série">
+          <h2 className="m-0 text-[28px]">Les dates à venir</h2>
+          <p className="m-0 text-[14px] p-muted">{e.series.stopped ? "Cette série est arrêtée." : "Les dates se créent automatiquement, trois mois à l’avance. Chacune a sa page et ses inscrits."}</p>
+          <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
+            {e.series.dates.map((d) => (
+              <li key={d.slug}>
+                <Link to={`/e/${d.slug}/gerer`} className="p-card p-3 flex flex-wrap items-center gap-x-3 gap-y-1 no-underline" style={{ color: "var(--p-ink)", ...(d.slug === e.slug ? { borderColor: "var(--p-accent-line)" } : {}) }}>
+                  <span className="flex-[1_1_220px] min-w-0 font-medium">{parisLongDate(new Date(d.startsAt))} · {parisHour(new Date(d.startsAt))}</span>
+                  <span className="text-[13px] p-muted">{d.cancelled ? "Annulée" : d.slug === e.slug ? `Cette date · ${plural(d.registered, "inscrit", "inscrits")}` : plural(d.registered, "inscrit", "inscrits")}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="flex flex-col gap-2.5 mb-7" aria-label="Personnes inscrites">
         <h2 className="m-0 text-[28px]">Inscrits <span className="text-[14px] font-sans p-faint">{confirmed.length}{e.maxSeats ? ` / ${e.maxSeats}` : ""}</span></h2>

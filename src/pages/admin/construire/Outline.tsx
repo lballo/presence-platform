@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { Link, useNavigate } from "react-router";
-import { ArrowDown, ArrowUp, Copy, Eye, FileText, GripVertical, Pencil, Plus, Trash2, Video } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CircleCheck, Copy, Eye, FileText, Flag, GripVertical, PenLine, Pencil, Plus, Trash2, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { LESSON_TYPE_LABEL, LESSON_TYPES, type LessonType } from "../../../../server/lib/courseBlocks";
-import { Badge, ConfirmButton, Select } from "../shared";
+import { ConfirmButton, Select } from "../shared";
 import { useLeaveWarning } from "./EditorParts";
-import { LESSON_STATUS_LABEL, statusTone } from "./labels";
+import { LESSON_STATUS_LABEL } from "./labels";
 
 type Course = RouterOutputs["build"]["course"];
 type Section = Course["sections"][number];
@@ -17,7 +17,14 @@ type Drag = { kind: "section"; id: number } | { kind: "lesson"; id: number };
 /** Où tomberait ce qu'on déplace : sa place parmi les sections, ou parmi les leçons d'une section. */
 type Target = { kind: "section"; index: number } | { kind: "lesson"; sectionId: number; index: number };
 
-const iconBtn = "w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30";
+const iconBtn = "cr-icon";
+const TYPE_TILE: Record<LessonType, { icon: typeof Video; fg: string }> = { contenu: { icon: FileText, fg: "#6C6059" }, video: { icon: Video, fg: "#A83932" }, exercice: { icon: PenLine, fg: "#AA564C" }, test: { icon: CircleCheck, fg: "#3D3128" }, defi: { icon: Flag, fg: "#AD261E" } };
+
+/** Le format d'une leçon, d'un coup d'œil. */
+export function TypeTile({ type, size = 32 }: { type: LessonType; size?: number }) {
+  const { icon: Icon, fg } = TYPE_TILE[type];
+  return <span aria-hidden="true" className="flex-none rounded-md flex items-center justify-center" style={{ width: size, height: size, background: "#F3ECE8", color: fg }}><Icon size={size >= 32 ? 16 : 14} /></span>;
+}
 const mouse = window.matchMedia("(pointer: fine)").matches; // au doigt, les flèches suffisent
 const typeOptions = LESSON_TYPES.map((t): [LessonType, string] => [t, LESSON_TYPE_LABEL[t]]);
 const isPublished = (l: { status: string }) => l.status === "publie";
@@ -25,7 +32,6 @@ const isPublished = (l: { status: string }) => l.status === "publie";
 /** Le plan d'une formation : créer et réordonner les sections et leurs leçons, au glisser-déposer ou avec les flèches sur téléphone. */
 export function Outline({ c }: { c: Course }) {
   const utils = trpc.useUtils();
-  const navigate = useNavigate();
   const [drag, setDrag] = useState<Drag | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
   // Le nouvel ordre se voit tout de suite : l'écriture dans Notion suit, sans bloquer le déplacement suivant
@@ -34,6 +40,8 @@ export function Outline({ c }: { c: Course }) {
   const [landed, setLanded] = useState<string | null>(null);
   const [addingSection, setAddingSection] = useState(false);
   const [addingLesson, setAddingLesson] = useState<Section | null>(null);
+  // Tout est déplié par défaut : on glisse une leçon d'une section à l'autre sans rien ouvrir. Replier ne sert qu'à y voir plus clair.
+  const [closed, setClosed] = useState<Record<number, boolean>>({});
   const refresh = () => utils.build.invalidate();
   const moved = trpc.build.reorderSections.useMutation();
   const movedLesson = trpc.build.reorderLessons.useMutation();
@@ -225,75 +233,82 @@ export function Outline({ c }: { c: Course }) {
   const lessonMark = (sectionId: number, index: number) => !!goal && target?.kind === "lesson" && target.sectionId === sectionId && target.index === index;
   const held = (kind: Drag["kind"], id: number) => (drag?.kind === kind && drag.id === id ? { opacity: 0.4 } : {});
 
+  const totalLessons = sections.reduce((n, x) => n + x.lessons.length, 0);
   return (
-    <section className="flex flex-col gap-3" aria-label="Sections et leçons">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-[14px] p-muted flex-[1_1_260px]">L’ordre des sections fixe la semaine d’ouverture : la section 1 s’ouvre au démarrage, la section 2 une semaine plus tard. Toutes ses leçons s’ouvrent ensemble. Une section apparaît dès qu’une de ses leçons est publiée. {mouse ? "Pour déplacer une section ou une leçon, gardez le clic sur sa ligne et glissez : un trait rouge montre où elle arrivera. La touche Échap annule." : "Déplacez une section ou une leçon avec ses flèches."}</p>
-        <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setAddingSection(true)}><Plus size={15} /> Ajouter une section</button>
+    <section className="flex flex-col" aria-label="Sections et leçons">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0"><h3 className="m-0 text-[16px]">Votre parcours pédagogique</h3><p className="m-0 mt-1 text-[12px] p-muted">{sections.length} section{sections.length > 1 ? "s" : ""} · {totalLessons} leçon{totalLessons > 1 ? "s" : ""}{(busy || writing) ? " · écriture dans Notion…" : ""}</p></div>
+        <button type="button" className="cr-btn h-8 px-3" onClick={() => setAddingSection(true)}><Plus size={16} /> Ajouter une section</button>
       </div>
-      {(busy || writing) && <p className="m-0 text-[13.5px] p-muted" role="status">Écriture dans Notion…</p>}
-      {sections.length === 0 && <div className="p-soft p-7 text-center p-muted">Aucune section pour l’instant.</div>}
+      {sections.length === 0 && <div className="rounded-2xl p-7 text-center p-muted" style={{ background: "#F3ECE8" }}>Aucune section pour l’instant.</div>}
       {/* Un lien ne doit pas lancer le glissement du navigateur à la place du nôtre */}
-      <ol className="list-none m-0 p-0 flex flex-col gap-3" onDragStart={(e) => e.preventDefault()}>
-        {sections.map((s, i) => (
+      <ol className="list-none m-0 p-0 flex flex-col gap-4" onDragStart={(e) => e.preventDefault()}>
+        {sections.map((s, i) => {
+          const open = !closed[s.id];
+          const shown = s.lessons.some(isPublished);
+          const total = s.lessons.reduce((n, l) => n + (l.durationMin ?? 0), 0);
+          return (
           <li key={s.id} data-section={i} className="relative">
-            {sectionMark(i) && <DropMarker edge="top" offset={12} />}
-            {i === sections.length - 1 && sectionMark(i + 1) && <DropMarker edge="bottom" offset={12} />}
-            <div className="p-card overflow-hidden" style={{ ...held("section", s.id), ...(goal?.section?.id === s.id ? { outline: "2px solid var(--p-accent)" } : {}) }}>
-            <div data-section-head onPointerDown={press({ kind: "section", id: s.id }, s.title)} className="p-3 flex flex-wrap items-center gap-x-3 gap-y-2 lg:cursor-grab lg:select-none" style={{ background: landed === `s${s.id}` ? "var(--p-accent-soft)" : "var(--p-surface-2)" }}>
-              <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex p-muted"><GripVertical size={18} /></span>
-              <span className="w-9 h-9 rounded-full flex items-center justify-center flex-none font-semibold text-[14px]" style={{ background: "var(--p-surface)" }}>{s.position}</span>
-              <Link to={`/admin/construire/${c.id}/section/${s.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
-                <span className="font-semibold text-[16px] leading-snug break-words">{s.title}</span>
-                <span className="text-[12.5px] p-muted flex flex-wrap items-center gap-x-2.5"><span>{s.lessons.length} leçon{s.lessons.length > 1 ? "s" : ""}</span>{s.lessons.length > 0 && <span>{s.lessons.filter(isPublished).length} publiée{s.lessons.filter(isPublished).length > 1 ? "s" : ""}</span>}{s.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{s.issues.length} point{s.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
+            {sectionMark(i) && <DropMarker edge="top" offset={14} />}
+            {i === sections.length - 1 && sectionMark(i + 1) && <DropMarker edge="bottom" offset={14} />}
+            <div className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--p-line)", ...held("section", s.id), ...(goal?.section?.id === s.id ? { outline: "2px solid var(--p-accent)" } : {}) }}>
+            <div data-section-head onPointerDown={press({ kind: "section", id: s.id }, s.title)} className="p-3 sm:p-4 flex flex-wrap items-center gap-x-2 gap-y-2 lg:cursor-grab lg:select-none" style={{ background: landed === `s${s.id}` ? "#E0D3BD" : "#F3ECE8", borderBottom: open ? "1px solid var(--p-line)" : undefined }}>
+              <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex w-7 justify-center p-muted"><GripVertical size={16} /></span>
+              <span className="w-[30px] h-[30px] rounded-[5px] flex items-center justify-center flex-none font-semibold text-[11px]" style={{ background: "#E8DDD6" }}>{String(s.position).padStart(2, "0")}</span>
+              <Link to={`/admin/construire/${c.id}/section/${s.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col no-underline px-1" style={{ color: "var(--p-ink)" }}>
+                <span className="font-semibold text-[14px] leading-snug break-words">{s.title}</span>
+                <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-2"><span>{s.lessons.length} leçon{s.lessons.length > 1 ? "s" : ""}{total ? ` · ${total} min` : ""}</span>{s.lessons.length > 0 && <span>{s.lessons.filter(isPublished).length} publiée{s.lessons.filter(isPublished).length > 1 ? "s" : ""}</span>}{s.issues.length > 0 && <span style={{ color: "#AA564C" }}>{s.issues.length} point{s.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
               </Link>
-              <Badge tone={s.lessons.some(isPublished) ? "ok" : "calm"}>{s.lessons.some(isPublished) ? "Visible" : "Pas encore visible"}</Badge>
-              <span className="flex items-center gap-0.5 flex-none">
+              <span className="flex items-center gap-1.5 text-[11px] whitespace-nowrap" title="Une section apparaît dès qu’une de ses leçons est publiée" style={{ color: shown ? "#2b7a4b" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: shown ? "#2b7a4b" : "var(--p-ink-2)" }} />{shown ? "Visible" : "Pas encore visible"}</span>
+              <span className="flex items-center flex-none">
                 <button type="button" aria-label={`Monter la section ${s.title}`} disabled={i === 0 || busy} className={iconBtn} onClick={() => stepSection(s, -1)}><ArrowUp size={16} /></button>
                 <button type="button" aria-label={`Descendre la section ${s.title}`} disabled={i === sections.length - 1 || busy} className={iconBtn} onClick={() => stepSection(s, 1)}><ArrowDown size={16} /></button>
                 <button type="button" aria-label={`Dupliquer la section ${s.title}`} title="Dupliquer avec ses leçons" disabled={busy || writing} className={iconBtn} onClick={() => dupSection.mutate({ id: s.id })}><Copy size={16} /></button>
                 <Link to={`/admin/construire/${c.id}/section/${s.id}`} aria-label={`Modifier la section ${s.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
+                <ConfirmButton label={<Trash2 size={16} />} className={iconBtn} question={`Supprimer « ${s.title} » et ses ${s.lessons.length} leçon(s) ? Elles partent à la corbeille de Notion et disparaissent pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveSection.isPending} onConfirm={() => archiveSection.mutate({ id: s.id })} />
+                <button type="button" aria-expanded={open} aria-label={`${open ? "Replier" : "Déplier"} la section ${s.title}`} className={iconBtn} onClick={() => setClosed({ ...closed, [s.id]: open })}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button>
               </span>
-              <ConfirmButton label={<Trash2 size={16} />} className={`${iconBtn} flex-none`} question={`Supprimer « ${s.title} » et ses ${s.lessons.length} leçon(s) ? Elles partent à la corbeille de Notion et disparaissent pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveSection.isPending} onConfirm={() => archiveSection.mutate({ id: s.id })} />
             </div>
-            <ul className="list-none m-0 p-2 flex flex-col gap-1" aria-label={`Leçons de ${s.title}`}>
-              {s.lessons.length === 0 && <li className="relative p-3 text-center text-[14px] p-muted">{lessonMark(s.id, 0) && <DropMarker edge="top" offset={8} />}Aucune leçon : cette section reste invisible pour les membres. Déposez une leçon ici ou ajoutez-en une.</li>}
+            {open && <ul className="list-none m-0 p-0 flex flex-col" aria-label={`Leçons de ${s.title}`}>
+              {s.lessons.length === 0 && <li className="relative p-4 text-center text-[13px] p-muted">{lessonMark(s.id, 0) && <DropMarker edge="top" offset={6} />}Aucune leçon : cette section reste invisible pour les membres. Déposez une leçon ici ou ajoutez-en une.</li>}
               {s.lessons.map((l, n) => (
-                <li key={l.id} data-lesson={n} onPointerDown={press({ kind: "lesson", id: l.id }, l.title)} className={`relative p-2 rounded-lg flex flex-wrap items-center gap-x-2.5 gap-y-1.5 lg:cursor-grab lg:select-none ${drag ? "" : "hover:bg-black/5 dark:hover:bg-white/5"}`} style={{ ...held("lesson", l.id), ...(landed === `l${l.id}` ? { background: "var(--p-accent-soft)" } : {}) }}>
-                  {lessonMark(s.id, n) && <DropMarker edge="top" offset={8} />}
-                  {n === s.lessons.length - 1 && lessonMark(s.id, n + 1) && <DropMarker edge="bottom" offset={8} />}
-                  <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex p-muted"><GripVertical size={16} /></span>
-                  <span className="w-5 text-center text-[13px] font-medium p-muted flex-none">{n + 1}</span>
-                  <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} className="flex-[1_1_200px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
-                    <span className="font-medium leading-snug break-words">{l.title}</span>
-                    <span className="text-[12.5px] p-muted flex flex-wrap items-center gap-x-2.5"><span>{LESSON_TYPE_LABEL[l.type]}</span>{l.durationMin ? <span>{l.durationMin} min</span> : null}{l.hasVideo && <span className="flex items-center gap-1"><Video size={12} /> vidéo</span>}{l.hasTest && <span className="flex items-center gap-1"><FileText size={12} /> test</span>}{l.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{l.issues.length} point{l.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
+                <li key={l.id} data-lesson={n} onPointerDown={press({ kind: "lesson", id: l.id }, l.title)} className={`relative px-3 sm:px-4 py-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 lg:cursor-grab lg:select-none ${drag ? "" : "hover:bg-[#FBF8F6]"}`} style={{ ...(n > 0 ? { borderTop: "1px solid var(--p-line)" } : {}), ...held("lesson", l.id), ...(landed === `l${l.id}` ? { background: "#F3ECE8" } : {}) }}>
+                  {lessonMark(s.id, n) && <DropMarker edge="top" offset={6} />}
+                  {n === s.lessons.length - 1 && lessonMark(s.id, n + 1) && <DropMarker edge="bottom" offset={6} />}
+                  <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex w-7 justify-center p-muted"><GripVertical size={16} /></span>
+                  <TypeTile type={l.type} />
+                  <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col gap-0.5 px-1 no-underline" style={{ color: "var(--p-ink)" }}>
+                    <span className="font-medium text-[13px] leading-snug break-words">{l.title}</span>
+                    <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-1.5"><span>{LESSON_TYPE_LABEL[l.type]}</span>{l.durationMin ? <span>· {l.durationMin} min</span> : null}{l.hasVideo && l.type !== "video" && <span className="flex items-center gap-1">· <Video size={11} /> vidéo</span>}{l.hasTest && l.type !== "test" && <span className="flex items-center gap-1">· <CircleCheck size={11} /> test</span>}{l.issues.length > 0 && <span style={{ color: "#AA564C" }}>· {l.issues.length} point{l.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
                   </Link>
-                  <Badge tone={statusTone(l.status)}>{LESSON_STATUS_LABEL[l.status]}</Badge>
-                  <button type="button" className="p-btn-outline p-btn-sm flex-none" disabled={setLesson.isPending} onClick={() => setLesson.mutate({ id: l.id, status: l.status === "publie" ? "brouillon" : "publie" })}>{l.status === "publie" ? "Dépublier" : "Publier"}</button>
-                  <span className="flex items-center gap-0.5 flex-none">
+                  <button type="button" className="flex-none flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium whitespace-nowrap" aria-label={`${l.status === "publie" ? "Dépublier" : "Publier"} ${l.title}`} title={l.status === "publie" ? "Cliquer pour dépublier" : "Cliquer pour publier"} disabled={setLesson.isPending} style={l.status === "publie" ? { background: "rgba(46, 125, 80, .12)", color: "#2b7a4b" } : { background: "#F3ECE8", color: "var(--p-ink-2)" }} onClick={() => setLesson.mutate({ id: l.id, status: l.status === "publie" ? "brouillon" : "publie" })}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{LESSON_STATUS_LABEL[l.status]}</button>
+                  <span className="flex items-center flex-none">
                     <button type="button" aria-label={`Monter ${l.title}`} disabled={busy || (i === 0 && n === 0)} className={iconBtn} onClick={() => stepLesson(l, s, -1)}><ArrowUp size={16} /></button>
                     <button type="button" aria-label={`Descendre ${l.title}`} disabled={busy || (i === sections.length - 1 && n === s.lessons.length - 1)} className={iconBtn} onClick={() => stepLesson(l, s, 1)}><ArrowDown size={16} /></button>
                     <button type="button" aria-label={`Dupliquer ${l.title}`} title="Dupliquer" disabled={busy || writing} className={iconBtn} onClick={() => dupLesson.mutate({ id: l.id })}><Copy size={16} /></button>
                     <Link to={`/admin/construire/${c.id}/apercu/${l.id}`} aria-label={`Aperçu de ${l.title}`} title="Aperçu comme un membre" className={iconBtn}><Eye size={16} /></Link>
                     <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} aria-label={`Modifier ${l.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
+                    <ConfirmButton label={<Trash2 size={16} />} className={iconBtn} question={`Supprimer « ${l.title} » ? Elle part à la corbeille de Notion et disparaît pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveLesson.isPending} onConfirm={() => archiveLesson.mutate({ id: l.id })} />
                   </span>
-                  <ConfirmButton label={<Trash2 size={16} />} className={`${iconBtn} flex-none`} question={`Supprimer « ${l.title} » ? Elle part à la corbeille de Notion et disparaît pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveLesson.isPending} onConfirm={() => archiveLesson.mutate({ id: l.id })} />
                 </li>
               ))}
-              <li className="pt-1"><button type="button" className="p-btn-ghost" onClick={() => setAddingLesson(s)}><Plus size={15} /> Ajouter une leçon</button></li>
-            </ul>
+              <li><button type="button" className="m-2 h-9 px-4 flex items-center gap-2 rounded-[14px] text-[12px] font-medium" style={{ color: "var(--p-accent)" }} onClick={() => setAddingLesson(s)}><Plus size={16} /> Ajouter une leçon</button></li>
+            </ul>}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ol>
+      <button type="button" className="mt-4 w-full h-12 flex items-center justify-center gap-2 rounded-[14px] border border-dashed text-[14px] font-medium p-muted" style={{ borderColor: "var(--p-line)" }} onClick={() => setAddingSection(true)}><Plus size={16} /> Nouvelle section</button>
+      <p className="m-0 mt-4 text-[12px] p-muted leading-relaxed">L’ordre des sections fixe la semaine d’ouverture : la section 1 s’ouvre au démarrage, la section 2 une semaine plus tard. Une section apparaît dès qu’une de ses leçons est publiée. {mouse ? "Pour déplacer une section ou une leçon, gardez le clic sur sa ligne et glissez : un trait rouge montre où elle arrivera. La touche Échap annule." : "Déplacez une section ou une leçon avec ses flèches."}</p>
       {drag && createPortal(
         <div ref={ghost} aria-hidden="true" className="p-card fixed left-0 top-0 z-[60] flex items-center gap-2 px-3 py-2.5 font-medium pointer-events-none" style={{ width: Math.min(grabbed.current.width, 480), boxShadow: "0 12px 32px rgba(0, 0, 0, .18)", transform: `translate3d(${pointer.current.x - 20}px, ${pointer.current.y - 20}px, 0)` }}>
           <GripVertical size={16} className="flex-none p-muted" /><span className="truncate">{grabbed.current.title}</span>
         </div>,
         document.body,
       )}
-      <AddSection c={c} open={addingSection} onClose={() => setAddingSection(false)} onCreated={(id) => navigate(`/admin/construire/${c.id}/section/${id}`)} />
-      <AddLesson c={c} section={addingLesson} onClose={() => setAddingLesson(null)} onCreated={(id) => navigate(`/admin/construire/${c.id}/lecon/${id}`)} />
+      <AddSection c={c} open={addingSection} onClose={() => setAddingSection(false)} />
+      <AddLesson courseId={c.id} section={addingLesson} onClose={() => setAddingLesson(null)} />
     </section>
   );
 }
@@ -308,11 +323,12 @@ function DropMarker({ edge, offset }: { edge: "top" | "bottom"; offset: number }
   );
 }
 
-function AddSection({ c, open, onClose, onCreated }: { c: Course; open: boolean; onClose: () => void; onCreated: (id: number) => void }) {
+export function AddSection({ c, open, onClose }: { c: Pick<Course, "id">; open: boolean; onClose: () => void }) {
   const utils = trpc.useUtils();
+  const navigate = useNavigate();
   const [f, setF] = useState({ title: "", intention: "" });
   const create = trpc.build.createSection.useMutation({
-    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF({ title: "", intention: "" }); toast.success("Section créée dans Notion"); onCreated(r.id); },
+    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF({ title: "", intention: "" }); toast.success("Section créée dans Notion"); navigate(`/admin/construire/${c.id}/section/${r.id}`); },
     onError: (e) => toast.error(e.message),
   });
   return (
@@ -329,14 +345,15 @@ function AddSection({ c, open, onClose, onCreated }: { c: Course; open: boolean;
   );
 }
 
-function AddLesson({ section, onClose, onCreated }: { c: Course; section: Section | null; onClose: () => void; onCreated: (id: number) => void }) {
+export function AddLesson({ courseId, section, onClose }: { courseId: number; section: Section | null; onClose: () => void }) {
   const utils = trpc.useUtils();
+  const navigate = useNavigate();
   const open = !!section;
   const templates = trpc.build.templates.useQuery(undefined, { enabled: open });
   const blank = { title: "", intention: "", type: "contenu" as LessonType, source: "structure", templateId: "" };
   const [f, setF] = useState(blank);
   const create = trpc.build.createLesson.useMutation({
-    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF(blank); toast.success("Leçon créée dans Notion, en brouillon"); onCreated(r.id); },
+    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF(blank); toast.success("Leçon créée dans Notion, en brouillon"); navigate(`/admin/construire/${courseId}/lecon/${r.id}`); },
     onError: (e) => toast.error(e.message),
   });
   const ready = f.title.trim() && (f.source !== "notion" || f.templateId);

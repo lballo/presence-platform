@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "../queries/connection";
-import { courseHashtags, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, courses, hashtags, notionSyncRuns, type Course, type CourseLesson, type CourseSection } from "../../db/schema";
+import { courseHashtags, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, courses, hashtags, notionSyncRuns, testHashtags, testLessonLinks, testThemeLinks, testThemes, tests, type Course, type CourseLesson, type CourseSection, type Test, type TestTheme } from "../../db/schema";
 import { env } from "./env";
 import { getBlocks, getPage, listPages, notionMessage, notionReady, type NotionPage, type NotionProperty } from "./notion";
-import { courseContentFromBlocks, courseIssues, lessonContentFromBlocks, lessonIssues, normalizeTag, richTextToPlain, sectionContentFromBlocks, sectionIssues } from "./notionBlocks";
+import { courseContentFromBlocks, courseIssues, lessonContentFromBlocks, lessonIssues, normalizeTag, richTextToPlain, sectionContentFromBlocks, sectionIssues, themeIntroFromBlocks } from "./notionBlocks";
 import { storageReady, uploadBuffer, type UploadKind } from "./storage";
 import { testUrlProblem } from "./courseAccess";
 import { LESSON_RUBRICS, SECTION_RUBRICS, type CourseBlock, type LessonType, type PageContent, type Rubric } from "./courseBlocks";
 import { resumeLegacyProgress } from "./courseResume";
+import { hasResultBlock, looksLikeHtml } from "./testHost";
 
 type Status = "brouillon" | "relecture" | "publie";
 
@@ -175,6 +176,104 @@ export async function refreshLesson(lesson: CourseLesson): Promise<CourseLesson>
   return syncLessonPage(await getPage(lesson.notionPageId), { id: lesson.sectionId }, lesson);
 }
 
+/* ───────────── Catalogue de tests : lu seulement, Notion fait foi ───────────── */
+
+async function syncThemePage(page: NotionPage, existing?: TestTheme): Promise<{ row: TestTheme; issues: string[] }> {
+  const issues: string[] = [];
+  const known = new Map<string, string>();
+  const walk = (blocks: CourseBlock[]) => { for (const b of blocks) { if ("sourceKey" in b && b.sourceKey) known.set(b.sourceKey, b.url); if ("children" in b && b.children) walk(b.children); } };
+  walk(existing?.intro ?? []);
+  const intro = await copyBlockFiles(themeIntroFromBlocks(await getBlocks(page.id)), known, issues);
+  const values = {
+    notionPageId: page.id, name: text(page, "Thème").slice(0, 120) || "Sans titre", title: text(page, "Titre dans l'app").slice(0, 200), profileLabel: text(page, "Dans le profil").slice(0, 120),
+    emoji: page.icon?.emoji ?? "", position: num(page, "Ordre") ?? 0, status: statusOf(choice(page, "Statut")), intro, notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
+  };
+  const [row] = await getDb().insert(testThemes).values(values).onConflictDoUpdate({ target: testThemes.notionPageId, set: values }).returning();
+  return { row, issues };
+}
+
+/** Le fichier de Notion est recopié une fois, puis seulement s'il change. Un fichier déposé depuis Construire reste tant qu'un nouveau n'arrive pas dans Notion. */
+async function copyTestFile(page: NotionPage, existing: Test | undefined, issues: string[]) {
+  const file = prop(page, "Fichier HTML")?.files?.[0];
+  const source = file?.file?.url ?? file?.external?.url ?? "";
+  const key = source.split("?")[0];
+  if (!key || key === existing?.notionFileKey) return {};
+  if (!storageReady()) { issues.push("Le fichier HTML de Notion n’a pas pu être recopié : le stockage n’est pas configuré."); return {}; }
+  try {
+    const res = await fetch(source);
+    if (!res.ok) throw new Error(`téléchargement impossible (${res.status})`);
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.length > MAX_COPY) throw new Error("fichier trop lourd");
+    const html = data.toString("utf8");
+    if (!looksLikeHtml(html)) throw new Error("ce fichier n’est pas une page HTML");
+    const path = `notion/${createHash("sha256").update(key).digest("hex").slice(0, 32)}.html`;
+    await uploadBuffer("testFile", path, data, "text/html");
+    return { htmlPath: path, htmlName: (file?.name ?? "").slice(0, 200), htmlUpdatedAt: new Date(), htmlHasResultBlock: hasResultBlock(html), notionFileKey: key };
+  } catch (e) {
+    issues.push(`Le fichier HTML de Notion n’a pas pu être recopié : ${e instanceof Error ? e.message : "erreur"}`);
+    return {};
+  }
+}
+
+async function syncTestPage(page: NotionPage, existing: Test | undefined, themeIdByPage: Map<string, number>, lessonIdByPage: Map<string, number>) {
+  const db = getDb();
+  const issues: string[] = [];
+  const duration = num(page, "Durée estimée (min)");
+  const values = {
+    notionPageId: page.id, title: text(page, "Test").slice(0, 200) || "Sans titre", description: text(page, "Description"), durationMin: duration === null ? null : Math.round(duration),
+    resultType: choice(page, "Type de résultat").slice(0, 40), canRetake: !!prop(page, "Peut être refait")?.checkbox, savesResult: !!prop(page, "Résultat enregistré")?.checkbox, linkUrl: url(page, "Lien"),
+    status: statusOf(choice(page, "Statut")), notionEditedAt: new Date(page.last_edited_time), archivedAt: null, updatedAt: new Date(),
+    ...(await copyTestFile(page, existing, issues)),
+  };
+  const [row] = await db.insert(tests).values({ ...values, issues }).onConflictDoUpdate({ target: tests.notionPageId, set: { ...values, issues } }).returning({ id: tests.id });
+  const themeIds = (prop(page, "Thèmes")?.relation ?? []).flatMap((r) => themeIdByPage.get(r.id) ?? []);
+  const lessonIds = (prop(page, "Leçons liées")?.relation ?? []).flatMap((r) => lessonIdByPage.get(r.id) ?? []);
+  const tagIds = await hashtagIdsFor(labels(page, "Hashtags"));
+  await db.delete(testThemeLinks).where(eq(testThemeLinks.testId, row.id));
+  await db.delete(testLessonLinks).where(eq(testLessonLinks.testId, row.id));
+  await db.delete(testHashtags).where(eq(testHashtags.testId, row.id));
+  if (themeIds.length) await db.insert(testThemeLinks).values(themeIds.map((themeId) => ({ testId: row.id, themeId }))).onConflictDoNothing();
+  if (lessonIds.length) await db.insert(testLessonLinks).values(lessonIds.map((lessonId) => ({ testId: row.id, lessonId }))).onConflictDoNothing();
+  if (tagIds.length) await db.insert(testHashtags).values(tagIds.map((hashtagId) => ({ testId: row.id, hashtagId }))).onConflictDoNothing();
+  return issues;
+}
+
+/** Thèmes puis tests, après les leçons : un test se relie aux deux. Aucune écriture vers Notion. */
+async function syncCatalog(since: Date | null, full: boolean | undefined, notes: string[]): Promise<number> {
+  const db = getDb();
+  const [themePages, testPages] = [await listPages(env.notionThemes), await listPages(env.notionTests)];
+  const [knownThemes, knownTests, lessons] = await Promise.all([db.select().from(testThemes), db.select().from(tests), db.select({ id: courseLessons.id, notionPageId: courseLessons.notionPageId }).from(courseLessons)]);
+  const themeByPage = new Map(knownThemes.map((t) => [t.notionPageId, t]));
+  const testByPage = new Map(knownTests.map((t) => [t.notionPageId, t]));
+  const themeIdByPage = new Map(knownThemes.map((t) => [t.notionPageId, t.id]));
+  const lessonIdByPage = new Map(lessons.map((l) => [l.notionPageId, l.id]));
+  const edited = (page: NotionPage, row: { notionEditedAt: Date | null } | undefined) => !row?.notionEditedAt || new Date(page.last_edited_time) > row.notionEditedAt;
+  let changed = 0;
+  let themesChanged = false;
+  for (const page of themePages) {
+    const row = themeByPage.get(page.id);
+    if (!full && !needsRead(page, row, since)) continue;
+    const made = await syncThemePage(page, row);
+    themeIdByPage.set(page.id, made.row.id);
+    for (const i of made.issues) notes.push(`Thème « ${made.row.name} » : ${i}`);
+    if (!row) themesChanged = true;
+    if (edited(page, row)) changed++;
+  }
+  for (const page of testPages) {
+    const row = testByPage.get(page.id);
+    if (!full && !themesChanged && !needsRead(page, row, since)) continue;
+    await syncTestPage(page, row, themeIdByPage, lessonIdByPage);
+    if (edited(page, row)) changed++;
+  }
+  // Disparu de Notion : caché, jamais supprimé (les résultats des membres restent)
+  const themesSeen = new Set(themePages.map((p) => p.id));
+  const testsSeen = new Set(testPages.map((p) => p.id));
+  const now = new Date();
+  for (const t of knownThemes) if (!themesSeen.has(t.notionPageId) && !t.archivedAt) { await db.update(testThemes).set({ archivedAt: now }).where(eq(testThemes.id, t.id)); changed++; }
+  for (const t of knownTests) if (!testsSeen.has(t.notionPageId) && !t.archivedAt) { await db.update(tests).set({ archivedAt: now }).where(eq(tests.id, t.id)); changed++; }
+  return changed;
+}
+
 /* ───────────── Synchronisation ───────────── */
 
 /**
@@ -262,6 +361,8 @@ async function run({ trigger, full }: { trigger: string; full?: boolean }): Prom
     // Ce que les membres ont fait dans les anciens modules passe sur les leçons du même nom
     const resume = await resumeLegacyProgress();
     for (const title of resume.waiting) notes.push(`Progression mise de côté : aucune leçon ne porte le nom « ${title} »`);
+    // Le catalogue a sa propre lecture : si Notion en refuse l'accès, les formations restent à jour
+    try { changed += await syncCatalog(since, full, notes); } catch (e) { notes.push(`Catalogue de tests non lu : ${notionMessage(e)}`); }
     return await finish("ok", changed, notes.join(" · "));
   } catch (e) {
     return finish("erreur", 0, notionMessage(e));

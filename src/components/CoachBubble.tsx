@@ -8,6 +8,7 @@ import { sectionToShow } from "@/content/accueil";
 
 // Suggestions adaptées à la page où l'on se trouve
 const CONTEXT: { match: RegExp; prompts: string[] }[] = [
+  { match: /^\/parcours\/ressources/, prompts: ["Propose-moi une synthèse de mes résultats de tests", "Relie mes résultats à ce que je vis en ce moment", "Quel test me conseilles-tu de passer ensuite ?"] },
   { match: /^\/parcours/, prompts: ["Retrace mon chemin depuis le début de ma formation.", "Relie cette leçon à ce que j’ai déjà découvert", "Aide-moi à répondre à l’exercice de cette leçon"] },
   { match: /^\/evenements/, prompts: ["Comment aborder un événement où je ne connais personne ?", "Aide-moi à préparer une présentation de moi en 30 secondes"] },
   { match: /^\/forum/, prompts: ["Aide-moi à formuler un retour bienveillant et précis", "Comment raconter une victoire sans me mettre en avant ?"] },

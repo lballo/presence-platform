@@ -11,6 +11,7 @@ const TABS = [
   { to: "/admin/evenements", label: "Événements" },
   { to: "/admin/forum", label: "Forum et annonces" },
   { to: "/admin/construire", label: "Construire" },
+  { to: "/admin/coaching", label: "Coaching", count: "coaching" },
   { to: "/admin/journal", label: "Journal" },
 ] as const;
 
@@ -21,7 +22,7 @@ export default function AdminLayout() {
   const overview = trpc.admin.overview.useQuery(undefined, { enabled: allowed });
   if (!me.data) return <p className="p-muted py-20 text-center">Chargement…</p>;
   if (!allowed) return <div className="py-20 text-center p-muted">Cette page est réservée aux administrateurs.</div>;
-  const counts = { pending: overview.data?.pending.total ?? 0, reports: overview.data?.openReports ?? 0 };
+  const counts = { pending: overview.data?.pending.total ?? 0, reports: overview.data?.openReports ?? 0, coaching: overview.data?.coachingToDiscuss ?? 0 };
   return (
     <>
       <PageHeader eyebrow="Présence" title="Administration" />

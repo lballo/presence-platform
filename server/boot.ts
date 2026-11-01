@@ -53,6 +53,12 @@ app.post("/api/email/desinscription", async (c) => {
   return ok ? c.text("Désinscription enregistrée.") : c.text("Lien invalide.", 400);
 });
 
+// Les tests HTML : ce chemin ne sert qu'eux, chacun isolé par ses en-têtes (voir testHost.ts).
+app.get("/api/test-html/:id", async (c) => {
+  const { serveTest } = await import("./lib/testHost");
+  return serveTest(Number(c.req.param("id")), c.req.query("t"));
+});
+
 app.use("/api/trpc/*", async (c) =>
   fetchRequestHandler({ endpoint: "/api/trpc", req: c.req.raw, router: appRouter, createContext })
 );

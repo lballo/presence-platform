@@ -1,8 +1,11 @@
-import { Routes, Route } from "react-router";
+import { Navigate, Routes, Route } from "react-router";
 import { Toaster } from "sonner";
 import Layout from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
 import Parcours from "@/pages/Parcours";
+import ParcoursLayout from "@/pages/parcours/ParcoursLayout";
+import Ressources from "@/pages/parcours/Ressources";
+import TestPage from "@/pages/parcours/TestPage";
 import CoursePage from "@/pages/parcours/CoursePage";
 import LessonPage, { LegacyModuleRedirect } from "@/pages/parcours/LessonPage";
 import JournalPage from "@/pages/parcours/JournalPage";
@@ -21,7 +24,10 @@ import AdminHives from "@/pages/admin/AdminHives";
 import AdminEvents from "@/pages/admin/AdminEvents";
 import AdminForum from "@/pages/admin/AdminForum";
 import AdminLog from "@/pages/admin/AdminLog";
-import BuildHome from "@/pages/admin/construire/BuildHome";
+import AdminCoaching, { AdminCoachingClient } from "@/pages/admin/AdminCoaching";
+import CreatorLayout from "@/pages/admin/construire/CreatorShell";
+import BuildHome, { BuildWorkflows } from "@/pages/admin/construire/BuildHome";
+import BuildTests from "@/pages/admin/construire/BuildTests";
 import BuildCourse from "@/pages/admin/construire/BuildCourse";
 import BuildSection from "@/pages/admin/construire/BuildSection";
 import BuildLesson from "@/pages/admin/construire/BuildLesson";
@@ -59,11 +65,28 @@ export default function App() {
         <Route path="/e/:slug/confirmation" element={<EventPage />} />
       </Route>
       <Route element={<RequireAuth />}>
+      {/* L'espace créateur : une pleine page pour écrire, sans le menu du réseau */}
+      <Route path="/admin/construire" element={<CreatorLayout />}>
+        <Route index element={<BuildHome />} />
+        <Route path="tests" element={<BuildTests />} />
+        <Route path="relances" element={<BuildWorkflows />} />
+        <Route path=":id" element={<BuildCourse />} />
+        <Route path=":id/section/:sectionId" element={<BuildSection />} />
+        <Route path=":id/lecon/:lessonId" element={<BuildLesson />} />
+        <Route path=":id/apercu/:lessonId" element={<BuildPreview />} />
+      </Route>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/parcours" element={<Parcours />} />
-        <Route path="/parcours/journal" element={<JournalPage />} />
-        <Route path="/parcours/coach" element={<CoachMemoryPage />} />
+        <Route path="/parcours" element={<ParcoursLayout />}>
+          <Route index element={<Parcours />} />
+          <Route path="ressources" element={<Ressources />} />
+          <Route path="journal" element={<JournalPage />} />
+          <Route path="coach" element={<CoachMemoryPage />} />
+        </Route>
+        <Route path="/parcours/formations" element={<Navigate to="/parcours" replace />} />
+        <Route path="/parcours/tests" element={<Navigate to="/parcours/ressources" replace />} />
+        <Route path="/parcours/memoire" element={<Navigate to="/parcours/coach" replace />} />
+        <Route path="/parcours/ressources/test/:id" element={<TestPage />} />
         <Route path="/parcours/:courseId" element={<CoursePage />} />
         <Route path="/parcours/:courseId/lecon/:lessonId" element={<LessonPage />} />
         <Route path="/parcours/:courseId/module/:moduleId" element={<LegacyModuleRedirect />} />
@@ -83,11 +106,8 @@ export default function App() {
           <Route path="evenements" element={<AdminEvents />} />
           <Route path="forum" element={<AdminForum />} />
           <Route path="journal" element={<AdminLog />} />
-          <Route path="construire" element={<BuildHome />} />
-          <Route path="construire/:id" element={<BuildCourse />} />
-          <Route path="construire/:id/section/:sectionId" element={<BuildSection />} />
-          <Route path="construire/:id/lecon/:lessonId" element={<BuildLesson />} />
-          <Route path="construire/:id/apercu/:lessonId" element={<BuildPreview />} />
+          <Route path="coaching" element={<AdminCoaching />} />
+          <Route path="coaching/:id" element={<AdminCoachingClient />} />
         </Route>
         <Route path="/matching" element={<Matching />} />
         <Route path="/membres" element={<Membres />} />

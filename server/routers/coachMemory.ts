@@ -29,7 +29,8 @@ export const coachMemoryRouter = createRouter({
     return {
       consent: COACH_CONSENT,
       consentNeeded: consentNeeded(settings),
-      accepted: !!settings?.consentAt,
+      // Une nouvelle version de la mention redemande l'accord : l'ancien ne compte plus
+      accepted: !!settings?.consentAt && settings.consentVersion === COACH_CONSENT.version,
       refused: !!settings?.refusedAt,
       paused: !!settings?.pausedAt,
       active: memoryActive(settings),

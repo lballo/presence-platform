@@ -11,6 +11,7 @@ import {
   hivePosts,
   hiveResources,
   events,
+  eventSeries,
   eventRegistrations,
   eventSpeakers,
   talks,
@@ -86,8 +87,13 @@ export const hiveResourcesRelations = relations(hiveResources, ({ one }) => ({
 export const eventsRelations = relations(events, ({ one, many }) => ({
   host: one(members, { fields: [events.hostId], references: [members.id] }),
   hive: one(hives, { fields: [events.hiveId], references: [hives.id] }),
+  series: one(eventSeries, { fields: [events.seriesId], references: [eventSeries.id] }),
   registrations: many(eventRegistrations),
   speakers: many(eventSpeakers),
+}));
+
+export const eventSeriesRelations = relations(eventSeries, ({ many }) => ({
+  events: many(events),
 }));
 
 export const eventSpeakersRelations = relations(eventSpeakers, ({ one }) => ({

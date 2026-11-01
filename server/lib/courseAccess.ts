@@ -7,17 +7,19 @@ type AccessType = "collectif" | "individuel" | "les_deux";
 const PARIS = "Europe/Paris";
 const parisFormat = new Intl.DateTimeFormat("en-CA", { timeZone: PARIS, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-function parisFields(d: Date) {
+export function parisFields(d: Date) {
   const get = (type: string) => Number(parisFormat.formatToParts(d).find((p) => p.type === type)?.value ?? 0);
   return { y: get("year"), m: get("month"), d: get("day"), h: get("hour"), min: get("minute") };
 }
 
-/** Minuit à Paris, à une date civile donnée : le décalage horaire change deux fois par an. */
-export function parisMidnight(y: number, m: number, d: number): Date {
-  const wall = Date.UTC(y, m - 1, d);
+/** Une date et une heure à Paris : le décalage horaire change deux fois par an. */
+export function parisAt(y: number, m: number, d: number, h = 0, min = 0): Date {
+  const wall = Date.UTC(y, m - 1, d, h, min);
   const offsetAt = (at: number) => { const p = parisFields(new Date(at)); return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - Math.floor(at / 60000) * 60000; };
   return new Date(wall - offsetAt(wall - offsetAt(wall)));
 }
+
+export const parisMidnight = (y: number, m: number, d: number) => parisAt(y, m, d);
 
 /** La section n s'ouvre n−1 semaines après le démarrage, à minuit heure de Paris. La première, le jour même. */
 export function sectionOpensAt(startedAt: Date, position: number): Date {

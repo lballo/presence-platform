@@ -5,7 +5,7 @@ import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
   coachMemory, courseAssignments, courseEnrollments, courseHashtags, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, courses, emailSends, hashtags, journalEntries, lessonProgress, memberActivity, memberTagLinks, memberTags,
-  members, testResults, workflows, type Course, type CourseLesson, type CourseSection, type Member,
+  members, testResults, testThemeLinks, testThemes, tests, workflows, type Course, type CourseLesson, type CourseSection, type Member,
 } from "../../db/schema";
 import { ACTIVITY_LABEL, logActivity } from "../lib/activity";
 import { logAdmin } from "../lib/adminLog";
@@ -21,7 +21,9 @@ import { asTrpcError, assertNotionReady, assertUnchanged, COURSE_STATUS, courseP
 import { notify } from "../lib/notify";
 import { open, privateBoxReady } from "../lib/privateBox";
 import { reminderPlan, sendCourseReminder, sendMemberEmail, SKIP_LABEL } from "../lib/reminders";
-import { isOurImage, storageReady } from "../lib/storage";
+import { downloadBuffer, isOurImage, storageReady } from "../lib/storage";
+import { testIssues, testOpens } from "../lib/testCatalog";
+import { hasResultBlock, hostedSrc, looksLikeHtml } from "../lib/testHost";
 import { runWorkflows, workflowOverview } from "../lib/workflows";
 import { parseResult } from "./courses";
 
@@ -243,6 +245,54 @@ async function setFullAccess(actor: Parameters<typeof logAdmin>[0], courseId: nu
 
 export const buildRouter = createRouter({
   /** L'état de la liaison avec Notion. */
+  /** Le catalogue de tests, copié de Notion. Les chiffres sont des totaux par test : aucun résultat, aucun nom. */
+  tests: buildProc.query(async () => {
+    const db = getDb();
+    const [list, themes, links, stats] = await Promise.all([
+      db.select().from(tests).where(isNull(tests.archivedAt)).orderBy(asc(tests.title)),
+      db.select().from(testThemes).where(isNull(testThemes.archivedAt)).orderBy(asc(testThemes.position), asc(testThemes.id)),
+      db.select().from(testThemeLinks),
+      db.select({ testId: testResults.testId, passages: sql<number>`count(*)::int`, people: sql<number>`count(distinct ${testResults.memberId})::int`, lastAt: sql<string>`max(${testResults.passedAt})` }).from(testResults).where(isNotNull(testResults.testId)).groupBy(testResults.testId),
+    ]);
+    return {
+      themes: themes.map((t) => ({ id: t.id, name: t.name, title: t.title, status: t.status, profileLabel: t.profileLabel, testCount: links.filter((l) => l.themeId === t.id).length })),
+      tests: list.map((t) => {
+        const ids = links.filter((l) => l.testId === t.id).map((l) => l.themeId);
+        const s = stats.find((x) => x.testId === t.id);
+        return {
+          id: t.id, notionPageId: t.notionPageId, title: t.title, description: t.description, durationMin: t.durationMin, resultType: t.resultType, canRetake: t.canRetake, status: t.status, linkUrl: t.linkUrl,
+          themes: themes.filter((x) => ids.includes(x.id)).map((x) => x.name),
+          file: t.htmlPath ? { name: t.htmlName, updatedAt: t.htmlUpdatedAt, sendsResult: t.htmlHasResultBlock } : null,
+          opens: testOpens(t), issues: testIssues(t, ids.length),
+          stats: { people: s?.people ?? 0, passages: s?.passages ?? 0, lastAt: s?.lastAt ? new Date(s.lastAt) : null },
+        };
+      }),
+    };
+  }),
+
+  /** Déposer ou remplacer le fichier HTML d'un test, sans passer par GitHub. Le fichier a déjà été envoyé au stockage par le navigateur. */
+  setTestFile: buildProc.input(z.object({ id: z.number().int(), path: z.string().min(1).max(300), name: z.string().trim().min(1).max(200) })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    if (!input.path.startsWith(`membre-${ctx.memberId}/`) || input.path.includes("..")) throw new TRPCError({ code: "FORBIDDEN", message: "Ce fichier n’a pas été envoyé par vous." });
+    const [test] = await db.select({ id: tests.id, title: tests.title }).from(tests).where(eq(tests.id, input.id)).limit(1);
+    if (!test) throw new TRPCError({ code: "NOT_FOUND", message: "Ce test n’existe plus." });
+    const data = await downloadBuffer("testFile", input.path);
+    if (!data) throw new TRPCError({ code: "BAD_REQUEST", message: "Le fichier n’a pas été reçu : renvoyez-le." });
+    const html = data.toString("utf8");
+    if (!looksLikeHtml(html)) throw new TRPCError({ code: "BAD_REQUEST", message: "Ce fichier n’est pas une page HTML." });
+    const sendsResult = hasResultBlock(html);
+    await db.update(tests).set({ htmlPath: input.path, htmlName: input.name, htmlUpdatedAt: new Date(), htmlHasResultBlock: sendsResult, updatedAt: new Date() }).where(eq(tests.id, test.id));
+    await logAdmin(ctx.member, { action: "Fichier de test déposé", targetType: "test", targetId: test.id, label: test.title, detail: input.name });
+    return { sendsResult };
+  }),
+
+  /** Essayer un test tel que les membres le verront, même en brouillon. Aucun résultat n'est gardé. */
+  testPreview: buildProc.input(z.object({ id: z.number().int() })).query(async ({ ctx, input }) => {
+    const [test] = await getDb().select().from(tests).where(eq(tests.id, input.id)).limit(1);
+    if (!test) throw new TRPCError({ code: "NOT_FOUND", message: "Ce test n’existe plus." });
+    return { title: test.title, frame: test.htmlPath ? { kind: "hosted" as const, src: hostedSrc(test.id, ctx.memberId, true) } : test.linkUrl ? { kind: "link" as const, url: test.linkUrl } : null };
+  }),
+
   status: buildProc.query(async () => ({
     notionReady: notionReady(), storageReady: storageReady(), privateBoxReady: privateBoxReady(), aiReady: !!env.geminiApiKey, emailReady: emailReady(),
     running: syncRunning(), lastSync: await lastSync(),
@@ -258,16 +308,17 @@ export const buildRouter = createRouter({
     const db = getDb();
     const [rows, sections, lessons, counts] = await Promise.all([
       db.select().from(courses).where(isNull(courses.archivedAt)).orderBy(asc(courses.position), asc(courses.title)),
-      db.select({ id: courseSections.id, courseId: courseSections.courseId, issues: courseSections.issues }).from(courseSections).where(isNull(courseSections.archivedAt)),
-      db.select({ sectionId: courseLessons.sectionId, status: courseLessons.status, issues: courseLessons.issues }).from(courseLessons).where(isNull(courseLessons.archivedAt)),
+      db.select({ id: courseSections.id, courseId: courseSections.courseId, issues: courseSections.issues }).from(courseSections).where(isNull(courseSections.archivedAt)).orderBy(asc(courseSections.position)),
+      db.select({ id: courseLessons.id, sectionId: courseLessons.sectionId, status: courseLessons.status, issues: courseLessons.issues, durationMin: courseLessons.durationMin }).from(courseLessons).where(isNull(courseLessons.archivedAt)).orderBy(asc(courseLessons.position)),
       db.select({ courseId: courseEnrollments.courseId, n: sql<number>`count(*)::int` }).from(courseEnrollments).groupBy(courseEnrollments.courseId),
     ]);
     return rows.map((c) => {
       const ownSections = sections.filter((x) => x.courseId === c.id);
-      const ownLessons = lessons.filter((l) => ownSections.some((x) => x.id === l.sectionId));
+      const ownLessons = ownSections.flatMap((x) => lessons.filter((l) => l.sectionId === x.id));
       return {
         id: c.id, title: c.title, tagline: c.tagline, emoji: c.emoji, coverUrl: c.coverUrl, public: c.public, rhythm: c.rhythm, status: c.status, position: c.position,
         sectionCount: ownSections.length, lessonCount: ownLessons.length, publishedCount: ownLessons.filter((l) => l.status === "publie").length, participants: counts.find((x) => x.courseId === c.id)?.n ?? 0,
+        totalMin: ownLessons.reduce((n, l) => n + (l.durationMin ?? 0), 0), firstLessonId: ownLessons[0]?.id ?? null,
         issueCount: c.issues.length + ownSections.reduce((n, x) => n + x.issues.length, 0) + ownLessons.reduce((n, l) => n + l.issues.length, 0),
       };
     });

@@ -49,7 +49,7 @@ export const SECTION_BUBBLES: Record<string, string> = {
   "/messages": "Écrivez directement à un membre. Votre premier message rapporte 10 miels.",
   "/membres": "L’annuaire du réseau. Cherchez un parcours, une ville, une envie.",
   "/talk-show": "Les talks des membres. Regardez, inspirez-vous, et proposez le vôtre.",
-  "/parcours": "Vos formations. Une section s’ouvre chaque semaine, et vos réponses restent dans votre journal privé.",
+  "/parcours": "Vos formations, vos tests, votre journal et ce que le coach retient de vous. Une section s’ouvre chaque semaine, et vos réponses restent privées.",
 };
 
 /** La rubrique dont la bulle reste à montrer sur cette page. */

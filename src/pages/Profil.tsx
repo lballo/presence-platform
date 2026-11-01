@@ -5,6 +5,7 @@ import { ago, longDate, hour, plural } from "@/lib/format";
 import { COVERS } from "./Ruches";
 import { RolePicker } from "./Membres";
 import { ReplayTour } from "@/components/onboarding/Tour";
+import { MyThemeResults, PublicThemeResults } from "@/components/profile/ThemeResults";
 
 const KIND = { salon: "Salon live", online: "En ligne", onsite: "Présentiel" } as const;
 const ROLE = { founder: "Fondatrice·eur", leader: "Leader", member: "Membre", pending: "" } as const;
@@ -68,6 +69,8 @@ export default function Profil() {
               {m.langs && <><dt className="p-muted">Langues</dt><dd className="m-0">{m.langs}</dd></>}
             </dl>
           </section>
+
+          {m.isMe ? <MyThemeResults /> : <PublicThemeResults items={m.themeResults} firstName={m.firstName} />}
 
           {m.talks.length > 0 && (
             <section className="flex flex-col gap-3">

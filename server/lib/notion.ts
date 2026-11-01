@@ -83,6 +83,7 @@ export type NotionProperty = {
   multi_select?: { name: string }[];
   relation?: { id: string }[];
   files?: FileRef[];
+  checkbox?: boolean;
 };
 
 export type NotionPage = {

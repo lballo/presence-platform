@@ -41,7 +41,7 @@ export default function AdminEvents() {
         <h2 className="m-0 text-[30px]">Événements</h2>
         <Link to="/evenements" className="p-btn-primary p-btn-sm no-underline"><Plus size={15} /> Créer un événement</Link>
       </div>
-      <p className="m-0 text-[14.5px] p-muted">La création se fait dans la page Événements. Pour ajouter une date de réunion de bienvenue, activez « Réunion de bienvenue » dans le formulaire.</p>
+      <p className="m-0 text-[14.5px] p-muted">La création se fait dans la page Événements. Pour une réunion de bienvenue régulière, activez « Réunion de bienvenue » et choisissez une répétition dans le formulaire.</p>
       <Chips label="Filtrer les événements" value={filter} onChange={setFilter} options={[["avenir", "À venir"], ["bienvenue", "Réunions de bienvenue"], ["passes", "Passés"], ["annules", "Annulés"], ["tous", "Tous"]]} />
       {q.isLoading ? <p className="p-muted text-center py-10 m-0">Chargement…</p> : (
         <Rows rows={rows} columns={columns} keyOf={(e) => e.id} empty="Aucun événement dans cette liste." actions={(e) => (

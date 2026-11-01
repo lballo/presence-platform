@@ -1,6 +1,7 @@
 import sanitizeHtml from "sanitize-html";
 import { isQuestion, LESSON_RUBRICS, LESSON_TYPE_LABEL, memberBlocks, plainOf, SECTION_RUBRICS, type CourseBlock, type CourseContent, type LessonType, type PageContent, type Rubric, type RubricKey, type Rubrics } from "./courseBlocks";
 import type { NotionBlock, RichText } from "./notion";
+import { CHART_CLASSES, classOfNotionColor, isChartClass, notionColorOfClass } from "./textColors";
 
 /* ───────────── Texte mis en forme : Notion ↔ HTML ───────────── */
 
@@ -17,6 +18,8 @@ export function richTextToHtml(rich: RichText[] | undefined): string {
     if (a.underline) h = `<u>${h}</u>`;
     if (a.italic) h = `<em>${h}</em>`;
     if (a.bold) h = `<strong>${h}</strong>`;
+    const color = classOfNotionColor(a.color);
+    if (color) h = `<span class="${color}">${h}</span>`;
     const href = safeHref(r.href ?? r.text?.link?.url);
     return href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${h}</a>` : h;
   }).join("");
@@ -29,13 +32,15 @@ const MAX_TEXT = 2000; // limite de Notion par morceau de texte
 export function htmlToRichText(html: string): RichText[] {
   const open: Record<string, number> = {};
   let href: string | null = null;
-  const parts: { text: string; marks: string; href: string | null }[] = [];
+  const colors: string[] = [];
+  const parts: { text: string; marks: string; href: string | null; color: string | undefined }[] = [];
   const push = (text: string) => {
     if (!text) return;
     const marks = Object.keys(open).filter((k) => open[k] > 0).sort().join(",");
+    const color = [...colors].reverse().find(Boolean);
     const last = parts[parts.length - 1];
-    if (last && last.marks === marks && last.href === href) last.text += text;
-    else parts.push({ text, marks, href });
+    if (last && last.marks === marks && last.href === href && last.color === color) last.text += text;
+    else parts.push({ text, marks, href, color });
   };
   for (const token of html.match(/<[^>]+>|[^<]+/g) ?? []) {
     if (!token.startsWith("<")) { push(unesc(token)); continue; }
@@ -44,14 +49,15 @@ export function htmlToRichText(html: string): RichText[] {
     const name = m[2].toLowerCase();
     if (name === "br") { push("\n"); continue; }
     if (name === "a") { href = m[1] ? null : safeHref(unesc(token.match(/href="([^"]*)"/i)?.[1] ?? "")); continue; }
+    if (name === "span") { if (m[1]) colors.pop(); else colors.push(notionColorOfClass((token.match(/class="([^"]*)"/i)?.[1] ?? "").split(/\s+/).find(isChartClass) ?? "") ?? ""); continue; }
     const mark = MARKS[name];
     if (mark) open[mark] = Math.max(0, (open[mark] ?? 0) + (m[1] ? -1 : 1));
   }
   const out: RichText[] = [];
   for (const p of parts) {
-    const annotations = Object.fromEntries(p.marks.split(",").filter(Boolean).map((k) => [k, true]));
+    const annotations = { ...Object.fromEntries(p.marks.split(",").filter(Boolean).map((k) => [k, true])), ...(p.color ? { color: p.color } : {}) };
     for (let i = 0; i < p.text.length; i += MAX_TEXT) {
-      out.push({ type: "text", text: { content: p.text.slice(i, i + MAX_TEXT), link: p.href ? { url: p.href } : null }, ...(p.marks ? { annotations } : {}) });
+      out.push({ type: "text", text: { content: p.text.slice(i, i + MAX_TEXT), link: p.href ? { url: p.href } : null }, ...(p.marks || p.color ? { annotations } : {}) });
     }
   }
   return out;
@@ -66,8 +72,9 @@ export function cleanInline(html: string): string {
   // Deux paragraphes restent séparés par une ligne vide, dans Notion comme pour les membres
   const flat = html.replace(/<\/p>\s*<p[^>]*>/gi, "<br><br>").replace(/<\/(p|div|h[1-6]|li|blockquote)>\s*<(p|div|h[1-6]|li|blockquote)[^>]*>/gi, "<br>");
   return sanitizeHtml(flat, {
-    allowedTags: ["strong", "em", "u", "s", "code", "a", "br"],
-    allowedAttributes: { a: ["href", "target", "rel"] },
+    allowedTags: ["strong", "em", "u", "s", "code", "a", "br", "span"],
+    allowedAttributes: { a: ["href", "target", "rel"], span: ["class"] },
+    allowedClasses: { span: CHART_CLASSES },
     allowedSchemes: ["http", "https", "mailto"],
     allowProtocolRelative: false,
     transformTags: {
@@ -166,6 +173,18 @@ export function courseContentFromBlocks(raw: NotionBlock[]): CourseContent {
     if (inside) out.description!.push(b);
   }
   return out;
+}
+
+const INTRODUCTION = norm("Introduction");
+
+/** La page d'un thème du catalogue : sa rubrique « Introduction », ou toute la page si elle n'a pas ce titre. */
+export function themeIntroFromBlocks(raw: NotionBlock[]): CourseBlock[] {
+  const blocks = raw.map((r) => markDraft(toCourseBlock(r)));
+  const start = blocks.findIndex((b) => b.type === "heading" && b.level === 2 && norm(plainOf(b.html)) === INTRODUCTION);
+  if (start < 0) return blocks;
+  const after = blocks.slice(start + 1);
+  const end = after.findIndex((b) => b.type === "heading" && b.level === 2);
+  return end < 0 ? after : after.slice(0, end);
 }
 
 /* ───────────── Ce que Construire signale ───────────── */

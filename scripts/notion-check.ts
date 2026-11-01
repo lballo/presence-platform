@@ -25,6 +25,19 @@ async function main() {
   }
   console.log(bad ? `${bad} propriété(s) à regarder` : "✓ Propriétés des trois bases conformes");
 
+  // Le catalogue de tests : lu seulement. Sans accès, la synchronisation le note et les formations continuent.
+  const CATALOG = {
+    [env.notionThemes]: { "Thème": "title", "Titre dans l'app": "rich_text", Ordre: "number", "Dans le profil": "rich_text", Statut: "status" },
+    [env.notionTests]: { Test: "title", "Thèmes": "relation", Description: "rich_text", "Durée estimée (min)": "number", "Fichier HTML": "files", Lien: "url", "Type de résultat": "select", "Peut être refait": "checkbox", "Leçons liées": "relation", Hashtags: "multi_select", "Résultat enregistré": "checkbox", Statut: "status" },
+  };
+  for (const [id, props] of Object.entries(CATALOG)) {
+    try {
+      const source = await getDataSource(id);
+      const wrong = Object.entries(props).filter(([name, type]) => source.properties[name]?.type !== type).map(([name]) => name);
+      console.log(wrong.length ? `✗ Catalogue : à regarder : ${wrong.join(", ")}` : `✓ Catalogue : ${(await listPages(id)).length} page(s) lisibles`);
+    } catch (e) { console.log(`✗ Catalogue non lisible : ${notionMessage(e)}`); }
+  }
+
   const [courses, sections, lessons] = [await listPages(env.notionFormations), await listPages(env.notionSections), await listPages(env.notionLecons)];
   console.log(`✓ ${courses.length} formation(s), ${sections.length} section(s), ${lessons.length} leçon(s) lisibles`);
   const blockTypes = new Map<string, number>();

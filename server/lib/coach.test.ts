@@ -13,6 +13,9 @@ describe("ce qui entre dans la mémoire du coach : les mots du membre", () => {
   });
   it("un test illisible reste tel quel", () => {
     expect(testMemory("pas du json")).toBe("Résultat du test : pas du json");
+    expect(testMemory(JSON.stringify({ label: "Stratège" }), "Mon profil")).toBe("Résultat du test « Mon profil » : Stratège");
+    expect(testMemory(JSON.stringify({ label: "Bâtisseur" }), "Mes moteurs", ["Drivers", "Voie professionnelle"])).toBe("Résultat du test « Mes moteurs » (thèmes : Drivers, Voie professionnelle) : Bâtisseur");
+    expect(testMemory(JSON.stringify({ label: "Vigilant" }), "Mon stress", ["Stress"])).toBe("Résultat du test « Mon stress » (thème : Stress) : Vigilant");
   });
   it("un défi garde la note si elle existe", () => {
     expect(challengeMemory("Fondations", "")).toBe("A relevé le défi de « Fondations ».");

@@ -9,7 +9,7 @@ import { env } from "./env";
  */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
-export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "message" | "eventImage" | "avatar" | "courseImage" | "courseVideo" | "courseFile", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
+export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "message" | "eventImage" | "avatar" | "courseImage" | "courseVideo" | "courseFile" | "testFile", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
   talk: { bucket: "talks", maxMb: 500, types: "video", public: true },
   forum: { bucket: "forum", maxMb: 500, types: "video", public: true },
   forumImage: { bucket: "forum-images", maxMb: 10, types: IMAGE_TYPES, public: true },
@@ -21,6 +21,8 @@ export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "me
   courseImage: { bucket: "course-images", maxMb: 10, types: IMAGE_TYPES, public: true },
   courseVideo: { bucket: "course-videos", maxMb: 500, types: "video", public: true },
   courseFile: { bucket: "course-files", maxMb: 50, public: true },
+  // Les tests HTML ne sortent du bucket que par /api/test-html, dans un cadre isolé
+  testFile: { bucket: "test-files", maxMb: 15, types: ["text/html"], public: false },
 };
 export type UploadKind = keyof typeof BUCKETS;
 
@@ -35,7 +37,7 @@ export async function createSignedUpload(kind: UploadKind, memberId: number, fil
   if (!storageReady()) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Le stockage des fichiers n’est pas encore configuré (SUPABASE_SERVICE_ROLE_KEY)." });
   const cfg = BUCKETS[kind];
   if (cfg.types === "video" && !contentType.startsWith("video/")) throw new TRPCError({ code: "BAD_REQUEST", message: "Choisissez un fichier vidéo (mp4, mov, webm)." });
-  if (Array.isArray(cfg.types) && !cfg.types.includes(contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: cfg.types === IMAGE_TYPES ? "Choisissez une image (jpg, png, webp ou gif)." : "Choisissez une photo (jpg, png ou webp)." });
+  if (Array.isArray(cfg.types) && !cfg.types.includes(contentType)) throw new TRPCError({ code: "BAD_REQUEST", message: cfg.types === IMAGE_TYPES ? "Choisissez une image (jpg, png, webp ou gif)." : cfg.types === PHOTO_TYPES ? "Choisissez une photo (jpg, png ou webp)." : "Choisissez un fichier HTML (.html)." });
   if (size > cfg.maxMb * 1024 * 1024) throw new TRPCError({ code: "BAD_REQUEST", message: `Le fichier dépasse ${cfg.maxMb} Mo.` });
   const ext = (filename.split(".").pop() ?? "bin").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "bin";
   const path = `membre-${memberId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -61,6 +63,14 @@ export async function uploadBuffer(kind: UploadKind, path: string, data: Buffer,
   });
   if (!res.ok) throw new Error(`Supabase Storage : ${res.status}`);
   return `${env.supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+}
+
+/** Lit un fichier d'un bucket privé côté serveur. Absent : null. */
+export async function downloadBuffer(kind: UploadKind, path: string): Promise<Buffer | null> {
+  if (!storageReady()) return null;
+  const res = await fetch(`${env.supabaseUrl}/storage/v1/object/${BUCKETS[kind].bucket}/${path}`, { headers: { Authorization: `Bearer ${env.supabaseServiceKey}`, apikey: env.supabaseServiceKey } });
+  if (!res.ok) return null;
+  return Buffer.from(await res.arrayBuffer());
 }
 
 /** Lien de téléchargement temporaire pour un fichier d'un bucket privé. */

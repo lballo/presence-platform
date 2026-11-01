@@ -94,7 +94,7 @@ function Answer({ lessonId, questionId, label, saved, preview }: { lessonId: num
     onError: (e) => { setStatus(""); toast.error(e.message); },
   });
   const share = trpc.courses.shareAnswer.useMutation({
-    onSuccess: (_r, v) => { setShared(v.shared); toast.success(v.shared ? "Réponse partagée avec Laura" : "Partage repris : cette réponse redevient privée"); },
+    onSuccess: (_r, v) => { setShared(v.shared); utils.courses.journal.invalidate(); toast.success(v.shared ? "Laura retrouvera cette réponse dans la préparation de votre coaching" : "Option retirée : cette réponse redevient privée"); },
     onError: (e) => toast.error(e.message),
   });
   const flush = (value = text) => {
@@ -114,7 +114,7 @@ function Answer({ lessonId, questionId, label, saved, preview }: { lessonId: num
         onBlur={() => flush()} />
       <span className="flex flex-wrap items-center justify-between gap-2 min-h-[28px]">
         <span className="text-[12.5px] p-faint" role="status">{status === "saving" ? "Enregistrement…" : status === "saved" ? "Enregistré dans votre journal" : ""}</span>
-        {id && <button type="button" className="p-btn-ghost text-[13px] min-h-0" disabled={share.isPending} onClick={() => share.mutate({ id, shared: !shared })}><Share2 size={13} /> {shared ? "Partagé avec Laura · reprendre" : "Partager avec Laura"}</button>}
+        {id && <button type="button" className="p-btn-ghost text-[13px] min-h-0" disabled={share.isPending} onClick={() => share.mutate({ id, shared: !shared })}><Share2 size={13} /> {shared ? "À travailler en coaching avec Laura · retirer" : "À travailler en coaching avec Laura"}</button>}
       </span>
     </div>
   );

@@ -32,7 +32,7 @@ npm run dev                 # http://localhost:3000
 | `MEMBERSHIP_URL` | Page qui explique comment revenir, sur l'écran « Accès terminé », et bloc « Découvrir le réseau » des pages d'événements. Sans elle, le bouton propose d'écrire à Laura. |
 | `WELCOME_VIDEO_URL` | Courte vidéo de Laura dans le premier panneau d'accueil. Vide : panneau sans vidéo. |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Connexion des membres (obligatoires), invitations, et envoi des vidéos dans Supabase Storage. |
-| `NOTION_TOKEN` | Clé de l'intégration interne Notion, connectée à la seule page « Formations Présence » (droits : lecture, modification, insertion). Sans elle : rien ne se synchronise, Construire le signale. |
+| `NOTION_TOKEN` | Clé de l'intégration interne Notion, connectée à la page « Formations Présence » (droits : lecture, modification, insertion) et à la page « Catalogue de tests » (lue seulement). Sans elle : rien ne se synchronise, Construire le signale. |
 | `PRIVATE_DATA_KEY` | Clé de chiffrement du journal, des résultats de tests et de la mémoire du coach : `openssl rand -base64 32`. À garder aussi en lieu sûr, car sans elle ces contenus deviennent illisibles. Sans cette variable, les membres ne peuvent pas écrire dans leur journal. |
 | `RESEND_API_KEY` | Envoi des relances par e-mail, domaine `lauraballo.com` vérifié chez Resend. Sans elle : notifications dans l'application seulement. |
 | `CALENDLY_URL` | Lien de réservation des séances de coaching (bandeau du tableau de bord) |
@@ -100,6 +100,7 @@ Page « Messages » : ouverte à tous les membres (pas seulement aux relations),
 - **Inscription** : un clic, liste d'attente, promotion automatique ; confirmation avec `.ics`, Google Agenda et partage. Les tables sont prêtes pour des invités (`event_guests`), non activés.
 - **Gestion** : `/e/{slug}/gerer` pour le créateur et l'administration : modifier, inscrits, présents, annuler (inscrits prévenus par la cloche), vues.
 - **Agenda** : calendrier mensuel du tableau de bord (`src/components/events/AgendaCalendar.tsx`), événements du réseau et des ruches du membre ; sur téléphone, une liste par défaut.
+- **Événements récurrents** : table `event_series`, calcul des dates dans `server/lib/recurrence.ts`, création dans `server/lib/eventSeries.ts`. Chaque date est un événement ordinaire, avec sa page et ses inscrits, créé trois mois à l'avance par le travail régulier. La liste « À venir » ne montre que la prochaine date d'une série ; l'agenda les montre toutes. Modifier ou annuler vaut pour une date, ou pour elle et toute la suite. Réservé aux organisateurs et aux ruches : un membre propose une date à la fois.
 - **Notifications** : `notifications`, affichées par la cloche (`src/components/NotificationBell.tsx`). Aucun e-mail n'est envoyé.
 
 ## Accueil et miel
@@ -108,7 +109,7 @@ Page « Messages » : ouverte à tous les membres (pas seulement aux relations),
 - **Réponses** : `goals`, `goals_other`, `match_profiles`, `match_sectors`, `profile_type`, `sector`, `intents` ; elles servent au matching et aux suggestions du coach. Les choix sont dans `server/lib/onboardingOptions.ts`.
 - **Miel** : `honey_rules` (barème modifiable) et `honey_ledger` (une ligne par action et par membre). `server/lib/honey.ts` crédite une seule fois ; si l'action vaut davantage ensuite (vidéo ajoutée à une présentation), seule la différence est gagnée. L'animation du coach lit `honey.unannounced`.
 - **Présentation** : une seule par membre dans l'espace Présentations, préremplie et modifiable.
-- **Réunion de bienvenue** : un événement de type `bienvenue`, plusieurs dates possibles ; les présences cochées dans « Gérer » donnent le miel.
+- **Réunion de bienvenue** : un événement de type `bienvenue`, plusieurs dates possibles, souvent en série ; les présences cochées dans « Gérer » donnent le miel.
 - **Textes** : `src/content/accueil.ts`, repris pour relecture dans [docs/textes-accueil.md](docs/textes-accueil.md).
 
 ## Administration
@@ -131,9 +132,31 @@ Trois niveaux, connectés à Notion (espace « Formations Présence », bases Fo
 - **Accès et calendrier** : `server/lib/courseAccess.ts` et `courseState.ts`, seule source des droits de lecture. Une leçon est visible si sa formation et elle-même sont publiées. Une section n'a pas de statut : elle apparaît dès qu'une de ses leçons est publiée, et la propriété « Statut » de la base Sections n'est ni lue ni écrite. La section n s'ouvre n−1 semaines après le démarrage, à minuit heure de Paris, et toutes ses leçons s'ouvrent ensemble. Une section ouverte au calendrier ne se referme pas si l'ordre change. Accès complet réversible : ce qui n'a été ouvert que par lui se referme, les réponses restent. Une section est terminée quand toutes ses leçons publiées le sont ; son défi, facultatif, ne compte pas.
 - **Données privées** : chiffrées par `server/lib/privateBox.ts`, chaque texte lié à son membre. L'administration ne lit que ce qui est partagé (`build.memberShared`). Le journal d'activité ne contient aucun texte de membre.
 - **Coach** : `server/lib/coachMemory.ts`. Si le membre a accepté (`COACH_CONSENT`, version gardée avec l'accord), ses réponses, réflexions, résultats de tests et défis entrent dans la mémoire dès qu'ils sont enregistrés, avec ses mots, sans résumé. Ils partent à Gemini seulement quand il parle au coach, 60 éléments au plus (`coachContext`). Chaque souvenir garde son origine (`coach_memory.origin`) : modifier l'entrée le met à jour, la vider le retire, et ce que le membre a corrigé ou effacé reste. Un élément effacé ne garde aucun texte, seulement son origine, pour ne pas revenir. Pendant une pause, rien n'entre. Les conversations du coach (`coach_messages`) ne sont pas chiffrées.
-- **Tests intégrés** : pages HTML sur un autre domaine, résultat par `postMessage`, tout message d'une autre origine est ignoré. Voir [docs/integrer-un-test.md](docs/integrer-un-test.md).
+- **Tests intégrés** : pages HTML sur un autre domaine, résultat par `postMessage`, tout message d'une autre origine est ignoré. Voir [docs/integrer-un-test.md](docs/integrer-un-test.md). Pour les tests déposés sur le réseau, voir « Mon parcours » ci-dessous.
 - **Relances** : `server/lib/workflows.ts`, modèles « Nouvelle section disponible » et « Formation en pause depuis 14 jours » : notification dans l'application, et e-mail automatique si l'administration l'active. Relance manuelle depuis les participants ou la fiche d'un membre (`server/lib/reminders.ts`), jamais deux en 24 heures pour une même formation.
 - **E-mails** : `server/lib/email.ts`, envoi par l'API de Resend, car l'offre gratuite de Render bloque le SMTP. Chaque membre choisit ses catégories (`EMAIL_CATEGORIES` : formations, événements, marketing) dans son tableau de bord ; le marketing est désactivé par défaut. Chaque e-mail porte un lien signé de désinscription (`/desinscription`) et l'en-tête de désinscription en un clic. Tout nouvel envoi de relance doit passer par `sendMemberEmail`, qui respecte ces choix et laisse une trace dans `email_sends`.
+
+## Espace créateur (Construire)
+
+`/admin/construire` est une pleine page, sans le menu du réseau, toujours en clair, aux couleurs de la charte (`html.creator-mode` dans `src/index.css`, `CreatorShell.tsx`).
+
+- **Mes formations**, **Tests**, **Relances** : le bandeau de gauche. L'éditeur d'une formation garde ses quatre onglets (contenu, informations, participants, statistiques).
+- **Plan** : `Outline.tsx`, glissement aux événements de pointeur (clic tenu puis 4 pixels), écritures en file. Les flèches restent pour le téléphone.
+- **Leçon et section, comme un document** : `BlockEditor.tsx`. Un bloc de l'application reste un bloc Notion : chaque ligne a son éditeur, Entrée crée le bloc suivant, Retour arrière recolle, les flèches passent d'un bloc à l'autre, « / » ouvre le menu d'insertion. Le changement de bloc se fait dans le même geste (`flushSync`, `focusNow`) : la lettre suivante ne doit jamais tomber dans le bloc d'avant.
+- **Enregistrement** : `useDocSaver` (`EditorParts.tsx`). Tant que les membres ne voient pas la page, elle part toute seule dans Notion après 2,5 secondes de pause. Sur une page publiée, rien ne part sans un clic, et quitter pose la question. La page ne se recharge jamais sous les doigts : après une écriture, `remapIds` donne aux blocs leur identifiant Notion. Sans cela, l'écriture suivante les recréerait.
+- **Couleurs** : `server/lib/textColors.ts`. Notion n'a que dix couleurs nommées, et une seule par morceau de texte : chaque teinte de la charte a la sienne, pour revenir à l'identique (classes `c-*` et `h-*`, seules gardées par `cleanInline`). Dans Notion, le texte s'affiche donc dans sa teinte la plus proche.
+- **Polices** : celles de la maquette (Newsreader, Abhaya Libre, Figtree) pour écrire. Les membres lisent en Cormorant Garamond et Plus Jakarta Sans.
+
+## Mon parcours
+
+Quatre sous-pages (`src/pages/parcours/ParcoursLayout.tsx`), en onglets sur ordinateur, en liste sur téléphone, sans onglet de plus dans le menu principal : Mes formations (`/parcours`), Mes ressources (`/parcours/ressources`), Mon journal personnel (`/parcours/journal`), Ce que le coach retient de moi (`/parcours/coach`).
+
+- **Catalogue de tests** : page Notion « Catalogue de tests », bases Thèmes et Catalogue des tests (`NOTION_THEMES_SOURCE`, `NOTION_TESTS_SOURCE`). **Lue seulement, Notion fait foi.** Copie dans `test_themes`, `tests`, `test_theme_links`, `test_lesson_links`, `test_hashtags` (migration `0020_ressources_tests.sql`). Une lecture à part dans `notionSync.ts` : si Notion en refuse l'accès, les formations se synchronisent quand même et `notion_sync_runs.detail` le note.
+- **Cadre isolé** : `server/lib/testHost.ts`, seul chemin `/api/test-html/:id`, lien signé valable 4 heures. L'en-tête `Content-Security-Policy: sandbox` retire au test l'origine de l'application, même ouvert hors du cadre, et `connect-src 'none'` lui interdit tout appel réseau. **Ne jamais ajouter `allow-same-origin`** : le test pourrait lire la session dans le stockage du navigateur. Le fichier vient du bucket privé `test-files`, déposé depuis Construire (`build.setTestFile`) ou recopié du champ « Fichier HTML » de Notion ; le plus récent des deux l'emporte.
+- **Résultats** : `test_results` avec `test_id`, chiffrés ; `result_enc` vide pour un test sans bloc de résultat, dont seul le passage est noté. Construire n'affiche que des totaux par test.
+- **Profil** : `server/lib/testCatalog.ts`. Le résultat le plus récent de chaque thème, sous le libellé « Dans le profil ». Privé par défaut ; une ligne dans `profile_theme_shares` rend un thème public, thème par thème. Les autres membres ne voient que le titre du résultat (`outcomeTitle`), jamais son explication. Seuls ces résultats publics servent au matching.
+- **Journal** : les réponses aux exercices et aux questions des leçons, regroupées par formation et par section. `journal_entries.kind` (`exercice`, `reflexion`) prépare les entrées libres et les questions du jour, qui viendront sans leçon.
+- **Coaching** : « À travailler en coaching avec Laura » pose `journal_entries.shared_at`. C'est la seule porte vers l'administration : `server/routers/coaching.ts` (`/admin/coaching`, fiche du client, « abordée en séance ») et `build.memberShared` ne lisent que les réponses marquées. Retirer l'option remet aussi `coaching_discussed_at` à zéro. Sans accompagnement individuel en cours, le journal propose aussi `CALENDLY_EXPLO_URL`.
 
 ## Profils
 

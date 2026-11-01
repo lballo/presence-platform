@@ -7,6 +7,7 @@ import { isListed } from "../lib/listed";
 import { getDb } from "../queries/connection";
 import { members, swipes, messages, hiveMembers, talks, events } from "../../db/schema";
 import { publicMember } from "../lib/format";
+import { publicResults } from "../lib/testCatalog";
 import { INTENT_CODES, INTENT_GROUPS, intentLabel, myIntentLabel } from "../lib/intents";
 import { isOurImage } from "../lib/storage";
 import { award } from "../lib/honey";
@@ -196,6 +197,8 @@ export const membersRouter = createRouter({
       hives: memberships.filter((h) => h.role !== "pending").map((h) => ({ id: h.hive.id, name: h.hive.name, type: h.hive.type, cover: h.hive.cover, role: h.role })),
       talks: myTalks.map((t) => ({ id: t.id, title: t.title, summary: t.summary, durationMin: t.durationMin, views: t.views })),
       hosting: hosted.map((e) => ({ id: e.id, slug: e.slug, title: e.title, kind: e.kind, startsAt: e.startsAt, where: e.where })),
+      // Seulement ce que le membre a choisi de montrer, thème par thème
+      themeResults: (await publicResults([m.id])).get(m.id) ?? [],
       relation: { matchGoals, messageCount: msgs.length, lastMessageAt: msgs[0]?.at ?? null },
     };
   }),

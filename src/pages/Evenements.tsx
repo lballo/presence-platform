@@ -60,10 +60,11 @@ function EventCard({ e }: { e: Ev }) {
   return (
     <article className="p-card overflow-hidden flex flex-col">
       <Link to={`/e/${e.slug}`} className="flex flex-col flex-1 no-underline" style={{ color: "var(--p-ink)" }}>
-        {e.photoUrl ? <img src={e.photoUrl} alt="" className="w-full h-[150px] object-cover" /> : <span className="block w-full h-[90px]" style={{ background: eventCover(e) }} />}
+        {e.photoUrl ? <img src={e.photoUrl} alt="" className="w-full h-[150px] object-cover" style={{ objectPosition: e.photoPosition }} /> : <span className="block w-full h-[90px]" style={{ background: eventCover(e) }} />}
         <span className="p-4 flex flex-col gap-2 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="p-pill">{e.live ? "● En direct" : e.type === "bienvenue" ? "Bienvenue" : KIND[e.kind]}</span>
+            {e.repeatLabel && <span className="p-chip h-7 text-[12px] cursor-default p-muted">{e.repeatLabel}</span>}
             {e.visibility === "public" && <span className="p-chip h-7 text-[12px] cursor-default p-muted">Public</span>}
             {e.cancelled && <span className="p-pill" style={{ background: "var(--p-accent)", color: "#fff" }}>Annulé</span>}
           </span>

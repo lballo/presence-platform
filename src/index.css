@@ -4,6 +4,12 @@
 @import "@fontsource/plus-jakarta-sans/400.css";
 @import "@fontsource/plus-jakarta-sans/500.css";
 @import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/newsreader/400.css";
+@import "@fontsource/newsreader/400-italic.css";
+@import "@fontsource/abhaya-libre/500.css";
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
 
 @tailwind base;
 @tailwind components;
@@ -165,3 +171,83 @@
 @keyframes p-honey { 0% { opacity: 0; transform: translateY(-14px) scale(.9) } 12% { opacity: 1; transform: translateY(0) scale(1.04) } 20% { transform: scale(1) } 90% { opacity: 1 } 100% { opacity: 0; transform: translateY(-8px) } }
 .p-honey { animation: p-honey 3.2s ease-out both; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
+
+/* Les couleurs de la charte dans le texte des leçons (voir server/lib/textColors.ts) */
+.c-brun { color: #3D3128; }
+.c-taupe { color: #6C6059; }
+.c-taupe-clair { color: #AFA098; }
+.c-terre { color: #AA564C; }
+.c-rouge { color: #A83932; }
+.c-carmin { color: #AD261E; }
+.h-creme, .h-lin, .h-sable { border-radius: 3px; padding: 0 .15em; }
+.h-creme { background: #F3ECE8; }
+.h-lin { background: #E8DDD6; }
+.h-sable { background: #E0D3BD; }
+.dark .c-brun { color: #D8CDC5; }
+.dark .c-taupe { color: #AFA098; }
+.dark .c-terre { color: #D9968B; }
+.dark .c-rouge { color: #E08A82; }
+.dark .c-carmin { color: #E57B72; }
+.dark .h-creme, .dark .h-lin, .dark .h-sable { background: rgba(224, 211, 189, .18); }
+
+/* L'espace créateur : les couleurs de la charte, en clair */
+html.creator-mode {
+  --background: 0 0% 100%; --foreground: 26 21% 20%; --card: 0 0% 100%; --card-foreground: 26 21% 20%; --popover: 0 0% 100%; --popover-foreground: 26 21% 20%;
+  --p-accent: #A83932; --p-accent-text: #A83932; --p-accent-soft: #F3ECE8; --p-accent-line: #E0D3BD; --p-gold: #AA564C; --p-gold-bright: #E0D3BD; --p-pill: #F3ECE8;
+  --p-bg: #FDFBF9; --p-surface: #FFFFFF; --p-surface-2: #F3ECE8; --p-ink: #3D3128; --p-ink-2: #6C6059; --p-ink-3: #6C6059; --p-line: #E8DDD6; --p-line-2: #E0D3BD; --p-track: #E8DDD6;
+}
+html.creator-mode body { background: #FDFBF9; color: #3D3128; }
+html.creator-mode h1, html.creator-mode h2, html.creator-mode h3 { font-family: "Plus Jakarta Sans", "Helvetica Neue", Arial, sans-serif; font-weight: 600; }
+.creator .p-btn-primary:hover { background: #AD261E; filter: none; }
+.creator .p-btn-sm { height: 36px; border-radius: 14px; }
+.creator .p-card { border-radius: 16px; }
+.creator .p-eyebrow { font-size: 12px; letter-spacing: .04em; color: var(--p-accent); }
+.cr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 14px; border: 1px solid #E8DDD6; background: #FDFBF9; color: #3D3128; font-size: 14px; font-weight: 500; white-space: nowrap; box-shadow: 0 1px 2px rgba(0, 0, 0, .05); text-decoration: none; cursor: pointer; }
+.cr-btn:hover { background: #F3ECE8; }
+.cr-btn:disabled { opacity: .5; cursor: not-allowed; }
+.cr-btn-primary { border: 0; background: #A83932; color: #fff; box-shadow: none; }
+.cr-btn-primary:hover { background: #AD261E; }
+.cr-icon { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; color: #3D3128; }
+.cr-icon:hover { background: rgba(61, 49, 40, .07); }
+.cr-icon:disabled { opacity: .35; cursor: default; background: none; }
+.cr-tab { display: inline-flex; align-items: center; gap: 8px; padding-bottom: 14px; margin-bottom: -1px; border-bottom: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6C6059; white-space: nowrap; }
+.cr-tab[aria-selected="true"], .cr-tab[aria-current="page"] { border-bottom-color: #A83932; color: #A83932; }
+
+/* La leçon, comme un document */
+.cr-doc { font-family: "Figtree", "Plus Jakarta Sans", sans-serif; color: #1A1A1A; }
+.cr-doc-title { width: 100%; display: block; border: 0; outline: none; padding: 0; resize: none; overflow: hidden; background: transparent; font-family: "Newsreader", Georgia, serif; font-weight: 400; font-size: clamp(34px, 4.6vw, 54px); line-height: 1.08; letter-spacing: -.02em; color: #3D3128; }
+html.creator-mode .cr-doc-h { margin: 0; font-family: "Abhaya Libre", Georgia, serif; font-size: 28px; line-height: 1.25; font-weight: 500; color: #1A1A1A; }
+.cr-prop { width: 100%; border: 0; outline: none; padding: 6px 0; resize: none; overflow: hidden; background: transparent; font-size: 14px; line-height: 1.45; color: #3D3128; }
+.cr-prop::placeholder, .cr-doc-title::placeholder { color: #AFA098; }
+.cr-text { outline: none; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
+.cr-text p { margin: 0; }
+.cr-text a { color: #A83932; text-decoration: underline; text-underline-offset: 3px; }
+.cr-text p.is-editor-empty::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #AFA098; display: none; }
+.cr-text.ProseMirror-focused p.is-editor-empty::before, .cr-always .cr-text p.is-editor-empty::before { display: block; }
+.cr-k-heading .cr-text { font-family: "Abhaya Libre", Georgia, serif; font-size: 32px; line-height: 1.25; font-weight: 500; margin-top: 8px; }
+.cr-k-quote { border-left: 3px solid #A83932; padding-left: 14px; }
+.cr-k-quote .cr-text { font-family: "Newsreader", Georgia, serif; font-style: italic; font-size: 28px; line-height: 1.25; letter-spacing: -.015em; color: #3D3128; }
+.cr-k-toggle .cr-text { font-weight: 500; }
+.cr-defi .cr-text { font-family: "Newsreader", Georgia, serif; font-style: italic; font-size: 25px; line-height: 1.3; letter-spacing: -.01em; color: #3D3128; }
+.cr-writing { min-height: 260px; cursor: text; }
+.cr-block { transition: background-color .12s; }
+.cr-block:hover { background: #FBF8F6; }
+.cr-gutter { position: absolute; left: -58px; top: 3px; display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.cr-gut-btn { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #AFA098; touch-action: none; }
+.cr-gut-btn:hover { background: #F3ECE8; color: #6C6059; }
+.cr-float { position: absolute; right: 6px; top: -14px; z-index: 5; display: flex; gap: 2px; padding: 2px; border: 1px solid #E8DDD6; border-radius: 10px; background: #fff; box-shadow: 0 6px 16px -10px rgba(61, 49, 40, .3); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.cr-float-btn { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #3D3128; }
+.cr-float-btn:hover { background: #F3ECE8; }
+.cr-float-btn:disabled { opacity: .35; background: none; }
+.cr-block:hover > .cr-gutter, .cr-block:focus-within > .cr-gutter { opacity: 1; }
+.cr-block:hover > .cr-float, .cr-block:focus-within > .cr-float { opacity: 1; pointer-events: auto; }
+@media (max-width: 1023px) { .cr-gutter { display: none; } .cr-block:hover > .cr-float { opacity: 0; pointer-events: none; } .cr-block:focus-within > .cr-float { opacity: 1; pointer-events: auto; } }
+.cr-toolbar-wrap { position: sticky; top: 76px; z-index: 25; align-self: flex-start; max-width: 100%; margin-bottom: 8px; font-family: "Plus Jakarta Sans", sans-serif; color: #3D3128; }
+.cr-toolbar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid #E8DDD6; border-radius: 10px; background: #fff; box-shadow: 0 6px 16px -10px rgba(61, 49, 40, .3); transition: opacity .12s; }
+.cr-popover { position: absolute; top: 42px; left: 0; z-index: 3; padding: 12px; border: 1px solid #E8DDD6; border-radius: 14px; background: #fff; box-shadow: 0 10px 30px -12px rgba(61, 49, 40, .25); }
+.cr-menu { position: absolute; z-index: 30; left: 8px; top: 100%; width: min(300px, 86vw); max-height: 340px; overflow-y: auto; padding: 6px; border: 1px solid #E8DDD6; border-radius: 14px; background: #fff; box-shadow: 0 14px 34px -14px rgba(61, 49, 40, .35); font-family: "Plus Jakarta Sans", sans-serif; color: #3D3128; }
+.cr-drop { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: #F3ECE8; color: #6C6059; font-size: 14px; }
+.cr-drop input { color: #3D3128; }
+.cr-drop input::placeholder { color: #6C6059; }
+.cr-add { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 8px; border-radius: 10px; font-size: 15px; color: #AFA098; text-align: left; cursor: text; }
+.cr-add:hover { color: #6C6059; }

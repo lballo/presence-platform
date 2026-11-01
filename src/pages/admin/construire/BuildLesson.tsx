@@ -1,87 +1,192 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Eye, ExternalLink } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CircleCheck, Copy, Eye, ExternalLink, Flag, PanelLeftOpen, Target, Trash2, Video } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { LESSON_RUBRICS, LESSON_TYPE_LABEL, LESSON_TYPES, type CourseBlock, type LessonType } from "../../../../server/lib/courseBlocks";
-import { ConfirmButton, Select } from "../shared";
-import { BlockEditor, HashtagPicker } from "./BlockEditor";
-import { IssueList, NotionConflict, SaveBar, useLeaveWarning } from "./EditorParts";
+import { ConfirmButton } from "../shared";
+import { BlockEditor, DocProvider, DocToolbar, HashtagPicker, remapIds, sendableBlocks } from "./BlockEditor";
+import { CoursePanel, lessonPlace } from "./CoursePanel";
+import { CreatorShell } from "./CreatorShell";
+import { IssueList, NotionConflict, SaveStatus, useDocSaver, useLeaveGuard, useLeaveWarning } from "./EditorParts";
 import { LESSON_STATUS_LABEL, notionUrl } from "./labels";
 
 type Lesson = RouterOutputs["build"]["lesson"];
-type LessonRubrics = Record<(typeof LESSON_RUBRICS)[number]["key"], CourseBlock[]>;
+type RubricKey = (typeof LESSON_RUBRICS)[number]["key"];
+type LessonRubrics = Record<RubricKey, CourseBlock[]>;
 
-/** Modifier une leçon : chaque enregistrement écrit dans Notion, puis relit la page. */
-export default function BuildLesson() {
-  const { id, lessonId } = useParams();
-  // Une saisie en cours ne doit jamais être écrasée : la fiche ne se recharge qu'après un enregistrement.
-  // Rien n'est gardé en mémoire : une fiche rouverte sur une ancienne copie remettrait son ancien statut à l'enregistrement.
-  const q = trpc.build.lesson.useQuery({ id: Number(lessonId) }, { retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0 });
-  const [revision, setRevision] = useState(0);
-  const back = <Link to={`/admin/construire/${id}`} className="p-btn-outline p-btn-sm no-underline self-start"><ArrowLeft size={15} /> La formation</Link>;
-  if (q.isLoading) return <p className="p-muted text-center py-10 m-0">Chargement…</p>;
-  if (!q.data) return <div className="flex flex-col gap-4">{back}<p className="p-muted m-0">{q.error?.message ?? "Leçon introuvable"}</p></div>;
-  return <div className="flex flex-col gap-5">{back}<Editor key={`${q.data.id}-${revision}`} l={q.data} onSaved={() => setRevision((r) => r + 1)} /></div>;
+/** Une zone de saisie qui grandit avec son texte, sans barre de défilement. */
+export function AutoGrow({ value, onChange, className, placeholder, label, onEnter }: { value: string; onChange: (v: string) => void; className: string; placeholder?: string; label: string; onEnter?: () => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; } }, [value]);
+  return <textarea ref={ref} rows={1} aria-label={label} className={className} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); } }} />;
 }
 
-function Editor({ l, onSaved }: { l: Lesson; onSaved: () => void }) {
+/** Une ligne de propriété du document : l'étiquette, puis un champ sans cadre. */
+export function PropRow({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-start gap-x-3 min-h-[34px] px-2">
+      <span className="flex-[0_0_150px] flex items-center gap-2 h-[33px] text-[14px] p-muted">{icon}{label}</span>
+      <div className="flex-[1_1_200px] min-w-0">{children}</div>
+    </div>
+  );
+}
+
+const focusFirstBlock = () => (document.querySelector("[data-doc-root] .ProseMirror") as HTMLElement | null)?.focus();
+
+/** Modifier une leçon, comme un document : chaque enregistrement écrit dans Notion. */
+export default function BuildLesson() {
+  const { id, lessonId } = useParams();
+  // Une saisie en cours ne doit jamais être écrasée : la fiche ne se recharge que si on le demande.
+  // Rien n'est gardé en mémoire : une fiche rouverte sur une ancienne copie remettrait son ancien statut à l'enregistrement.
+  const q = trpc.build.lesson.useQuery({ id: Number(lessonId) }, { retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0 });
+  const course = trpc.build.course.useQuery({ id: Number(id) }, { retry: false, refetchOnWindowFocus: false });
+  const [revision, setRevision] = useState(0);
+  const crumbs = [{ label: "Mes formations", to: "/admin/construire" }, { label: course.data?.title ?? "Formation", to: `/admin/construire/${id}` }];
+  if (!q.data) return <CreatorShell wide aside={<CoursePanel c={course.data} currentLesson={Number(lessonId)} />} crumbs={crumbs}><p className="p-muted text-center py-16 m-0">{q.isLoading ? "Chargement…" : (q.error?.message ?? "Leçon introuvable")}</p></CreatorShell>;
+  return <Editor key={`${q.data.id}-${revision}`} l={q.data} course={course.data} crumbs={crumbs} reload={() => setRevision((r) => r + 1)} refetch={() => q.refetch()} />;
+}
+
+function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: RouterOutputs["build"]["course"] | undefined; crumbs: { label: string; to?: string }[]; reload: () => void; refetch: () => Promise<unknown> }) {
   const utils = trpc.useUtils();
   const navigate = useNavigate();
   const tags = trpc.hashtags.list.useQuery();
   const [f, setF] = useState({ title: l.title, position: l.position, type: l.type as LessonType, status: l.status, intention: l.intention, durationMin: l.durationMin, videoUrl: l.videoUrl, testUrl: l.testUrl, hashtagIds: l.hashtagIds });
   const [rubrics, setRubrics] = useState<LessonRubrics>(l.rubrics);
-  const [dirty, setDirty] = useState(false);
+  const [issues, setIssues] = useState(l.issues);
   const [conflict, setConflict] = useState(false);
-  const set = (p: Partial<typeof f>) => { setF((x) => ({ ...x, ...p })); setDirty(true); };
-  const save = trpc.build.saveLesson.useMutation({
-    // Relecture : les blocs reçoivent leur identifiant Notion, un second enregistrement ne les recrée pas
-    onSuccess: async () => { setDirty(false); await utils.build.invalidate(); onSaved(); toast.success("Enregistré dans Notion"); },
-    onError: (e) => { if (e.data?.code === "CONFLICT") setConflict(true); else toast.error(e.message, { duration: 8000 }); },
-  });
+  const [panel, setPanel] = useState(true);
+  const live = useRef({ f, rubrics });
+  live.current = { f, rubrics };
+  const save = trpc.build.saveLesson.useMutation();
+
+  const write = async () => {
+    const { f: form, rubrics: current } = live.current;
+    const sent = Object.fromEntries(LESSON_RUBRICS.map((r) => [r.key, sendableBlocks(current[r.key])])) as LessonRubrics;
+    try {
+      await save.mutateAsync({ id: l.id, ...form, rubrics: sent as never });
+    } catch (e) {
+      if ((e as { data?: { code?: string } }).data?.code === "CONFLICT") setConflict(true);
+      else toast.error(e instanceof Error ? e.message : "Enregistrement impossible", { duration: 8000 });
+      throw e;
+    }
+    // Les blocs reçoivent leur identifiant Notion, sans toucher au texte en cours de saisie
+    const fresh = await utils.build.lesson.fetch({ id: l.id }, { staleTime: 0 });
+    const next = { ...live.current.rubrics };
+    for (const r of LESSON_RUBRICS) {
+      if (r.key === "intention") { next.intention = fresh.rubrics.intention; continue; }
+      const mapped = remapIds(next[r.key], sent[r.key], fresh.rubrics[r.key]);
+      if (!mapped) { await utils.build.invalidate(); return reload(); }
+      next[r.key] = mapped;
+    }
+    // Tout de suite : l'enregistrement suivant peut partir avant le prochain affichage, et doit connaître ces identifiants
+    live.current = { ...live.current, rubrics: next };
+    setRubrics(next);
+    setIssues(fresh.issues);
+    utils.build.course.invalidate({ id: l.courseId });
+    utils.build.courses.invalidate();
+  };
+  const auto = f.status !== "publie";
+  const saver = useDocSaver({ auto, ready: !!f.title.trim() && !conflict, write });
+  const set = (p: Partial<typeof f>) => { setF((x) => ({ ...x, ...p })); saver.touch(); };
+  const setBlocks = (key: RubricKey, b: CourseBlock[]) => { setRubrics((x) => ({ ...x, [key]: b })); saver.touch(); };
+  const setStatus = (status: Lesson["status"]) => { live.current = { ...live.current, f: { ...live.current.f, status } }; setF((x) => ({ ...x, status })); saver.touchAndSave(); };
+
   const archive = trpc.build.archiveLesson.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Leçon supprimée, à la corbeille de Notion"); navigate(`/admin/construire/${l.courseId}`); }, onError: (e) => toast.error(e.message) });
   const duplicate = trpc.build.duplicateLesson.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Leçon copiée dans Notion, en brouillon"); navigate(`/admin/construire/${l.courseId}/lecon/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
-  useLeaveWarning(dirty);
-  useEffect(() => { setConflict(false); }, [l.id]);
+  useLeaveWarning(saver.state !== "saved");
+  const leave = useLeaveGuard({ pending: saver.pending, auto, save: saver.saveNow });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void saver.saveNow(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [saver.saveNow]);
+
+  const place = lessonPlace(course, l.id);
+  const prev = place?.prev;
+  const next = place?.next;
   return (
-    <>
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-[1_1_300px] flex flex-col gap-1"><span className="p-eyebrow">{l.courseTitle} · {l.sectionTitle}</span><h2 className="m-0 text-[30px] leading-tight break-words">{f.title || "Sans titre"}</h2></div>
-        <span className="flex flex-wrap gap-2">
-          <Link to={`/admin/construire/${l.courseId}/apercu/${l.id}`} className="p-btn-outline p-btn-sm no-underline"><Eye size={14} /> Aperçu comme un membre</Link>
-          <a href={notionUrl(l.notionPageId)} target="_blank" rel="noopener noreferrer" className="p-btn-outline p-btn-sm no-underline"><ExternalLink size={14} /> Ouvrir dans Notion</a>
-        </span>
-      </header>
-      <IssueList issues={l.issues} />
-      {conflict && <NotionConflict onResolved={() => { setConflict(false); setDirty(false); onSaved(); }} />}
-      <section className="p-card p-4 sm:p-5 flex flex-col gap-3.5" aria-label="Fiche de la leçon">
-        <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => set({ title: e.target.value })} /></label>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Select label="Type" value={f.type} onChange={(type) => set({ type })} options={LESSON_TYPES.map((t): [LessonType, string] => [t, LESSON_TYPE_LABEL[t]])} />
-          <Select label="Statut" value={f.status} onChange={(status) => set({ status })} options={Object.entries(LESSON_STATUS_LABEL) as [Lesson["status"], string][]} />
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Ordre dans la section</span><input type="number" min={0} className="p-field" value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Durée estimée (min)</span><input type="number" min={0} className="p-field" value={f.durationMin ?? ""} onChange={(e) => set({ durationMin: e.target.value === "" ? null : Number(e.target.value) })} /></label>
-        </div>
-        <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Intention</span><textarea className="p-field" rows={2} value={f.intention} onChange={(e) => set({ intention: e.target.value })} /></label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Vidéo principale (lien)</span><input className="p-field" value={f.videoUrl} placeholder="https://…" onChange={(e) => set({ videoUrl: e.target.value })} /></label>
-          <label className="flex flex-col gap-1 text-[13px] p-muted"><span>Test intégré (adresse de la page)</span><input className="p-field" value={f.testUrl} placeholder="https://…" onChange={(e) => set({ testUrl: e.target.value })} /></label>
-        </div>
-        <div className="flex flex-col gap-1.5"><span className="text-[13px] p-muted">Hashtags de la communauté</span><HashtagPicker all={tags.data ?? []} value={f.hashtagIds} onChange={(hashtagIds) => set({ hashtagIds })} /></div>
-      </section>
-      {LESSON_RUBRICS.filter((r) => r.key !== "intention").map((r) => (
-        <section key={r.key} className="p-card p-4 sm:p-5 flex flex-col gap-3" aria-label={r.title}>
-          <h3 className="m-0 text-[24px]">{r.title}</h3>
-          {r.key === "exercice" && <p className="m-0 text-[13.5px] p-muted">Chaque question reçoit un champ de réponse, rangé dans le journal privé du membre.</p>}
-          {r.key === "defi" && <p className="m-0 text-[13.5px] p-muted">Les membres voient ce texte et le bouton « J’ai relevé ce défi ».</p>}
-          <BlockEditor label={r.title} large={r.key === "contenu"} questions={r.key === "exercice"} blocks={rubrics[r.key]} onChange={(b) => { setRubrics((x) => ({ ...x, [r.key]: b })); setDirty(true); }} />
-        </section>
-      ))}
-      <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" className="p-btn-outline p-btn-sm" disabled={duplicate.isPending} onClick={() => duplicate.mutate({ id: l.id })}>{duplicate.isPending ? "Copie dans Notion…" : "Dupliquer cette leçon"}</button>
-        <ConfirmButton label="Supprimer cette leçon" question="Mettre cette leçon à la corbeille de Notion ? Elle disparaît pour les membres, leurs réponses restent dans leur journal." confirm="Supprimer" danger disabled={archive.isPending} onConfirm={() => archive.mutate({ id: l.id })} />
-      </div>
-      <SaveBar dirty={dirty} disabled={!f.title.trim()} saving={save.isPending} onSave={() => save.mutate({ id: l.id, ...f, rubrics: rubrics as never })} />
-    </>
+    <CreatorShell wide={panel} aside={panel ? <CoursePanel c={course} currentLesson={l.id} onHide={() => setPanel(false)} /> : <div className="flex flex-col items-center pt-7 w-[60px]"><button type="button" aria-label="Afficher le parcours" title="Afficher le parcours" className="cr-icon w-9 h-9" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent)" }} onClick={() => setPanel(true)}><PanelLeftOpen size={17} /></button></div>} crumbs={[...crumbs, { label: f.title || "Sans titre" }]} actions={
+      <>
+        <SaveStatus state={saver.state} auto={auto} />
+        <Link to={`/admin/construire/${l.courseId}/apercu/${l.id}`} className="cr-btn"><Eye size={16} /> Aperçu</Link>
+        <button type="button" className="cr-btn cr-btn-primary" disabled={!f.title.trim() || saver.state === "saving" || conflict} title="Ctrl ou Cmd + S" onClick={() => void saver.saveNow()}><Check size={16} /> Enregistrer</button>
+      </>
+    }>
+      {leave}
+      <main className="w-full max-w-[1250px] mx-auto px-3 sm:px-6 lg:px-10 pt-7 pb-14 flex flex-wrap gap-7 items-start">
+        <DocProvider className="flex-[999_1_560px] min-w-0">
+          <article className="cr-doc p-card px-4 py-6 sm:px-8 sm:py-9 lg:pl-[88px] lg:pr-16 lg:pt-12 lg:pb-11 flex flex-col">
+            {conflict && <div className="mb-5"><NotionConflict onResolved={() => { setConflict(false); void refetch().then(reload); }} /></div>}
+            <div className="flex flex-wrap justify-between gap-4 mb-5 px-2">
+              <p className="m-0 text-[11px] tracking-[0.22em]" style={{ color: "var(--p-accent)" }}>{place?.section ?? l.sectionTitle.toUpperCase()}</p>
+              {place && <p className="m-0 text-[12px] p-muted">{place.position}</p>}
+            </div>
+            <div className="px-2 mb-3"><AutoGrow label="Titre de la leçon" className="cr-doc-title" placeholder="Titre de la leçon" value={f.title} onChange={(title) => set({ title })} onEnter={focusFirstBlock} /></div>
+            <div className="flex flex-col mb-4">
+              <PropRow icon={<Video size={15} strokeWidth={1.6} />} label="Vidéo principale"><input type="url" aria-label="Vidéo principale" className="cr-prop" placeholder="Coller un lien…" value={f.videoUrl} onChange={(e) => set({ videoUrl: e.target.value })} /></PropRow>
+              <PropRow icon={<CircleCheck size={15} strokeWidth={1.6} />} label="Test intégré"><input type="url" aria-label="Test intégré" className="cr-prop" placeholder="Coller un lien…" value={f.testUrl} onChange={(e) => set({ testUrl: e.target.value })} /></PropRow>
+              <PropRow icon={<Target size={15} strokeWidth={1.6} />} label="Intention"><AutoGrow label="Intention" className="cr-prop" placeholder="Ce que la leçon permet…" value={f.intention} onChange={(intention) => set({ intention })} /></PropRow>
+            </div>
+            <DocToolbar />
+            <BlockEditor label="Contenu" emptyHeight blocks={rubrics.contenu} onChange={(b) => setBlocks("contenu", b)} />
+
+            <section className="flex flex-col mt-7" aria-labelledby="questions-cles">
+              <div className="px-2"><h2 id="questions-cles" className="cr-doc-h">Questions clés</h2><p className="m-0 mt-0.5 mb-2 text-[12px] p-muted">Chaque question reçoit un champ de réponse, rangé dans le journal privé du membre.</p></div>
+              <BlockEditor label="Exercice" marker="?" addKind="bullet" addLabel="Ajouter une question" placeholder="Une question…" blocks={rubrics.exercice} onChange={(b) => setBlocks("exercice", b)} />
+            </section>
+
+            <section className="flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
+              <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
+              <div className="flex-1 min-w-0 flex flex-col gap-1">
+                <span className="text-[11px] tracking-[0.22em] px-2" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span>
+                <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={rubrics.defi} onChange={(b) => setBlocks("defi", b)} />
+                <span className="text-[11px] px-2 p-muted">Les membres verront aussi le bouton « J’ai relevé ce défi ».</span>
+              </div>
+            </section>
+
+            <section className="flex flex-col mt-7" aria-labelledby="plus-loin">
+              <div className="px-2"><h2 id="plus-loin" className="cr-doc-h">Pour aller plus loin</h2><p className="m-0 mt-0.5 mb-2 text-[12px] p-muted">Des pistes complémentaires pour prolonger la leçon.</p></div>
+              <BlockEditor label="Pour aller plus loin" marker="→" addKind="bullet" addLabel="Ajouter une piste" placeholder="Une ressource ou une piste…" blocks={rubrics.plusLoin} onChange={(b) => setBlocks("plusLoin", b)} />
+            </section>
+
+            <nav aria-label="Leçons voisines" className="mt-9 pt-4 border-t flex flex-wrap justify-between gap-4 text-[13px]" style={{ borderColor: "var(--p-line)" }}>
+              {prev ? <Link to={`/admin/construire/${l.courseId}/lecon/${prev.id}`} className="flex items-center gap-2 no-underline p-muted"><ArrowLeft size={14} /> {prev.title}</Link> : <span className="flex items-center gap-2 p-muted opacity-50"><ArrowLeft size={14} /> Début du parcours</span>}
+              {next ? <Link to={`/admin/construire/${l.courseId}/lecon/${next.id}`} className="flex items-center gap-2 no-underline font-medium text-right" style={{ color: "var(--p-accent)" }}>{next.title} <ArrowRight size={14} /></Link> : <span className="flex items-center gap-2 p-muted opacity-50">Fin du parcours <ArrowRight size={14} /></span>}
+            </nav>
+          </article>
+        </DocProvider>
+
+        <aside aria-label="Réglages de la leçon" className="flex-[1_1_200px] lg:max-w-[235px] lg:border-l lg:pl-6 pt-1 w-full" style={{ borderColor: "var(--p-line)" }}>
+          <h3 className="m-0 text-[14px]">Réglages de la leçon</h3>
+          <div className="mt-4 flex flex-col gap-[18px]">
+            <IssueList issues={issues} />
+            <div className="flex flex-col gap-2">
+              <span className="text-[12px] font-medium">Statut du contenu</span>
+              <div role="radiogroup" aria-label="Statut du contenu" className="flex flex-wrap gap-1 rounded-[10px] border p-[3px] bg-white" style={{ borderColor: "var(--p-line)" }}>
+                {(Object.entries(LESSON_STATUS_LABEL) as [Lesson["status"], string][]).map(([s, label]) => <button key={s} type="button" role="radio" aria-checked={f.status === s} disabled={saver.state === "saving"} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium whitespace-nowrap" style={f.status === s ? { background: s === "publie" ? "rgba(46, 125, 80, .12)" : "#F3ECE8", color: s === "publie" ? "#2b7a4b" : "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => { if (f.status !== s) setStatus(s); }}>{label}</button>)}
+              </div>
+              <span className="text-[11px] p-muted leading-snug">{f.status === "publie" ? "Visible par les membres. Vos modifications leur arrivent quand vous cliquez sur Enregistrer." : "Invisible des membres. Tout s’enregistre au fil de votre écriture."}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-[12px] font-medium">Format affiché</span>
+              <div role="radiogroup" aria-label="Format affiché" className="flex flex-wrap gap-1 rounded-[10px] border p-[3px] bg-white" style={{ borderColor: "var(--p-line)" }}>
+                {LESSON_TYPES.map((t) => <button key={t} type="button" role="radio" aria-checked={f.type === t} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium" style={f.type === t ? { background: "#F3ECE8", color: "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => set({ type: t })}>{t === "defi" ? "Défi" : LESSON_TYPE_LABEL[t]}</button>)}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-2 text-[12px] font-medium">Durée (min)<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-white w-full" style={{ borderColor: "var(--p-line)" }} value={f.durationMin ?? ""} onChange={(e) => set({ durationMin: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+              <label className="flex flex-col gap-2 text-[12px] font-medium">Ordre<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-white w-full" style={{ borderColor: "var(--p-line)" }} value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
+            </div>
+            <div className="flex flex-col gap-2"><span className="text-[12px] font-medium">Hashtags</span><HashtagPicker all={tags.data ?? []} value={f.hashtagIds} onChange={(hashtagIds) => set({ hashtagIds })} /></div>
+            <div className="flex flex-col items-start gap-1.5 text-[12px]">
+              <a href={notionUrl(l.notionPageId)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline py-1 p-muted"><ExternalLink size={14} /> Ouvrir dans Notion</a>
+              <button type="button" className="flex items-center gap-1.5 py-1 p-muted" disabled={duplicate.isPending} onClick={() => duplicate.mutate({ id: l.id })}><Copy size={14} /> {duplicate.isPending ? "Copie dans Notion…" : "Dupliquer la leçon"}</button>
+              <ConfirmButton label={<span className="flex items-center gap-1.5"><Trash2 size={14} /> Supprimer la leçon</span>} className="py-1 p-muted" question="Mettre cette leçon à la corbeille de Notion ? Elle disparaît pour les membres, leurs réponses restent dans leur journal." confirm="Supprimer" danger disabled={archive.isPending} onConfirm={() => archive.mutate({ id: l.id })} />
+            </div>
+          </div>
+        </aside>
+      </main>
+    </CreatorShell>
   );
 }

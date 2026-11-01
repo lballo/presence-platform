@@ -5,9 +5,11 @@ import { assertCan, createRouter, procFor, publicProc } from "../middleware";
 import { accountBlock, can, type HiveRole } from "../lib/permissions";
 import type { Member } from "../../db/schema";
 import { getDb } from "../queries/connection";
-import { events, eventRegistrations, eventSpeakers, hiveMembers, members } from "../../db/schema";
+import { events, eventRegistrations, eventSeries, eventSpeakers, hiveMembers, members } from "../../db/schema";
 import { publicMember } from "../lib/format";
-import { canViewEvent, eventAccess, eventDenial, slugify, SLUG_PATTERN } from "../lib/eventAccess";
+import { canViewEvent, eventAccess, eventDenial, SLUG_PATTERN } from "../lib/eventAccess";
+import { freeSlug, laterDates, setSpeakers, startSeries } from "../lib/eventSeries";
+import { REPEAT_LABEL, REPEATS } from "../lib/recurrence";
 import { isOurImage } from "../lib/storage";
 import { notify } from "../lib/notify";
 import { award, revoke } from "../lib/honey";
@@ -23,6 +25,9 @@ const eventInput = z.object({
   faq: z.array(z.object({ q: z.string().trim().min(1).max(200), a: z.string().trim().min(1).max(1000) })).max(10).default([]),
   photoUrl: z.string().trim().max(1000).default(""),
   cover: z.enum(["", "rouge", "or", "vin", "bronze", "nuit", "braise"]).default(""),
+  photoPosition: z.string().regex(/^\d{1,3}% \d{1,3}%$/).default("50% 50%"),
+  repeat: z.enum(REPEATS).nullable().default(null),
+  until: z.coerce.date().nullable().default(null),
   startsAt: z.coerce.date(),
   durationMin: z.number().int().min(15).max(1440).default(60),
   city: z.string().trim().max(80).optional(),
@@ -43,11 +48,12 @@ function checkInput(input: EventInput, currentPhoto?: string | null) {
   if (input.kind === "onsite" && !input.address) throw badRequest("Indiquez l’adresse de l’événement.");
   if (input.kind !== "onsite" && !/^https?:\/\/\S+$/.test(input.meetingUrl)) throw badRequest("Indiquez le lien de la visio (https://…).");
   if (input.photoUrl && input.photoUrl !== currentPhoto && !isOurImage("eventImage", input.photoUrl)) throw badRequest("Importez la photo de couverture depuis le formulaire.");
+  if (input.repeat && input.until && input.until <= input.startsAt) throw badRequest("La fin de la répétition doit suivre la première date.");
 }
 
 /** Colonnes d'un événement. Une ruche n'a aucun réglage de visibilité : ses événements lui restent réservés. */
 function eventValues(input: EventInput, member: Member, hiveId: number | null) {
-  const { speakerIds: _s, slug: _sl, hiveId: _h, ...rest } = input;
+  const { speakerIds: _s, slug: _sl, hiveId: _h, repeat: _r, until: _u, ...rest } = input;
   return {
     ...rest,
     photoUrl: input.photoUrl || null,
@@ -59,29 +65,6 @@ function eventValues(input: EventInput, member: Member, hiveId: number | null) {
     visibility: hiveId ? ("membres" as const) : input.visibility,
     type: !hiveId && can(member, "event.publish_directly") ? input.type : ("standard" as const),
   };
-}
-
-/** Une adresse libre, à partir du titre ou de celle choisie par l'organisateur. */
-async function freeSlug(wanted: string, exceptId?: number) {
-  const db = getDb();
-  const base = slugify(wanted);
-  for (let i = 1; i < 500; i++) {
-    const slug = i === 1 ? base : `${base.slice(0, 95)}-${i}`;
-    const used = await db.select({ id: events.id }).from(events).where(and(eq(events.slug, slug), exceptId ? ne(events.id, exceptId) : undefined)).limit(1);
-    if (!used.length) return slug;
-  }
-  throw badRequest("Choisissez une autre adresse pour cette page.");
-}
-
-async function setSpeakers(eventId: number, ids: number[]) {
-  const db = getDb();
-  await db.delete(eventSpeakers).where(eq(eventSpeakers.eventId, eventId));
-  const wanted = [...new Set(ids)];
-  if (!wanted.length) return;
-  const known = await db.select({ id: members.id }).from(members).where(inArray(members.id, wanted));
-  const ok = new Set(known.map((k) => k.id));
-  const rows = wanted.filter((id) => ok.has(id)).map((memberId, position) => ({ eventId, memberId, position }));
-  if (rows.length) await db.insert(eventSpeakers).values(rows);
 }
 
 async function hiveRoleOf(hiveId: number | null, memberId: number | undefined): Promise<HiveRole> {
@@ -140,14 +123,20 @@ export const eventsRouter = createRouter({
   /** Programme du réseau : les événements de ruche restent dans leur ruche. */
   program: readProc.query(async ({ ctx }) => {
     const db = getDb();
-    const list = await db.query.events.findMany({ where: and(eq(events.status, "published"), isNull(events.hiveId)), with: { host: true, registrations: true }, orderBy: [asc(events.startsAt)] });
+    const list = await db.query.events.findMany({ where: and(eq(events.status, "published"), isNull(events.hiveId)), with: { host: true, registrations: true, series: true }, orderBy: [asc(events.startsAt)] });
+    // Une série n'occupe qu'une carte, celle de sa prochaine date : les autres sont dans l'agenda et sur la page de l'événement
+    const now = Date.now();
+    const ended = (e: (typeof list)[number]) => e.startsAt.getTime() + e.durationMin * 60000 < now;
+    const nextOfSeries = new Map<number, number>();
+    for (const e of list) if (e.seriesId && !e.cancelledAt && !ended(e) && !nextOfSeries.has(e.seriesId)) nextOfSeries.set(e.seriesId, e.id);
     return list
       .filter((e) => !e.cancelledAt || e.hostId === ctx.memberId || can(ctx.member, "moderate"))
+      .filter((e) => !e.seriesId || ended(e) || nextOfSeries.get(e.seriesId) === e.id)
       .map((e) => {
         const taken = e.registrations.filter((r) => !r.waitlist).length;
         const mine = e.registrations.find((r) => r.memberId === ctx.memberId);
         return {
-          id: e.id, slug: e.slug, kind: e.kind, type: e.type, visibility: e.visibility, title: e.title, tagline: e.tagline, photoUrl: e.photoUrl, cover: e.cover, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days,
+          id: e.id, slug: e.slug, kind: e.kind, type: e.type, visibility: e.visibility, title: e.title, tagline: e.tagline, photoUrl: e.photoUrl, photoPosition: e.photoPosition, cover: e.cover, repeatLabel: e.series && !e.series.stoppedAt ? REPEAT_LABEL[e.series.every] : null, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days,
           city: e.city, where: e.where, maxSeats: e.maxSeats, featured: e.featured, live: e.live, cancelled: !!e.cancelledAt, host: person(e.host),
           taken, seatsLeft: e.maxSeats ? Math.max(0, e.maxSeats - taken) : null,
           registered: !!mine && !mine.waitlist, waitlisted: !!mine && mine.waitlist,
@@ -182,7 +171,7 @@ export const eventsRouter = createRouter({
     const member = ctx.member && !accountBlock(ctx.member) ? ctx.member : null;
     const e = await db.query.events.findFirst({
       where: eq(events.slug, input.slug),
-      with: { host: true, hive: true, registrations: true, speakers: { with: { member: true }, orderBy: [asc(eventSpeakers.position)] } },
+      with: { host: true, hive: true, series: true, registrations: true, speakers: { with: { member: true }, orderBy: [asc(eventSpeakers.position)] } },
     });
     if (!e) return { state: "introuvable" as const, connected: !!member };
     const hiveRole = await hiveRoleOf(e.hiveId, member?.id);
@@ -195,11 +184,14 @@ export const eventsRouter = createRouter({
     const manager = !!member && can(member, "event.edit", { ownerId: e.hostId, hiveId: e.hiveId, hiveRole });
     const insider = (!!mine && !mine.waitlist) || manager || (!!member && e.hiveId !== null && can(member, "hive.manage", { hiveRole }));
     const past = new Date(e.startsAt.getTime() + e.durationMin * 60000) < new Date();
+    // Les autres dates de la série, pour choisir celle qui convient
+    const others = e.seriesId ? (await laterDates(e.seriesId, new Date())).filter((o) => o.id !== e.id && !o.cancelledAt && o.status === "published" && canViewEvent(member, o, hiveRole)).slice(0, 6) : [];
     return {
       state: "ok" as const,
       connected: !!member,
       event: {
-        id: e.id, slug: e.slug, title: e.title, tagline: e.tagline, description: e.description, program: e.program, takeaways: e.takeaways, faq: e.faq, photoUrl: e.photoUrl, cover: e.cover,
+        id: e.id, slug: e.slug, title: e.title, tagline: e.tagline, description: e.description, program: e.program, takeaways: e.takeaways, faq: e.faq, photoUrl: e.photoUrl, photoPosition: e.photoPosition, cover: e.cover,
+        series: e.series && !e.series.stoppedAt ? { label: REPEAT_LABEL[e.series.every], dates: others.map((o) => ({ slug: o.slug, startsAt: o.startsAt })) } : null,
         kind: e.kind, type: e.type, visibility: e.visibility, status: e.status, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days, city: e.city, where: e.where,
         hive: e.hive ? { id: e.hive.id, name: e.hive.name } : null,
         host: person(e.host),
@@ -248,22 +240,25 @@ export const eventsRouter = createRouter({
     const db = getDb();
     if (input.hiveId) assertCan(ctx.member, "hive.create_event", { hiveRole: await hiveRoleOf(input.hiveId, ctx.memberId) }, "Seuls les leaders créent des événements de ruche.");
     const status = input.hiveId || can(ctx.member, "event.publish_directly") ? "published" : "pending";
+    if (input.repeat && status !== "published") throw badRequest("Seuls les organisateurs créent des événements récurrents.");
     if (input.slug && !SLUG_PATTERN.test(input.slug)) throw badRequest("L’adresse ne peut contenir que des lettres, des chiffres et des tirets.");
     const slug = await freeSlug(input.slug || input.title);
     const [ev] = await db.insert(events).values({ ...eventValues(input, ctx.member, input.hiveId), slug, hiveId: input.hiveId, hostId: ctx.memberId, inAgenda: !input.hiveId, status }).returning();
     await setSpeakers(ev.id, input.speakerIds);
     await db.insert(eventRegistrations).values({ eventId: ev.id, memberId: ctx.memberId });
-    return { id: ev.id, slug: ev.slug, status };
+    const more = input.repeat ? await startSeries(ev.id, ev.startsAt, input.repeat, input.until) : 0;
+    return { id: ev.id, slug: ev.slug, status, dates: 1 + more };
   }),
 
   /** Modifier : celui qui l'a créé ou l'administratrice. */
-  update: readProc.input(eventInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+  update: readProc.input(eventInput.extend({ id: z.number().int(), scope: z.enum(["one", "following"]).default("one") })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const e = await db.query.events.findFirst({ where: eq(events.id, input.id), with: { registrations: true } });
     if (!e) throw new TRPCError({ code: "NOT_FOUND" });
     assertCan(ctx.member, "event.edit", await eventResource(ctx.member, e), "Seuls ses organisateurs peuvent modifier cet événement.");
     checkInput(input, e.photoUrl);
-    const values = eventValues(input, ctx.member, e.hiveId);
+    const { scope: _scope, id: _id, ...fields } = input;
+    const values = eventValues(fields, ctx.member, e.hiveId);
     // Un membre ne rend pas public, sans validation, un événement déjà accepté.
     if (values.visibility === "public" && e.visibility !== "public" && e.status === "published" && !can(ctx.member, "event.publish_directly")) throw badRequest("Pour rendre cet événement public, écrivez à l’équipe Présence.");
     if (!can(ctx.member, "event.publish_directly")) values.type = e.type;
@@ -276,23 +271,47 @@ export const eventsRouter = createRouter({
     }
     await db.update(events).set({ ...values, slug }).where(eq(events.id, e.id));
     await setSpeakers(e.id, input.speakerIds);
+    // Toute la suite d'une série suit cette date : mêmes informations, et même décalage si l'heure ou le jour change
+    let following = 0;
+    if (e.seriesId && input.scope === "following") {
+      const shift = values.startsAt.getTime() - e.startsAt.getTime();
+      // Cette date vient d'être déplacée : elle peut se retrouver après son ancienne heure, et ne doit pas bouger deux fois
+      for (const later of (await laterDates(e.seriesId, e.startsAt)).filter((x) => x.id !== e.id && !x.cancelledAt)) {
+        await db.update(events).set({ ...values, startsAt: new Date(later.startsAt.getTime() + shift) }).where(eq(events.id, later.id));
+        await setSpeakers(later.id, input.speakerIds);
+        following++;
+      }
+      if (shift) await db.update(eventSeries).set({ anchorAt: values.startsAt }).where(eq(eventSeries.id, e.seriesId));
+    }
+    // Un événement seul peut devenir récurrent : la réunion de bienvenue existante, par exemple
+    if (!e.seriesId && input.repeat) {
+      if (!e.hiveId && !can(ctx.member, "event.publish_directly")) throw badRequest("Seuls les organisateurs créent des événements récurrents.");
+      if (e.status !== "published") throw badRequest("Un événement récurrent doit d’abord être publié.");
+      following = await startSeries(e.id, values.startsAt, input.repeat, input.until);
+    }
     // Visibilité restreinte après coup : les personnes inscrites gardent leur place, l'organisateur le sait.
     const registered = e.registrations.filter((r) => r.memberId !== e.hostId).length;
     const restricted = e.visibility === "public" && values.visibility === "membres";
     if (restricted) await notify([e.hostId], { title: `Visibilité restreinte : ${input.title}`, body: registered ? `La page est désormais réservée aux membres. Les ${registered} personne(s) déjà inscrite(s) gardent leur place.` : "La page est désormais réservée aux membres connectés.", href: `/e/${slug}/gerer` });
     await logIfOnBehalf(ctx.member, e.hostId, { action: "Événement modifié", targetType: "evenement", targetId: e.id, label: input.title });
-    return { ok: true, slug, restricted, registered };
+    return { ok: true, slug, restricted, registered, following };
   }),
 
   /** Page « Gérer » : inscrits, présences, vues. */
   manage: readProc.input(z.object({ slug: z.string().max(100) })).query(async ({ ctx, input }) => {
     const db = getDb();
-    const e = await db.query.events.findFirst({ where: eq(events.slug, input.slug), with: { registrations: { with: { member: true }, orderBy: [asc(eventRegistrations.id)] }, speakers: { with: { member: true }, orderBy: [asc(eventSpeakers.position)] }, hive: true } });
+    const e = await db.query.events.findFirst({ where: eq(events.slug, input.slug), with: { registrations: { with: { member: true }, orderBy: [asc(eventRegistrations.id)] }, speakers: { with: { member: true }, orderBy: [asc(eventSpeakers.position)] }, hive: true, series: true } });
     if (!e) throw new TRPCError({ code: "NOT_FOUND", message: "Événement introuvable" });
     assertCan(ctx.member, "event.edit", await eventResource(ctx.member, e), "Seuls ses organisateurs peuvent gérer cet événement.");
-    const { registrations, speakers, hive, ...rest } = e;
+    const { registrations, speakers, hive, series, ...rest } = e;
+    const later = series ? (await laterDates(series.id, new Date(Date.now() - e.durationMin * 60000))) : [];
     return {
       ...rest,
+      series: series ? {
+        label: REPEAT_LABEL[series.every], stopped: !!series.stoppedAt,
+        following: later.filter((x) => x.startsAt > e.startsAt && !x.cancelledAt).length,
+        dates: later.map((x) => ({ slug: x.slug, startsAt: x.startsAt, cancelled: !!x.cancelledAt, registered: x.registrations.filter((r) => !r.waitlist).length })),
+      } : null,
       hive: hive ? { id: hive.id, name: hive.name } : null,
       speakers: speakers.map((s) => person(s.member)),
       cancelled: !!e.cancelledAt,
@@ -317,18 +336,29 @@ export const eventsRouter = createRouter({
     return { ok: true };
   }),
 
-  /** Annuler : l'événement reste visible avec la mention « annulé », et les inscrits sont prévenus. */
-  cancel: readProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+  /**
+   * Annuler : l'événement reste visible avec la mention « annulé », et les inscrits sont prévenus.
+   * Dans une série, on annule cette date seule, ou cette date et toutes les suivantes : la série s'arrête alors.
+   */
+  cancel: readProc.input(z.object({ id: z.number().int(), following: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const e = await db.query.events.findFirst({ where: eq(events.id, input.id), with: { registrations: true } });
     if (!e) throw new TRPCError({ code: "NOT_FOUND" });
     assertCan(ctx.member, "event.edit", await eventResource(ctx.member, e), "Seuls ses organisateurs peuvent annuler cet événement.");
-    if (e.cancelledAt) return { ok: true, notified: 0 };
-    await db.update(events).set({ cancelledAt: new Date() }).where(eq(events.id, e.id));
-    const others = e.registrations.map((r) => r.memberId).filter((id) => id !== ctx.memberId);
-    await notify(others, { title: `Événement annulé : ${e.title}`, body: "L’organisation a annulé cet événement. Votre inscription est levée.", href: `/e/${e.slug}` });
-    await logIfOnBehalf(ctx.member, e.hostId, { action: "Événement annulé", targetType: "evenement", targetId: e.id, label: e.title, detail: others.length ? `${others.length} personne(s) prévenue(s)` : "" });
-    return { ok: true, notified: others.length };
+    const stopping = input.following && !!e.seriesId;
+    if (e.cancelledAt && !stopping) return { ok: true, notified: 0 };
+    const dates = [e, ...(stopping ? await laterDates(e.seriesId!, e.startsAt) : [])].filter((x) => !x.cancelledAt);
+    const now = new Date();
+    const notified = new Set<number>();
+    for (const x of dates) {
+      await db.update(events).set({ cancelledAt: now }).where(eq(events.id, x.id));
+      const others = x.registrations.map((r) => r.memberId).filter((id) => id !== ctx.memberId);
+      others.forEach((id) => notified.add(id));
+      await notify(others, { title: `Événement annulé : ${x.title}`, body: "L’organisation a annulé cet événement. Votre inscription est levée.", href: `/e/${x.slug}` });
+    }
+    if (stopping) await db.update(eventSeries).set({ stoppedAt: now }).where(eq(eventSeries.id, e.seriesId!));
+    await logIfOnBehalf(ctx.member, e.hostId, { action: stopping ? "Série d’événements arrêtée" : "Événement annulé", targetType: "evenement", targetId: e.id, label: e.title, detail: notified.size ? `${notified.size} personne(s) prévenue(s)` : "" });
+    return { ok: true, notified: notified.size, cancelled: dates.length };
   }),
 
   /** Retirer sa proposition tant qu'elle n'est pas publiée. Un événement publié s'annule. */

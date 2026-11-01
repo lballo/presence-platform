@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanInline, courseContentFromBlocks, htmlToRichText, lessonContentFromBlocks, lessonIssues, sectionContentFromBlocks, sectionIssues, normalizeTag, labelFromTag, richTextToHtml, richTextToPlain, sameBlock, toCourseBlock, toNotionBlock } from "./notionBlocks";
+import { cleanInline, courseContentFromBlocks, htmlToRichText, lessonContentFromBlocks, lessonIssues, themeIntroFromBlocks, sectionContentFromBlocks, sectionIssues, normalizeTag, labelFromTag, richTextToHtml, richTextToPlain, sameBlock, toCourseBlock, toNotionBlock } from "./notionBlocks";
 import { memberBlocks, plainOf } from "./courseBlocks";
 import type { NotionBlock, RichText } from "./notion";
 
@@ -160,6 +160,55 @@ describe("page de formation", () => {
     const c = courseContentFromBlocks([text("paragraph", "Note"), text("heading_2", "Déroulé"), text("numbered_list_item", "Un"), text("heading_2", "Présentation de la formation"), text("paragraph", "Huit semaines.")]);
     expect(c.description).toHaveLength(1);
     expect(plainOf((c.description![0] as { html: string }).html)).toBe("Huit semaines.");
+  });
+});
+
+describe("couleurs de la charte", () => {
+  const rich = (content: string, color?: string) => ({ plain_text: content, text: { content }, annotations: color ? { color } : {} }) as RichText;
+
+  it("une couleur de Notion devient une classe de la charte, et revient à l'identique", () => {
+    expect(richTextToHtml([rich("Texte", "red")])).toBe(`<span class="c-rouge">Texte</span>`);
+    expect(htmlToRichText(`<span class="c-rouge">Texte</span>`)[0].annotations).toEqual({ color: "red" });
+    for (const color of ["brown", "gray", "yellow", "orange", "red", "pink", "orange_background", "brown_background", "yellow_background"]) {
+      expect(htmlToRichText(richTextToHtml([rich("x", color)]))[0].annotations).toEqual({ color });
+    }
+  });
+
+  it("le noir de la charte est la couleur par défaut de Notion", () => {
+    expect(richTextToHtml([rich("Texte", "default")])).toBe("Texte");
+    expect(htmlToRichText("Texte")[0].annotations).toBeUndefined();
+  });
+
+  it("une couleur de Notion hors charte ne s'affiche pas", () => {
+    expect(richTextToHtml([rich("Texte", "blue")])).toBe("Texte");
+  });
+
+  it("la couleur se combine avec le gras, et ne déborde pas sur le texte d'à côté", () => {
+    const parts = htmlToRichText(`<strong><span class="h-sable">A</span>B</strong> C`);
+    expect(parts.map((p) => [p.text?.content, p.annotations])).toEqual([["A", { bold: true, color: "yellow_background" }], ["B", { bold: true }], [" C", undefined]]);
+  });
+
+  it("le nettoyage garde les classes de la charte, et rien d'autre", () => {
+    expect(cleanInline(`<span class="c-rouge x" onclick="alert(1)" style="color:red">A</span>`)).toBe(`<span class="c-rouge">A</span>`);
+    expect(cleanInline(`<span class="pirate">A</span>`)).not.toContain("pirate");
+    expect(cleanInline(`<script>alert(1)</script>A`)).toBe("A");
+  });
+});
+
+describe("introduction d'un thème du catalogue", () => {
+  const block = (type: string, content: string) => ({ id: content, type, [type]: { rich_text: [{ plain_text: content }] } }) as unknown as NotionBlock;
+  const shown = (raw: NotionBlock[]) => memberBlocks(themeIntroFromBlocks(raw)).map((b) => plainOf((b as { html: string }).html));
+
+  it("garde seulement la rubrique Introduction", () => {
+    expect(shown([block("paragraph", "Avant"), block("heading_2", "Introduction"), block("paragraph", "Ce que mesurent ces tests."), block("heading_2", "Notes internes"), block("paragraph", "Après")])).toEqual(["Ce que mesurent ces tests."]);
+  });
+
+  it("cache le texte encore à écrire", () => {
+    expect(shown([block("heading_2", "Introduction"), block("paragraph", "À écrire : ce que mesurent ces tests et comment lire ses résultats.")])).toEqual([]);
+  });
+
+  it("prend toute la page si elle n'a pas ce titre", () => {
+    expect(shown([block("paragraph", "Une page simple.")])).toEqual(["Une page simple."]);
   });
 });
 

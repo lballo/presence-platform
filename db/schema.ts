@@ -16,7 +16,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { CourseContent, PageContent } from "../server/lib/courseBlocks";
+import type { CourseBlock, CourseContent, PageContent } from "../server/lib/courseBlocks";
+import type { Repeat } from "../server/lib/recurrence";
 
 // Schéma Postgres : "public" par défaut, ou celui de DB_SCHEMA (ex. "presence" sur Supabase,
 // pour cohabiter avec d'autres applications dans la même base).
@@ -452,6 +453,8 @@ export const events = pgTable(
     featured: boolean("featured").notNull().default(false),
     photoUrl: text("photo_url"),
     cover: varchar("cover", { length: 20 }).notNull().default(""), // couleur d'un événement sans photo ; vide, elle suit le format
+    photoPosition: varchar("photo_position", { length: 20 }).notNull().default("50% 50%"), // cadrage de la photo
+    seriesId: integer("series_id"), // une date d'un événement récurrent
     withLine: text("with_line").notNull().default(""),
     inAgenda: boolean("in_agenda").notNull().default(true), // aussi dans l'agenda du cercle
     live: boolean("live").notNull().default(false),
@@ -461,6 +464,16 @@ export const events = pgTable(
   },
   (t) => ({ startsIdx: index("events_starts_idx").on(t.startsAt) })
 );
+
+/** Un événement récurrent : chaque date est un événement ordinaire, créé à l'avance (server/lib/eventSeries.ts). */
+export const eventSeries = pgTable("event_series", {
+  id: serial("id").primaryKey(),
+  every: varchar("every", { length: 20 }).$type<Repeat>().notNull(),
+  anchorAt: timestamp("anchor_at", { withTimezone: true }).notNull(), // la date dont partent les suivantes
+  untilAt: timestamp("until_at", { withTimezone: true }), // vide : la série continue tant qu'elle n'est pas arrêtée
+  stoppedAt: timestamp("stopped_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const eventRegistrations = pgTable(
   "event_registrations",
@@ -892,7 +905,9 @@ export const journalEntries = pgTable(
     questionId: varchar("question_id", { length: 64 }).notNull(), // identifiant du bloc Notion, ou « note » pour une réflexion libre
     questionText: text("question_text").notNull().default(""), // copie : la question peut changer dans Notion
     answerEnc: text("answer_enc").notNull(),
-    sharedAt: timestamp("shared_at", { withTimezone: true }),
+    kind: varchar("kind", { length: 20 }).notNull().default("exercice"), // exercice | reflexion ; plus tard : entrée libre, question du jour
+    sharedAt: timestamp("shared_at", { withTimezone: true }), // « À travailler en coaching avec Laura » : sans cette date, personne d'autre ne lit la réponse
+    coachingDiscussedAt: timestamp("coaching_discussed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -907,10 +922,77 @@ export const testResults = pgTable("test_results", {
   courseTitle: varchar("course_title", { length: 200 }).notNull().default(""),
   lessonTitle: varchar("lesson_title", { length: 200 }).notNull().default(""),
   moduleTitle: varchar("module_title", { length: 200 }).notNull().default(""), // ancien modèle
-  resultEnc: text("result_enc").notNull(),
+  testId: integer("test_id").references(() => tests.id, { onDelete: "set null" }), // un test de Mes ressources ; lessonTitle garde alors son titre
+  resultEnc: text("result_enc").notNull(), // vide : le test a été passé, sans résultat renvoyé
   sharedAt: timestamp("shared_at", { withTimezone: true }),
   passedAt: timestamp("passed_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ─── Mes ressources : copie du catalogue de tests de Notion (Notion fait foi) ───
+
+export const testThemes = pgTable("test_themes", {
+  id: serial("id").primaryKey(),
+  notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 120 }).notNull(),
+  title: varchar("title", { length: 200 }).notNull().default(""),
+  profileLabel: varchar("profile_label", { length: 120 }).notNull().default(""),
+  emoji: varchar("emoji", { length: 16 }).notNull().default(""),
+  position: integer("position").notNull().default(0),
+  status: contentStatusEnum("status").notNull().default("brouillon"),
+  intro: jsonb("intro").$type<CourseBlock[]>().notNull().default([]),
+  notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const tests = pgTable("tests", {
+  id: serial("id").primaryKey(),
+  notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description").notNull().default(""),
+  durationMin: integer("duration_min"),
+  resultType: varchar("result_type", { length: 40 }).notNull().default(""),
+  canRetake: boolean("can_retake").notNull().default(false),
+  savesResult: boolean("saves_result").notNull().default(false),
+  linkUrl: text("link_url").notNull().default(""),
+  status: contentStatusEnum("status").notNull().default("brouillon"),
+  htmlPath: text("html_path").notNull().default(""),
+  htmlName: varchar("html_name", { length: 200 }).notNull().default(""),
+  htmlUpdatedAt: timestamp("html_updated_at", { withTimezone: true }),
+  htmlHasResultBlock: boolean("html_has_result_block").notNull().default(false),
+  notionFileKey: text("notion_file_key").notNull().default(""),
+  issues: jsonb("issues").$type<string[]>().notNull().default([]),
+  notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const testThemeLinks = pgTable("test_theme_links", {
+  testId: integer("test_id").notNull().references(() => tests.id, { onDelete: "cascade" }),
+  themeId: integer("theme_id").notNull().references(() => testThemes.id, { onDelete: "cascade" }),
+}, (t) => ({ pk: primaryKey({ columns: [t.testId, t.themeId] }) }));
+
+export const testLessonLinks = pgTable("test_lesson_links", {
+  testId: integer("test_id").notNull().references(() => tests.id, { onDelete: "cascade" }),
+  lessonId: integer("lesson_id").notNull().references(() => courseLessons.id, { onDelete: "cascade" }),
+}, (t) => ({ pk: primaryKey({ columns: [t.testId, t.lessonId] }) }));
+
+export const testHashtags = pgTable("test_hashtags", {
+  testId: integer("test_id").notNull().references(() => tests.id, { onDelete: "cascade" }),
+  hashtagId: integer("hashtag_id").notNull().references(() => hashtags.id, { onDelete: "cascade" }),
+}, (t) => ({ pk: primaryKey({ columns: [t.testId, t.hashtagId] }) }));
+
+/** Une ligne : le membre montre ce thème de son profil aux autres membres. Sans ligne, c'est privé. */
+export const profileThemeShares = pgTable("profile_theme_shares", {
+  memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  themeId: integer("theme_id").notNull().references(() => testThemes.id, { onDelete: "cascade" }),
+  sharedAt: timestamp("shared_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.memberId, t.themeId] }) }));
+
+export type TestTheme = typeof testThemes.$inferSelect;
+export type Test = typeof tests.$inferSelect;
 
 export const coachMemory = pgTable(
   "coach_memory",

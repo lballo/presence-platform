@@ -18,6 +18,8 @@ import { honeyRouter } from "./routers/honey";
 import { adminRouter } from "./routers/admin";
 import { reportsRouter } from "./routers/reports";
 import { coursesRouter } from "./routers/courses";
+import { resourcesRouter } from "./routers/resources";
+import { coachingRouter } from "./routers/coaching";
 import { coachMemoryRouter } from "./routers/coachMemory";
 import { buildRouter } from "./routers/build";
 import { emailPrefsRouter } from "./routers/emailPrefs";
@@ -43,6 +45,8 @@ export const appRouter = createRouter({
   admin: adminRouter,
   reports: reportsRouter,
   courses: coursesRouter,
+  resources: resourcesRouter,
+  coaching: coachingRouter,
   coachMemory: coachMemoryRouter,
   build: buildRouter,
   emailPrefs: emailPrefsRouter,

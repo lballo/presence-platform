@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
-import { ArrowLeft, Pause, Pencil, Play, Share2, Sparkles, Trash2 } from "lucide-react";
+import { Pause, Pencil, Play, Share2, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
 import { CoachMascot } from "@/components/CoachMascot";
@@ -20,7 +19,6 @@ export default function CoachMemoryPage() {
   const s = q.data;
   return (
     <>
-      <Link to="/parcours" className="p-btn-ghost no-underline mb-3"><ArrowLeft size={15} /> Mes formations</Link>
       <PageHeader eyebrow="Mon parcours" title="Ce que le coach retient de moi" intro="Tout est ici : lisez, corrigez, effacez, ou mettez en pause. Laura n’y a pas accès, sauf si vous partagez un élément." />
       <ConsentDialog open={asking} onDone={() => setAsking(false)} />
       {q.isLoading && <p className="p-muted text-center py-10 m-0">Chargement…</p>}
