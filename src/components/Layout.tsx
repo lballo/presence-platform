@@ -135,6 +135,7 @@ export default function Layout() {
   const dots = { "/forum": !!announcements.data?.annonces, "/ruches": Object.keys(announcements.data?.hives ?? {}).length > 0 };
   const [drawer, setDrawer] = useState(false);
   const { pathname } = useLocation();
+  const forum = pathname.startsWith("/forum");
 
   useEffect(() => { setDrawer(false); window.scrollTo(0, 0); }, [pathname]);
   useEffect(() => {
@@ -176,8 +177,9 @@ export default function Layout() {
         </div>
       )}
 
-      <main className="flex-1 min-w-0 px-4 sm:px-8 lg:px-14 pt-6 lg:pt-10 pb-28 lg:pb-20">
-        <div className="max-w-[1100px] mx-auto">
+      {/* Sur ordinateur, le menu du forum vient juste après celui de l'application : pas de marge ni de centrage à gauche. */}
+      <main className={`flex-1 min-w-0 px-4 sm:px-8 pt-6 pb-28 lg:pb-20 ${forum ? "lg:pl-0 lg:pr-14 lg:pt-0" : "lg:px-14 lg:pt-10"}`}>
+        <div className={`max-w-[1100px] mx-auto ${forum ? "lg:max-w-none lg:mx-0" : ""}`}>
           <Outlet />
         </div>
       </main>
