@@ -156,4 +156,10 @@
 .p-pop { animation: p-pop .22s ease-out both; }
 @keyframes p-drawer { from { transform: translateX(-100%) } to { transform: none } }
 .p-drawer { animation: p-drawer .22s ease-out both; }
+/* Tuto : la rubrique concernée en surbrillance */
+@keyframes p-tour { 0%, 100% { box-shadow: 0 0 0 2px var(--p-accent), 0 0 0 5px var(--p-accent-soft) } 50% { box-shadow: 0 0 0 3px var(--p-accent), 0 0 0 9px var(--p-accent-soft) } }
+.p-tour-target { position: relative; z-index: 51; border-radius: 14px; animation: p-tour 1.5s ease-in-out infinite; }
+/* Miel : le coach annonce le gain */
+@keyframes p-honey { 0% { opacity: 0; transform: translateY(-14px) scale(.9) } 12% { opacity: 1; transform: translateY(0) scale(1.04) } 20% { transform: scale(1) } 90% { opacity: 1 } 100% { opacity: 0; transform: translateY(-8px) } }
+.p-honey { animation: p-honey 3.2s ease-out both; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }

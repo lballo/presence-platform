@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { Search, MapPin, MessageCircle, Heart, Users, Sparkles, ShieldCheck, Linkedin } from "lucide-react";
-import { toast } from "sonner";
+import { AdminPendingLink } from "@/components/AdminPendingLink";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
-import { Avatar } from "@/components/Avatar";
 import { plural, ago } from "@/lib/format";
 
 const ZONES = [["Toutes", "Toutes"], ["Paris", "Paris"], ["Lyon", "Lyon"], ["Genève", "Genève"], ["France", "Ailleurs en France"], ["International", "International"]];
@@ -35,7 +34,7 @@ export default function Membres() {
     <>
       <PageHeader eyebrow="Le cercle" title="Annuaire des membres" intro="Retrouvez les leaders du réseau, leur ville et ce qu’ils cherchent : mentorat, pairs, association, investissement, recrutement, amitié ou prise de parole."
         action={<Link to="/matching" className="p-btn-outline no-underline"><Heart size={16} /> Mes affinités de la semaine</Link>} />
-      {me.data?.permissions.validateOrganizers && <OrganizerRequests />}
+      <AdminPendingLink kind="organizer" one="candidature organisateur" many="candidatures organisateur" />
       <div className="flex flex-wrap gap-2 mb-5">
         <button type="button" className={`p-chip h-11 px-5 ${view === "all" ? "p-chip-on" : ""}`} onClick={() => { setView("all"); setSelId(null); }}><Users size={16} /> Tout l’annuaire</button>
         <button type="button" className={`p-chip h-11 px-5 ${view === "relations" ? "p-chip-on" : ""}`} onClick={() => { setView("relations"); setSelId(null); }}><Sparkles size={16} /> Mes relations{rels.data?.length ? ` · ${rels.data.length}` : ""}</button>
@@ -104,7 +103,7 @@ export default function Membres() {
                 </div>
               )}
               {sel.memberRole && sel.memberRole !== "membre" && <span className="p-pill self-start">{sel.memberRole === "administrateur" ? "Équipe Présence" : "Organisateur"}</span>}
-              {me.data?.permissions.manageMembers && me.data.id !== sel.id && <RolePicker memberId={sel.id} role={sel.memberRole ?? "membre"} />}
+              {me.data?.permissions.manageMembers && me.data.id !== sel.id && <RolePicker memberId={sel.id} />}
               <div className="flex flex-wrap gap-2.5 pt-1">
                 {me.data?.id !== sel.id && <Link to={`/messages?to=${sel.id}`} className="p-btn-primary flex-1 no-underline"><MessageCircle size={16} /> Écrire</Link>}
                 <Link to={`/membres/${sel.id}`} className="p-btn-outline flex-1 no-underline">Voir le profil complet</Link>
@@ -117,41 +116,7 @@ export default function Membres() {
   );
 }
 
-const ROLES = [["membre", "Membre"], ["organisateur", "Organisateur"], ["administrateur", "Administrateur"]] as const;
-
-/** Administrateur : changer le rôle d’un membre. */
-export function RolePicker({ memberId, role }: { memberId: number; role: string }) {
-  const utils = trpc.useUtils();
-  const set = trpc.members.setRole.useMutation({ onSuccess: () => { utils.members.invalidate(); toast.success("Rôle mis à jour"); }, onError: (e) => toast.error(e.message) });
-  return (
-    <div className="flex flex-col gap-2 p-3.5 rounded-2xl" style={{ background: "var(--p-surface-2)" }}>
-      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}><ShieldCheck size={13} /> Rôle · administration</span>
-      <div className="flex flex-wrap gap-1.5">{ROLES.map(([k, l]) => <button key={k} type="button" disabled={set.isPending} className={`p-chip h-8 text-[13px] ${role === k ? "p-chip-on" : ""}`} onClick={() => role !== k && set.mutate({ memberId, role: k })}>{l}</button>)}</div>
-    </div>
-  );
-}
-
-/** Administratrice : candidatures pour devenir organisateur. */
-function OrganizerRequests() {
-  const utils = trpc.useUtils();
-  const reqs = trpc.members.organizerRequests.useQuery();
-  const done = (msg: string) => { utils.members.invalidate(); toast.success(msg); };
-  const accept = trpc.members.setRole.useMutation({ onSuccess: () => done("Le membre est désormais organisateur"), onError: (e) => toast.error(e.message) });
-  const decline = trpc.members.declineOrganizer.useMutation({ onSuccess: () => done("Candidature refusée"), onError: (e) => toast.error(e.message) });
-  if (!reqs.data?.length) return null;
-  return (
-    <section className="mb-6 p-5 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
-      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}><ShieldCheck size={14} /> Équipe Présence · candidatures organisateur</span>
-      {reqs.data.map((r) => (
-        <div key={r.id} className="p-card p-4 flex flex-wrap items-start gap-3">
-          <Avatar m={r} size={44} />
-          <span className="flex-[1_1_280px] min-w-0 flex flex-col gap-1"><span className="font-semibold">{r.name} <span className="font-normal text-[13px] p-muted">· {r.jobTitle} · {ago(new Date(r.requestedAt))}</span></span><span className="text-[14.5px] leading-relaxed">{r.motivation}</span></span>
-          <span className="flex gap-2 self-center">
-            <button type="button" className="p-btn-primary p-btn-sm" onClick={() => accept.mutate({ memberId: r.id, role: "organisateur" })}>Accepter</button>
-            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => decline.mutate({ memberId: r.id })}>Refuser</button>
-          </span>
-        </div>
-      ))}
-    </section>
-  );
+/** Administrateur : le rôle et l'accès se règlent dans la fiche du panneau d'administration. */
+export function RolePicker({ memberId }: { memberId: number }) {
+  return <Link to={`/admin/membres/${memberId}`} className="p-btn-outline p-btn-sm no-underline self-start"><ShieldCheck size={14} /> Gérer ce membre</Link>;
 }

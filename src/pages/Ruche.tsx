@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ArrowLeft, Lock, Unlock, Heart, Megaphone, MessageCircle, Plus, FileText, Link2, Sheet, Presentation, Pin, ExternalLink, Users, CalendarDays, Flag, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { ReportButton } from "@/components/ReportButton";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
-import { ago, longDate, hour, plural } from "@/lib/format";
+import { ago, parisDayMonth, parisHour, parisLongDate, plural } from "@/lib/format";
 import { COVERS, PHASES, endLabel, CreateHive } from "./Ruches";
-import { AccessInfo, AccessFields, accessReady } from "@/components/EventAccess";
+import { AccessInfo } from "@/components/EventAccess";
+import { EventForm } from "@/components/events/EventForm";
 import { ComposerHost, PostList } from "@/components/forum/PostList";
 import type { ComposerTarget } from "@/components/forum/Composer";
 import { UnreadDot, type Post } from "@/components/forum/shared";
@@ -151,8 +153,9 @@ function Discussions({ r, hiveId, refresh, join }: { r: R; hiveId: number; refre
       {r.posts.map((p) => (
         <article key={p.id} className="p-4 rounded-2xl border flex flex-col gap-3" style={{ borderColor: "var(--p-line)" }}>
           <div className="flex items-center gap-3"><Avatar m={p.author} size={42} /><span className="flex flex-col"><span className="flex items-center gap-2 font-semibold">{p.author.name}{p.isLeader && <span className="h-5 px-2 rounded-full text-[11px] font-semibold" style={{ background: "var(--p-pill)", color: "var(--p-accent-text)" }}>{r.type === "projet" ? (p.author.gender === "m" ? "Porteur" : "Porteuse") : "Leader"}</span>}</span><span className="text-[12.5px] p-muted">{p.author.jobTitle} · {ago(new Date(p.createdAt))}</span></span></div>
+          {p.hidden && <span className="text-[13px] font-medium" style={{ color: "var(--p-accent-text)" }}>Masqué par la modération</span>}
           <p className="m-0 text-[16px] leading-relaxed">{p.text}</p>
-          <div className="flex items-center gap-1 pt-2 border-t text-[14px] p-muted" style={{ borderColor: "var(--p-line)" }}><span className="inline-flex items-center gap-2 h-9 px-2.5"><Heart size={16} /> {p.likes}</span><span className="inline-flex items-center gap-2 h-9 px-2.5"><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</span></div>
+          <div className="flex items-center gap-1 pt-2 border-t text-[14px] p-muted" style={{ borderColor: "var(--p-line)" }}>{p.authorId !== me.data?.id && <ReportButton kind="hive_post" id={p.id} className="order-last ml-auto inline-flex items-center gap-1.5 h-9 px-2.5 text-[13px]"><Flag size={13} /> Signaler</ReportButton>}<span className="inline-flex items-center gap-2 h-9 px-2.5"><Heart size={16} /> {p.likes}</span><span className="inline-flex items-center gap-2 h-9 px-2.5"><MessageCircle size={16} /> {p.replies ? plural(p.replies, "réponse", "réponses") : "Répondre"}</span></div>
         </article>
       ))}
       {r.posts.length === 0 && <div className="p-7 rounded-2xl border border-dashed text-center text-[15px] p-muted" style={{ borderColor: "var(--p-line-2)" }}>Aucun message pour l’instant. Lancez la première conversation.</div>}
@@ -264,34 +267,32 @@ function Members({ r, hiveId, refresh }: { r: R; hiveId: number; refresh: () => 
 
 function Events({ r, hiveId, refresh }: { r: R; hiveId: number; refresh: () => void }) {
   const utils = trpc.useUtils();
-  const toggle = trpc.events.toggleRegistration.useMutation({ onSuccess: () => { refresh(); utils.events.invalidate(); }, onError: (e) => toast.error(e.message) });
-  const create = trpc.hives.createEvent.useMutation({ onSuccess: () => { refresh(); utils.events.invalidate(); setF({ kind: "online", title: "", date: "", time: "12:30", city: "", address: "", meetingUrl: "", inAgenda: true }); toast.success("Événement créé"); }, onError: (e) => toast.error(e.message) });
-  const [f, setF] = useState({ kind: "online" as "online" | "onsite" | "salon", title: "", date: "", time: "12:30", city: "", address: "", meetingUrl: "", inAgenda: true });
+  const [creating, setCreating] = useState(false);
   const pj = r.type === "projet";
+  const register = trpc.events.register.useMutation({ onSuccess: () => { refresh(); utils.events.invalidate(); }, onError: (e) => toast.error(e.message) });
+  const unregister = trpc.events.unregister.useMutation({ onSuccess: () => { refresh(); utils.events.invalidate(); }, onError: (e) => toast.error(e.message) });
+  if (!r.seesEvents) return <Locked r={r} what={pj ? "Les rendez-vous sont" : "Les événements sont"} />;
   return (
     <>
-      {r.events.map((e) => (
-        <div key={e.id} className="flex flex-wrap items-center gap-3.5 p-4 rounded-2xl border" style={{ borderColor: "var(--p-line)" }}>
-          <span className="w-14 flex flex-col items-center py-2 rounded-xl leading-none flex-none" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><span className="serif text-[28px] font-semibold">{new Date(e.startsAt).getDate()}</span><span className="text-[11.5px] mt-0.5">{longDate(new Date(e.startsAt)).split(" ")[2]}</span></span>
-          <span className="flex-[1_1_220px] flex flex-col gap-0.5"><span className="text-[16px] font-semibold leading-snug">{e.title}</span><span className="text-[13.5px] p-muted">{longDate(new Date(e.startsAt))} · {hour(new Date(e.startsAt))} · {e.where}{e.kind === "salon" ? " · Salon live" : ""}</span><span className="text-[12.5px] p-faint">Organisé par {e.host.name}{e.isMine ? " (vous)" : ""} · {plural(e.count, "inscrit", "inscrits")}</span><span className="mt-1.5"><AccessInfo e={e} compact /></span></span>
-          {r.inside ? <button type="button" className={e.registered ? "p-btn-outline p-btn-sm" : "p-btn-primary p-btn-sm"} onClick={() => toggle.mutate({ eventId: e.id })}>{e.registered ? "✓ Inscrite" : "Je participe"}</button> : <span className="text-[13px] p-faint">Réservé aux {pj ? "contributeurs" : "membres"}</span>}
-        </div>
-      ))}
-      {r.events.length === 0 && <div className="p-6 rounded-2xl border border-dashed text-center text-[15px] p-muted" style={{ borderColor: "var(--p-line-2)" }}>Aucun {pj ? "rendez-vous" : "événement"} prévu pour l’instant.</div>}
-      {r.canManage ? (
-        <div className="p-soft p-5 flex flex-col gap-3 mt-2">
-          <div><span className="flex items-center gap-2"><span className="serif text-[26px]">{pj ? "Créer un rendez-vous du projet" : "Créer un événement de ruche"}</span><span className="p-pill h-[22px] text-[11.5px]">{pj ? "Porteurs" : "Leaders"}</span></span><span className="text-[14px] p-muted">{pj ? "Atelier, point d’étape, séance de travail." : "Atelier, café, cercle de parole : proposez une rencontre aux membres de la ruche."}</span></div>
-          <div className="flex flex-wrap gap-2">{([["online", "En ligne"], ["onsite", "Présentiel"], ["salon", "Salon live"]] as const).map(([k, l]) => <button key={k} type="button" className={`p-chip h-9 ${f.kind === k ? "p-chip-on" : ""}`} onClick={() => setF({ ...f, kind: k })}>{l}</button>)}</div>
-          <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Titre</span><input className="p-field" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Ex. Café de ruche" /></label>
-          <div className="flex flex-wrap gap-3">
-            <label className="flex-[1_1_170px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Date</span><input type="date" className="p-field" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
-            <label className="flex-[1_1_130px] flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Heure</span><input type="time" className="p-field" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} /></label>
+      {r.canManage && <button type="button" className={creating ? "p-btn-outline p-btn-sm self-start" : "p-btn-primary p-btn-sm self-start"} onClick={() => setCreating(!creating)}><Plus size={15} /> {creating ? "Fermer" : "Créer un événement"}</button>}
+      {creating && <EventForm hive={{ id: hiveId, name: r.name }} onDone={() => { setCreating(false); refresh(); }} />}
+      {r.events.map((e) => {
+        const start = new Date(e.startsAt);
+        const { day, month } = parisDayMonth(start);
+        const seats = e.maxSeats ? Math.max(0, e.maxSeats - e.count) : null;
+        return (
+          <div key={e.id} className="flex flex-wrap items-center gap-3.5 p-4 rounded-2xl border" style={{ borderColor: "var(--p-line)" }}>
+            <span className="w-14 flex flex-col items-center py-2 rounded-xl leading-none flex-none" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><span className="serif text-[28px] font-semibold">{day}</span><span className="text-[11.5px] mt-0.5">{month}</span></span>
+            <span className="flex-[1_1_220px] min-w-0 flex flex-col gap-0.5"><Link to={`/e/${e.slug}`} className="text-[16px] font-semibold leading-snug no-underline" style={{ color: "var(--p-ink)" }}>{e.title}</Link><span className="text-[13.5px] p-muted">{parisLongDate(start)} · {parisHour(start)} · {e.where}{e.kind === "salon" ? " · Salon live" : ""}</span><span className="text-[12.5px] p-faint">Organisé par {e.host.name}{e.isMine ? " (vous)" : ""} · {plural(e.count, "inscrit", "inscrits")}{seats !== null ? ` · ${plural(seats, "place restante", "places restantes")}` : ""}</span><span className="mt-1.5"><AccessInfo e={e} compact /></span></span>
+            <span className="flex flex-wrap items-center gap-2">
+              {e.canManage && <Link to={`/e/${e.slug}/gerer`} className="p-btn-ghost no-underline text-[13.5px]"><Settings size={14} /> Gérer</Link>}
+              {r.inside && <button type="button" className={e.registered ? "p-btn-outline p-btn-sm" : "p-btn-primary p-btn-sm"} disabled={register.isPending || unregister.isPending} onClick={() => (e.registered ? unregister : register).mutate({ eventId: e.id })}>{e.registered ? "✓ Inscrit·e" : seats === 0 ? "Liste d’attente" : "Je participe"}</button>}
+            </span>
           </div>
-          <AccessFields kind={f.kind} city={f.city} address={f.address} meetingUrl={f.meetingUrl} onChange={(p) => setF({ ...f, ...p })} />
-          <span className="text-[12.5px] p-faint">Les événements de la ruche sont visibles dans la ruche et dans l’agenda des membres inscrits ; ils restent distincts du programme de Présence.</span>
-          <div><button type="button" className="p-btn-primary" disabled={!f.title.trim() || !f.date || !accessReady(f.kind, f.address, f.meetingUrl) || create.isPending} onClick={() => create.mutate({ id: hiveId, kind: f.kind, title: f.title, startsAt: new Date(`${f.date}T${f.time || "12:30"}:00`), durationMin: f.kind === "salon" ? 45 : 60, city: f.kind === "onsite" ? f.city : undefined, where: f.kind === "onsite" ? f.city || "Présentiel" : "En ligne", address: f.kind === "onsite" ? f.address : "", meetingUrl: f.kind === "onsite" ? "" : f.meetingUrl, maxSeats: f.kind === "salon" ? 10 : undefined })}>Créer</button></div>
-        </div>
-      ) : r.inside ? <div className="p-soft p-4 text-[14px] p-muted">Les {pj ? "porteurs" : "leaders"} organisent les {pj ? "rendez-vous" : "événements"}. Une idée ? Partagez-la dans les discussions.</div> : null}
+        );
+      })}
+      {r.events.length === 0 && <div className="p-6 rounded-2xl border border-dashed text-center text-[15px] p-muted" style={{ borderColor: "var(--p-line-2)" }}>Aucun {pj ? "rendez-vous" : "événement"} prévu pour l’instant.</div>}
+      {!r.canManage && r.inside && <div className="p-soft p-4 text-[14px] p-muted">Les {pj ? "porteurs" : "leaders"} organisent les {pj ? "rendez-vous" : "événements"}. Une idée ? Partagez-la dans les discussions.</div>}
     </>
   );
 }
@@ -302,11 +303,13 @@ function PhasePicker({ hiveId, phase, refresh }: { hiveId: number; phase: string
 }
 
 function NextEvent({ r, onSee }: { r: R; onSee: () => void }) {
+  if (!r.seesEvents) return null;
   const nx = r.events.find((e) => new Date(e.startsAt) >= new Date());
+  const start = nx ? new Date(nx.startsAt) : null;
   return (
     <section className="p-card p-5 flex flex-col gap-3">
       <span className="p-eyebrow">Prochain rendez-vous</span>
-      {nx ? <><div className="flex items-center gap-3.5"><span className="w-14 flex flex-col items-center py-2 rounded-xl leading-none flex-none" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><span className="serif text-[28px] font-semibold">{new Date(nx.startsAt).getDate()}</span><span className="text-[11.5px] mt-0.5">{longDate(new Date(nx.startsAt)).split(" ")[2]}</span></span><span className="flex flex-col gap-0.5 min-w-0"><span className="text-[15px] font-semibold leading-snug">{nx.title}</span><span className="text-[13px] p-muted">{longDate(new Date(nx.startsAt))} · {hour(new Date(nx.startsAt))}</span></span></div><button type="button" className="p-btn-ghost self-start" onClick={onSee}>Voir tout →</button></> : <span className="text-[14px] p-muted">Aucun rendez-vous prévu.</span>}
+      {nx && start ? <><div className="flex items-center gap-3.5"><span className="w-14 flex flex-col items-center py-2 rounded-xl leading-none flex-none" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><span className="serif text-[28px] font-semibold">{parisDayMonth(start).day}</span><span className="text-[11.5px] mt-0.5">{parisDayMonth(start).month}</span></span><span className="flex flex-col gap-0.5 min-w-0"><Link to={`/e/${nx.slug}`} className="text-[15px] font-semibold leading-snug no-underline" style={{ color: "var(--p-ink)" }}>{nx.title}</Link><span className="text-[13px] p-muted">{parisLongDate(start)} · {parisHour(start)}</span></span></div><button type="button" className="p-btn-ghost self-start" onClick={onSee}>Voir tout →</button></> : <span className="text-[14px] p-muted">Aucun rendez-vous prévu.</span>}
     </section>
   );
 }

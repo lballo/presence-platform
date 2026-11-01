@@ -1,28 +1,61 @@
 import { useState } from "react";
-import { Link } from "react-router";
-import { ArrowDown, ArrowLeft, ArrowUp, Pin, PinOff, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { PageHeader } from "@/components/Layout";
 import { EmojiGrid } from "@/components/forum/EmojiGrid";
 import { SPACE_GROUPS, TagLabel, type Space } from "@/components/forum/shared";
+import { ComposerHost } from "@/components/forum/PostList";
+import type { ComposerTarget } from "@/components/forum/Composer";
 import { ago, plural } from "@/lib/format";
+import { Badge, Chips, ConfirmButton, Rows, type Column } from "./shared";
+import { fullDate } from "./labels";
 
-/** Page provisoire, en attendant le panneau /admin : espaces, hashtags et publications épinglées. */
+type Section = "annonces" | "espaces" | "hashtags" | "epingles";
+type Post = RouterOutputs["forum"]["announcements"][number];
+
+/** Forum et annonces : toutes les annonces, les espaces, les hashtags et les publications épinglées. */
 export default function AdminForum() {
-  const me = trpc.members.me.useQuery();
-  if (!me.data) return <p className="p-muted py-20 text-center">Chargement…</p>;
-  if (!me.data.permissions.moderate) return <div className="py-20 text-center p-muted">Cette page est réservée aux administrateurs.</div>;
+  const [section, setSection] = useState<Section>("annonces");
   return (
-    <>
-      <Link to="/forum" className="p-btn-outline p-btn-sm no-underline mb-5"><ArrowLeft size={15} /> Retour au forum</Link>
-      <PageHeader eyebrow="Administration · provisoire" title="Gérer le forum" intro="Le nom, l’emoji et l’ordre des espaces, la liste des hashtags et les publications épinglées." />
-      <div className="flex flex-col gap-8">
-        <Spaces />
-        <Hashtags />
-        <Pins />
-      </div>
-    </>
+    <div className="flex flex-col gap-5">
+      <h2 className="m-0 text-[30px]">Forum et annonces</h2>
+      <Chips label="Rubriques du forum" value={section} onChange={setSection} options={[["annonces", "Annonces"], ["espaces", "Espaces"], ["hashtags", "Hashtags"], ["epingles", "Épingles"]]} />
+      {section === "annonces" && <Announcements />}
+      {section === "espaces" && <Spaces />}
+      {section === "hashtags" && <Hashtags />}
+      {section === "epingles" && <Pins />}
+    </div>
+  );
+}
+
+const STATE: Record<string, string> = { live: "En ligne", scheduled: "Programmée", ended: "Retirée ou terminée", hidden: "Masquée" };
+const stateTone = (s: string) => (s === "live" ? "ok" : s === "scheduled" ? "wait" : "calm");
+
+const columns: Column<Post>[] = [
+  { key: "title", label: "Annonce", cell: (p) => <span className="flex flex-col min-w-0"><span className="font-semibold break-words">{p.title || p.text.slice(0, 80)}</span><span className="text-[12.5px] p-muted">{p.author.name} · {fullDate(p.publishedAt)}{p.pinned ? " · épinglée" : ""}</span></span> },
+  { key: "where", label: "Où", cell: (p) => (p.hive ? p.hive.name : "Réseau") },
+  { key: "state", label: "État", cell: (p) => <Badge tone={stateTone(p.state)}>{STATE[p.state] ?? p.state}</Badge> },
+  { key: "reads", label: "Lue par", align: "right", cell: (p) => p.readCount ?? 0 },
+];
+
+/** Toutes les annonces, du réseau et des ruches : les modifier ou les retirer. */
+function Announcements() {
+  const utils = trpc.useUtils();
+  const q = trpc.forum.announcements.useQuery();
+  const [composer, setComposer] = useState<ComposerTarget | null>(null);
+  const live = trpc.admin.setAnnouncementLive.useMutation({ onSuccess: (_r, v) => { utils.forum.invalidate(); toast.success(v.live ? "Annonce remise en ligne" : "Annonce retirée"); }, onError: (e) => toast.error(e.message) });
+  if (q.isLoading) return <p className="p-muted text-center py-10 m-0">Chargement…</p>;
+  return (
+    <section className="flex flex-col gap-3.5" aria-label="Annonces">
+      <Rows rows={q.data ?? []} columns={columns} keyOf={(p) => p.id} empty="Aucune annonce pour l’instant." actions={(p) => (
+        <>
+          <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setComposer({ mode: "edit", post: p })}><Pencil size={14} /> Modifier</button>
+          {p.state === "ended" ? <button type="button" className="p-btn-outline p-btn-sm" disabled={live.isPending} onClick={() => live.mutate({ id: p.id, live: true })}>Remettre en ligne</button>
+            : <ConfirmButton label="Retirer" question="Retirer cette annonce ? Elle ne s’affichera plus, vous pourrez la remettre en ligne." confirm="Retirer" danger disabled={live.isPending} onConfirm={() => live.mutate({ id: p.id, live: false })} />}
+        </>
+      )} />
+      <ComposerHost target={composer} onClose={() => setComposer(null)} />
+    </section>
   );
 }
 
@@ -30,7 +63,7 @@ function Spaces() {
   const spaces = trpc.forum.spaces.useQuery();
   return (
     <section className="flex flex-col gap-4" aria-label="Espaces">
-      <h2 className="m-0 text-[30px]">Espaces</h2>
+      <h3 className="m-0 text-[24px]">Espaces</h3>
       {SPACE_GROUPS.map(([g, label]) => {
         const list = spaces.data?.spaces.filter((s) => s.groupKey === g) ?? [];
         return (
@@ -78,7 +111,7 @@ function Hashtags() {
   const create = trpc.hashtags.create.useMutation({ onSuccess: () => { utils.hashtags.invalidate(); setF({ name: "", color: "" }); toast.success("Hashtag ajouté"); }, onError: (e) => toast.error(e.data?.code === "BAD_REQUEST" ? "Lettres, chiffres et tirets uniquement." : e.message) });
   return (
     <section className="flex flex-col gap-3.5" aria-label="Hashtags">
-      <div><h2 className="m-0 text-[30px]">Hashtags</h2><p className="m-0 text-[14.5px] p-muted">La liste partagée par la communauté : chaque publication peut en porter cinq au plus. Elle servira aussi aux contenus de formation.</p></div>
+      <div><h3 className="m-0 text-[24px]">Hashtags</h3><p className="m-0 text-[14.5px] p-muted">La liste partagée par la communauté : chaque publication peut en porter cinq au plus. Elle servira aussi aux contenus de formation.</p></div>
       <form className="p-soft p-4 flex flex-wrap items-center gap-2.5" onSubmit={(e) => { e.preventDefault(); if (f.name.trim()) create.mutate({ name: f.name, color: f.color || null }); }}>
         <input className="p-field flex-[1_1_200px] min-w-0" value={f.name} maxLength={40} placeholder="Nom du hashtag, par exemple prise-de-parole" aria-label="Nom du nouveau hashtag" onChange={(e) => setF({ ...f, name: e.target.value })} />
         <ColorField value={f.color} onChange={(color) => setF({ ...f, color })} />
@@ -139,7 +172,7 @@ function Pins() {
   const set = trpc.forum.setPinned.useMutation({ onSuccess: (_r, v) => { utils.forum.invalidate(); toast.success(v.pinned ? "Publication épinglée en tête de l’espace" : "Publication désépinglée"); }, onError: (e) => toast.error(e.message) });
   return (
     <section className="flex flex-col gap-3.5" aria-label="Épingler une publication">
-      <div><h2 className="m-0 text-[30px]">Épingler une publication</h2><p className="m-0 text-[14.5px] p-muted">Elle reste en tête de son espace. Une annonce épinglée apparaît aussi en haut du tableau de bord des personnes concernées.</p></div>
+      <div><h3 className="m-0 text-[24px]">Épingler une publication</h3><p className="m-0 text-[14.5px] p-muted">Elle reste en tête de son espace. Une annonce épinglée apparaît aussi en haut du tableau de bord des personnes concernées.</p></div>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted max-w-[360px]"><span>Espace</span>
         <select className="p-field" value={current ?? ""} onChange={(e) => setSpaceId(Number(e.target.value))}>
           {SPACE_GROUPS.map(([g, label]) => <optgroup key={g} label={label}>{spaces.data?.spaces.filter((s) => s.groupKey === g).map((s) => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}</optgroup>)}

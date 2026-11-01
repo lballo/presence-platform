@@ -30,11 +30,12 @@ describe("événements Présence", () => {
     expect(can(orga, "event.publish_directly")).toBe(true);
     expect(can(admin, "event.publish_directly")).toBe(true);
   });
-  it("modifier : organisateur les siens, administrateur tous, membre aucun", () => {
+  it("gérer : celui qui l'a créé et l'administrateur", () => {
     expect(can(orga, "event.edit", { ownerId: orga.id })).toBe(true);
     expect(can(orga, "event.edit", { ownerId: 99 })).toBe(false);
     expect(can(admin, "event.edit", { ownerId: 99 })).toBe(true);
-    expect(can(membre, "event.edit", { ownerId: membre.id })).toBe(false);
+    expect(can(membre, "event.edit", { ownerId: membre.id })).toBe(true);
+    expect(can(membre, "event.edit", { ownerId: 99 })).toBe(false);
   });
   it("un membre retire sa proposition, pas un événement publié", () => {
     expect(can(membre, "event.withdraw", { ownerId: membre.id, status: "pending" })).toBe(true);
@@ -78,7 +79,7 @@ describe("ruches", () => {
 });
 
 describe("administrateur seulement", () => {
-  it.each(["event.validate", "talk.validate", "opportunity.validate", "organizer.validate", "members.manage", "moderate", "hive.delete", "forum.manage", "forum.post_restricted"] as const)("%s", (action) => {
+  it.each(["event.validate", "talk.validate", "opportunity.validate", "organizer.validate", "members.manage", "admin.panel", "moderate", "hive.delete", "forum.manage", "forum.post_restricted"] as const)("%s", (action) => {
     expect(can(membre, action)).toBe(false);
     expect(can(orga, action)).toBe(false);
     expect(can(admin, action)).toBe(true);

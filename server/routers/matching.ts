@@ -7,6 +7,7 @@ import { members, swipes } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { isListed } from "../lib/listed";
 import { complement, intentKey, intentLabel, myIntentLabel } from "../lib/intents";
+import { labelOf, PROFILE_TYPES, SECTORS } from "../lib/onboardingOptions";
 
 async function me(id: number) {
   const m = await getDb().query.members.findFirst({ where: eq(members.id, id) });
@@ -47,16 +48,21 @@ export const matchingRouter = createRouter({
       .filter((o) => !seenIds.has(o.id))
       .map((o) => {
         const common = o.values.filter((v) => m.values.includes(v));
+        const wanted = [
+          ...(m.matchSectors.includes(o.sector) ? [`Secteur recherché : ${labelOf(SECTORS, o.sector)}`] : []),
+          ...(m.matchProfiles.includes(o.profileType) ? [`Profil recherché : ${labelOf(PROFILE_TYPES, o.profileType)}`] : []),
+        ];
         return {
           ...publicMember(o),
           rencontreEnabled: undefined, rencontrePref: undefined,
           reason: input.goal === "amour" ? "Espace Rencontre" : intentLabel(complement(input.goal), o.gender),
-          common: common.length ? common : (o.pole === m.pole ? [`Pôle ${o.pole.toLowerCase()} en commun`] : o.values.slice(0, 2)),
+          common: [...wanted, ...(common.length ? common : (o.pole === m.pole ? [`Pôle ${o.pole.toLowerCase()} en commun`] : o.values.slice(0, 2)))],
           blurb: input.goal === "amour" ? o.rencontreBlurb : o.bio,
-          affinity: common.length >= 2 ? "très forte" : common.length === 1 || o.pole === m.pole ? "forte" : "bonne",
+          affinity: common.length + wanted.length >= 2 ? "très forte" : common.length + wanted.length === 1 || o.pole === m.pole ? "forte" : "bonne",
+          score: wanted.length * 2 + common.length,
         };
       })
-      .sort((a, b) => ["très forte", "forte", "bonne"].indexOf(a.affinity) - ["très forte", "forte", "bonne"].indexOf(b.affinity));
+      .sort((a, b) => b.score - a.score);
   }),
 
   /** Glisser : à droite (liked) ou à gauche. Un intérêt réciproque fait un match. */

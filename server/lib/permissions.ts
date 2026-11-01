@@ -52,9 +52,8 @@ const RULES = {
   // Événements Présence
   "event.propose": everyone,
   "event.publish_directly": (m: Actor) => m.role === "organisateur" || isAdmin(m),
-  // Présence : organisateur les siens, administrateur tous. Ruche : le leader qui l'a créé, administrateur tous.
-  "event.edit": (m: Actor, r: Resource) =>
-    isAdmin(m) || (isOwner(m, r) && (r.hiveId ? leads(r) : m.role === "organisateur")),
+  // Réseau : celui qui l'a créé, administrateur tous. Ruche : le leader qui l'a créé, administrateur tous.
+  "event.edit": (m: Actor, r: Resource) => isAdmin(m) || (isOwner(m, r) && (r.hiveId ? leads(r) : true)),
   // Retirer sa propre proposition tant qu'elle n'est pas publiée
   "event.withdraw": (m: Actor, r: Resource) => isOwner(m, r) && r.status !== "published",
 
@@ -80,6 +79,7 @@ const RULES = {
   "opportunity.validate": adminOnly,
   "organizer.validate": adminOnly,
   "members.manage": adminOnly,
+  "admin.panel": adminOnly,
   moderate: adminOnly,
   "hive.delete": adminOnly,
   "forum.manage": adminOnly, // espaces, hashtags, épingles

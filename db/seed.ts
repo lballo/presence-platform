@@ -22,7 +22,7 @@ const ADDRESSES: Record<string, string> = {
 };
 const slug = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 function withAccess<T extends { kind: "onsite" | "online" | "salon"; title: string }>(list: T[]) {
-  return list.map((e) => (e.kind === "onsite" ? { ...e, address: ADDRESSES[e.title] ?? "" } : { ...e, meetingUrl: `https://meet.jit.si/presence-${slug(e.title)}` }));
+  return list.map((e) => ({ ...(e.kind === "onsite" ? { ...e, address: ADDRESSES[e.title] ?? "" } : { ...e, meetingUrl: `https://meet.jit.si/presence-${slug(e.title)}` }), slug: slug(e.title) }));
 }
 
 async function seed() {
@@ -34,7 +34,7 @@ async function seed() {
   const db = getDb();
   console.log("Nettoyage…");
   const schemaName = (process.env.DB_SCHEMA ?? "").replace(/[^a-z0-9_]/gi, "");
-  const tables = ["members", "coaching_sessions", "forum_spaces", "forum_posts", "forum_likes", "forum_post_interests", "forum_post_reads", "forum_post_hashtags", "forum_drafts", "hashtags", "opportunities", "opportunity_interests",
+  const tables = ["members", "coaching_sessions", "forum_spaces", "forum_posts", "forum_likes", "forum_post_interests", "forum_post_reads", "forum_post_hashtags", "forum_drafts", "hashtags", "opportunities", "opportunity_interests", "honey_ledger", "honey_rules", "notifications", "event_speakers", "event_guests",
     "hives", "hive_members", "hive_posts", "hive_resources", "events", "event_registrations", "swipes", "talks",
     "coach_messages", "messages", "forum_replies", "speeches", "speech_scores", "advice"].map((t) => (schemaName && schemaName !== "public" ? `"${schemaName}"."${t}"` : `"${t}"`));
   await db.execute(sql.raw(`TRUNCATE TABLE ${tables.join(", ")} RESTART IDENTITY CASCADE`));
@@ -60,7 +60,12 @@ async function seed() {
   ]);
 
   // Fiches de démonstration : déjà accueillies, sans compte de connexion
-  await db.update(s.members).set({ onboardingCompletedAt: new Date() });
+  await db.update(s.members).set({ onboardingCompletedAt: new Date(), passwordChosenAt: new Date(), tour: { status: "done", step: 0, seen: ["/evenements", "/forum", "/messages", "/membres", "/talk-show"] } });
+  await db.insert(s.honeyRules).values([
+    { action: "accueil", amount: 10, position: 1 }, { action: "tuto", amount: 20, position: 2 }, { action: "profil", amount: 20, position: 3 },
+    { action: "bienvenue_inscription", amount: 10, position: 4 }, { action: "bienvenue_presence", amount: 30, position: 5 }, { action: "presentation", amount: 10, position: 6 },
+    { action: "presentation_video", amount: 20, position: 7 }, { action: "premier_message", amount: 10, position: 8 }, { action: "premier_evenement", amount: 10, position: 9 },
+  ]);
 
   // Rôles : Laura administratrice, Marc organisateur, Camille candidate organisatrice
   await db.update(s.members).set({ role: "administrateur", accessType: "les_deux" }).where(eq(s.members.id, 2));

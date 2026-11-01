@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams, useSearchParams } from "react-router";
-import { ArrowLeft, ChevronDown, Megaphone, Newspaper, PenLine, Settings, ShieldCheck, X } from "lucide-react";
-import { toast } from "sonner";
+import { ArrowLeft, ChevronDown, Megaphone, Newspaper, PenLine, Settings, X } from "lucide-react";
+import { AdminPendingLink } from "@/components/AdminPendingLink";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { Avatar } from "@/components/Avatar";
-import { ago } from "@/lib/format";
 import { PostCard } from "@/components/forum/PostCard";
 import { ComposerHost, PostList } from "@/components/forum/PostList";
 import type { ComposerTarget } from "@/components/forum/Composer";
@@ -165,35 +163,7 @@ function SinglePost({ id, onEdit }: { id: number; onEdit: (p: Post) => void }) {
   );
 }
 
-/** Équipe : publications à relire avant publication. */
+/** Équipe : les publications à relire se traitent dans la file unique. */
 function PendingReview() {
-  const utils = trpc.useUtils();
-  const me = trpc.members.me.useQuery();
-  const allowed = !!me.data?.permissions.validateOpportunities;
-  const pending = trpc.forum.pending.useQuery(undefined, { enabled: allowed });
-  const decide = trpc.forum.decide.useMutation({
-    onSuccess: (_r, v) => { utils.forum.invalidate(); toast.success(v.accept ? "Annonce publiée" : "Annonce refusée"); },
-    onError: (e) => toast.error(e.message),
-  });
-  if (!allowed || !pending.data?.length) return null;
-  return (
-    <section className="p-5 rounded-3xl flex flex-col gap-3" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
-      <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}><ShieldCheck size={14} /> Équipe Présence · annonces à valider</span>
-      {pending.data.map((o) => (
-        <article key={o.id} className="p-card p-4 flex flex-wrap gap-4 items-start">
-          <Avatar m={o.author} size={44} />
-          <div className="flex-[1_1_240px] min-w-0 flex flex-col gap-1">
-            <span className="text-[13px] p-muted">{o.oppType ? OPP[o.oppType].label : o.space?.name} · {o.author.name} · {ago(new Date(o.publishedAt))}</span>
-            <span className="serif text-[22px] leading-tight">{o.title}</span>
-            {o.html ? <div className="p-rich text-[14.5px]" dangerouslySetInnerHTML={{ __html: o.html }} /> : <p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{o.text}</p>}
-            {o.facts.length > 0 && <div className="flex flex-wrap gap-1.5 mt-1">{o.facts.map((x) => <span key={x} className="p-chip h-[28px] text-[12.5px] cursor-default">{x}</span>)}</div>}
-          </div>
-          <div className="flex gap-2 self-center">
-            <button type="button" className="p-btn-primary p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: o.id, accept: true })}>Publier</button>
-            <button type="button" className="p-btn-outline p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: o.id, accept: false })}>Refuser</button>
-          </div>
-        </article>
-      ))}
-    </section>
-  );
+  return <AdminPendingLink kind="opportunity" one="opportunité" many="opportunités" />;
 }

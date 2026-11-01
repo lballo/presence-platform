@@ -66,15 +66,87 @@ export const members = pgTable("members", {
   accessEndsAt: timestamp("access_ends_at", { withTimezone: true }),
   status: accountStatusEnum("status").notNull().default("actif"),
   invitedAt: timestamp("invited_at", { withTimezone: true }),
-  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }), // nul : invitation pas encore acceptée
+  passwordChosenAt: timestamp("password_chosen_at", { withTimezone: true }), // nul : invitation pas encore acceptée
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }), // nul : panneaux d'accueil pas encore terminés
+  onboardingStep: integer("onboarding_step").notNull().default(0),
+  goals: jsonb("goals").$type<string[]>().notNull().default([]), // ce qui m'amène
+  goalsOther: text("goals_other").notNull().default(""),
+  matchProfiles: jsonb("match_profiles").$type<string[]>().notNull().default([]), // profils que je veux rencontrer
+  matchSectors: jsonb("match_sectors").$type<string[]>().notNull().default([]), // secteurs qui m'intéressent
+  profileType: varchar("profile_type", { length: 40 }).notNull().default(""),
+  sector: varchar("sector", { length: 40 }).notNull().default(""),
+  country: varchar("country", { length: 80 }).notNull().default(""),
+  tour: jsonb("tour").$type<{ status: "pending" | "done" | "skipped"; step: number; seen: string[] }>().notNull().default({ status: "pending", step: 0, seen: [] }),
   email: varchar("email", { length: 255 }),
   authUserId: uuid("auth_user_id"), // auth.users(id) : clé étrangère posée par la migration Supabase
   organizerRequest: text("organizer_request").notNull().default(""), // motivation de la candidature organisateur
   organizerRequestedAt: timestamp("organizer_requested_at"), // non nul = candidature en attente
+  deletedAt: timestamp("deleted_at", { withTimezone: true }), // supprimé : compte désactivé, profil anonymisé, publications conservées
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type Member = typeof members.$inferSelect;
+
+// Journal d'administration : qui, quoi, quand, sur quoi
+export const adminLog = pgTable("admin_log", {
+  id: serial("id").primaryKey(),
+  actorId: integer("actor_id"),
+  actorName: varchar("actor_name", { length: 170 }).notNull().default(""),
+  action: varchar("action", { length: 80 }).notNull(),
+  targetType: varchar("target_type", { length: 40 }).notNull(),
+  targetId: integer("target_id"),
+  targetLabel: text("target_label").notNull().default(""),
+  detail: text("detail").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Signalements : une publication, une réponse, un message privé reçu, un message de ruche
+export const reportKindEnum = pgEnum("report_kind", ["post", "reply", "message", "hive_post"]);
+export const reportStatusEnum = pgEnum("report_status", ["ouvert", "traite", "classe"]);
+export const reports = pgTable(
+  "reports",
+  {
+    id: serial("id").primaryKey(),
+    reporterId: integer("reporter_id").notNull(),
+    kind: reportKindEnum("kind").notNull(),
+    targetId: integer("target_id").notNull(),
+    authorId: integer("author_id").notNull(),
+    reason: text("reason").notNull(),
+    snapshot: text("snapshot").notNull().default(""), // le contenu au moment du signalement
+    status: reportStatusEnum("status").notNull().default("ouvert"),
+    decision: varchar("decision", { length: 30 }).notNull().default(""),
+    decidedBy: integer("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    once: uniqueIndex("reports_reporter_kind_target_key").on(t.reporterId, t.kind, t.targetId),
+    statusIdx: index("reports_status_idx").on(t.status, t.createdAt),
+    targetIdx: index("reports_target_idx").on(t.kind, t.targetId),
+  })
+);
+
+// Le miel : barème modifiable et grand livre (une ligne par action et par membre pour les premiers pas)
+export const honeyRules = pgTable("honey_rules", {
+  action: varchar("action", { length: 40 }).primaryKey(),
+  amount: integer("amount").notNull(),
+  position: integer("position").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+});
+
+export const honeyLedger = pgTable(
+  "honey_ledger",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    action: varchar("action", { length: 40 }).notNull().references(() => honeyRules.action),
+    amount: integer("amount").notNull(),
+    ref: varchar("ref", { length: 80 }),
+    announced: integer("announced").notNull().default(0), // quantité déjà annoncée par l'animation du coach
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ once: uniqueIndex("honey_ledger_once").on(t.memberId, t.action, sql`coalesce(${t.ref}, '')`) })
+);
 
 // Jetons d'invitation valables 7 jours : le lien Supabase, limité à 24 h, n'est produit qu'au clic.
 export const invitations = pgTable("invitations", {
@@ -145,6 +217,8 @@ export const forumPosts = pgTable(
     askFeedback: boolean("ask_feedback").notNull().default(false),
     videoUrl: text("video_url").notNull().default(""), // lien (YouTube, Drive…) ou vidéo chargée
     status: forumPostStatusEnum("status").notNull().default("published"), // relecture des opportunités
+    reviewNote: text("review_note").notNull().default(""), // message de l'équipe à la validation
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }), // masquée par la modération
     pinnedAt: timestamp("pinned_at", { withTimezone: true }),
     audience: forumAudienceEnum("audience").notNull().default("tous"),
     publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(), // dans le futur : publication programmée
@@ -230,6 +304,7 @@ export const forumReplies = pgTable(
     authorId: integer("author_id").notNull(),
     text: text("text").notNull(),
     editedAt: timestamp("edited_at"),
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }), // masquée par la modération
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({ postIdx: index("forum_replies_post_idx").on(t.postId, t.createdAt) })
@@ -316,6 +391,7 @@ export const hivePosts = pgTable("hive_posts", {
   text: text("text").notNull(),
   likes: integer("likes").notNull().default(0),
   replies: integer("replies").notNull().default(0),
+  hiddenAt: timestamp("hidden_at", { withTimezone: true }), // masqué par la modération
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -340,6 +416,9 @@ export const hiveResources = pgTable("hive_resources", {
 export const eventKindEnum = pgEnum("event_kind", ["onsite", "online", "salon"]);
 // Les événements proposés par un membre simple attendent la validation de l'équipe
 export const eventStatusEnum = pgEnum("event_status", ["pending", "published", "rejected"]);
+// Événement du réseau : ouvert aux membres connectés ou public. Événement de ruche : toujours réservé à la ruche.
+export const eventVisibilityEnum = pgEnum("event_visibility", ["membres", "public"]);
+export const eventTypeEnum = pgEnum("event_type", ["standard", "bienvenue"]);
 
 export const events = pgTable(
   "events",
@@ -348,8 +427,18 @@ export const events = pgTable(
     kind: eventKindEnum("kind").notNull(),
     hiveId: integer("hive_id"), // événement de ruche ou salon porté par une ruche
     hostId: integer("host_id").notNull(),
+    slug: varchar("slug", { length: 100 }).notNull().unique("events_slug_unique"), // adresse de la page : /e/{slug}
+    visibility: eventVisibilityEnum("visibility").notNull().default("membres"),
+    type: eventTypeEnum("type").notNull().default("standard"),
     title: varchar("title", { length: 200 }).notNull(),
+    tagline: text("tagline").notNull().default(""), // accroche
     description: text("description").notNull().default(""),
+    program: text("program").notNull().default(""), // programme, une étape par ligne
+    takeaways: jsonb("takeaways").$type<string[]>().notNull().default([]), // ce que l'on repart avec
+    faq: jsonb("faq").$type<{ q: string; a: string }[]>().notNull().default([]),
+    views: integer("views").notNull().default(0),
+    guestsAllowed: boolean("guests_allowed").notNull().default(false), // prévu pour des invités extérieurs, pas encore activé
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     startsAt: timestamp("starts_at").notNull(),
     durationMin: integer("duration_min").notNull().default(60),
     days: integer("days").notNull().default(1),
@@ -365,6 +454,7 @@ export const events = pgTable(
     inAgenda: boolean("in_agenda").notNull().default(true), // aussi dans l'agenda du cercle
     live: boolean("live").notNull().default(false),
     status: eventStatusEnum("status").notNull().default("published"),
+    reviewNote: text("review_note").notNull().default(""), // message de l'équipe à la validation
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({ startsIdx: index("events_starts_idx").on(t.startsAt) })
@@ -377,8 +467,48 @@ export const eventRegistrations = pgTable(
     eventId: integer("event_id").notNull(),
     memberId: integer("member_id").notNull(),
     waitlist: boolean("waitlist").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    attendedAt: timestamp("attended_at", { withTimezone: true }), // présence cochée par l'organisateur
   },
   (t) => ({ uniq: uniqueIndex("event_reg_uniq").on(t.eventId, t.memberId) })
+);
+
+export const eventSpeakers = pgTable(
+  "event_speakers",
+  {
+    eventId: integer("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.eventId, t.memberId] }) })
+);
+
+// Inscriptions d'invités extérieurs : la structure est prête, rien ne l'utilise encore.
+export const eventGuests = pgTable(
+  "event_guests",
+  {
+    id: serial("id").primaryKey(),
+    eventId: integer("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 160 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ uniq: uniqueIndex("event_guests_uniq").on(t.eventId, sql`lower(${t.email})`) })
+);
+
+// Notifications dans l'application (cloche)
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    body: text("body").notNull().default(""),
+    href: text("href").notNull().default(""),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ memberIdx: index("notifications_member_idx").on(t.memberId, t.createdAt) })
 );
 
 // ─────────────────────────────────────────────────────────────
@@ -411,6 +541,7 @@ export const talks = pgTable("talks", {
   summary: text("summary").notNull().default(""), // accroche affichée (reprise de la description à la publication)
   description: text("description").notNull().default(""), // description / motivation envoyée par le membre
   status: talkStatusEnum("status").notNull().default("published"),
+  reviewNote: text("review_note").notNull().default(""), // message de l'équipe à la validation
   durationMin: integer("duration_min").notNull().default(12),
   views: integer("views").notNull().default(0),
   videoUrl: text("video_url"),
@@ -514,6 +645,7 @@ export const messages = pgTable(
     editedAt: timestamp("edited_at"),
     replyToId: integer("reply_to_id"), // réponse à un message précis (citation, comme sur WhatsApp)
     deletedAt: timestamp("deleted_at"), // message supprimé par son auteur : on garde la trace « Message supprimé »
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }), // masqué par la modération
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({

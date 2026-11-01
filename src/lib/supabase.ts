@@ -1,9 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type AppConfig = { supabaseUrl: string; supabaseAnonKey: string; membershipUrl: string };
+export type AppConfig = { supabaseUrl: string; supabaseAnonKey: string; membershipUrl: string; appUrl: string };
 
 let client: SupabaseClient | null = null;
-let config: AppConfig = { supabaseUrl: "", supabaseAnonKey: "", membershipUrl: "" };
+let config: AppConfig = { supabaseUrl: "", supabaseAnonKey: "", membershipUrl: "", appUrl: "" };
 
 /** Lit la configuration publique du serveur, avant le premier affichage. */
 export async function loadConfig(): Promise<boolean> {

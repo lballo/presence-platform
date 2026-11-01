@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon, Mail, Menu, X } from "lucide-react";
-import { Toaster } from "sonner";
+import { LayoutDashboard, Compass, Sparkles, Mic, MessagesSquare, Heart, Users, Hexagon, CalendarDays, LogOut, Sun, Moon, Mail, Menu, ShieldCheck, X } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/providers/auth";
 import { Avatar } from "@/components/Avatar";
 import { CoachBubble } from "@/components/CoachBubble";
 import { UnreadDot } from "@/components/forum/shared";
+import { NotificationBell } from "@/components/NotificationBell";
+import { Tour } from "@/components/onboarding/Tour";
+import { HoneyToast } from "@/components/onboarding/HoneyToast";
 
 const NAV = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard },
@@ -21,7 +23,7 @@ const NAV = [
   { to: "/ruches", label: "Ruches", icon: Hexagon },
 ];
 
-function useTheme() {
+export function useTheme() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("presence-theme") === "sombre"; } catch { return false; }
   });
@@ -32,7 +34,7 @@ function useTheme() {
   return { dark, setDark };
 }
 
-function Brand({ compact }: { compact?: boolean }) {
+export function Brand({ compact }: { compact?: boolean }) {
   return (
     <span className="flex flex-col items-start gap-2.5">
       {!compact && <span className="text-[13px] tracking-[0.2em] uppercase p-muted">Laura Ballo</span>}
@@ -49,6 +51,18 @@ function UnreadBadge({ n, small }: { n?: number; small?: boolean }) {
   return <span className={`${small ? "min-w-[18px] h-[18px] text-[10.5px] px-1" : "min-w-[22px] h-[22px] text-[12px] px-1.5"} rounded-full font-semibold flex items-center justify-center`} style={{ background: "var(--p-accent)", color: "#fff" }}>{n > 99 ? "99+" : n}</span>;
 }
 
+/** Entrée du menu réservée aux administrateurs, avec ce qui attend une décision. */
+function AdminEntry() {
+  const o = trpc.admin.overview.useQuery().data;
+  return (
+    <NavLink to="/admin" className={({ isActive }) => `flex items-center gap-3.5 min-h-[46px] px-3.5 rounded-xl text-[15.5px] no-underline transition-colors ${isActive ? "text-white font-medium" : "hover:bg-black/5 dark:hover:bg-white/5"}`} style={({ isActive }) => (isActive ? { background: "var(--p-accent)" } : { color: "var(--p-menu-ink)" })}>
+      <ShieldCheck size={19} strokeWidth={1.6} />
+      <span className="flex-1">Administration</span>
+      <UnreadBadge n={o ? o.pending.total + o.openReports : 0} />
+    </NavLink>
+  );
+}
+
 /** Contenu du menu : utilisé dans la barre latérale (ordinateur) et dans le tiroir (mobile). */
 function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: Record<string, boolean>; dark: boolean; setDark: (v: boolean) => void }) {
   const me = trpc.members.me.useQuery();
@@ -61,6 +75,7 @@ function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: R
             key={to}
             to={to}
             end={to === "/"}
+            data-tour={to}
             className={({ isActive }) =>
               `flex items-center gap-3.5 min-h-[46px] px-3.5 rounded-xl text-[15.5px] no-underline transition-colors ${isActive ? "text-white font-medium" : "hover:bg-black/5 dark:hover:bg-white/5"}`
             }
@@ -76,6 +91,7 @@ function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: R
             )}
           </NavLink>
         ))}
+        {me.data?.permissions.adminPanel && <AdminEntry />}
       </nav>
       <div className="mt-auto px-3.5 pb-3">
         <button
@@ -94,6 +110,7 @@ function MenuContent({ unread, dots, dark, setDark }: { unread?: number; dots: R
           <span className="text-[14.5px] font-medium truncate" style={{ color: "var(--p-ink)" }}>{me.data?.name ?? "…"}</span>
           <span className="text-[12.5px] truncate" style={{ color: "var(--p-menu-ink)" }}>{me.data?.jobTitle ?? ""}</span>
         </span>
+        <NotificationBell up />
         <button type="button" aria-label="Se déconnecter" title="Se déconnecter" onClick={() => signOut()} className="w-10 h-10 flex items-center justify-center rounded-lg" style={{ color: "var(--p-menu-ink)" }}>
           <LogOut size={18} strokeWidth={1.6} />
         </button>
@@ -141,6 +158,7 @@ export default function Layout() {
         <button type="button" aria-label="Ouvrir le menu" aria-expanded={drawer} className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ color: "var(--p-ink)" }} onClick={() => setDrawer(true)}><Menu size={22} /></button>
         <NavLink to="/" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></NavLink>
         <span className="flex-1" />
+        <NotificationBell />
         {me.data && <NavLink to={`/membres/${me.data.id}`} aria-label="Mon profil"><Avatar m={me.data} size={34} /></NavLink>}
       </header>
 
@@ -167,16 +185,17 @@ export default function Layout() {
       {/* Mobile : barre d'onglets en bas */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 flex border-t" style={{ background: "var(--p-menu-bg)", borderColor: "var(--p-menu-line)", paddingBottom: "env(safe-area-inset-bottom)" }} aria-label="Navigation principale">
         {TABS.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} end={to === "/"} className="flex-1 flex flex-col items-center justify-center gap-0.5 h-16 no-underline text-[11px] relative" style={({ isActive }) => ({ color: isActive ? "var(--p-accent-text)" : "var(--p-menu-ink)", fontWeight: isActive ? 600 : 400 })}>
+          <NavLink key={to} to={to} end={to === "/"} data-tour={to} className="flex-1 flex flex-col items-center justify-center gap-0.5 h-16 no-underline text-[11px] relative" style={({ isActive }) => ({ color: isActive ? "var(--p-accent-text)" : "var(--p-menu-ink)", fontWeight: isActive ? 600 : 400 })}>
             <span className="relative"><Icon size={21} strokeWidth={1.7} />{to === "/messages" && <span className="absolute -top-1.5 -right-2.5"><UnreadBadge n={unread.data} small /></span>}{to === "/forum" && dots["/forum"] && <span className="absolute -top-0.5 -right-1 flex"><UnreadDot label="Annonces non lues" /></span>}</span>
             {label}
           </NavLink>
         ))}
-        <button type="button" onClick={() => setDrawer(true)} className="flex-1 flex flex-col items-center justify-center gap-0.5 h-16 text-[11px]" style={{ color: "var(--p-menu-ink)" }}><Menu size={21} strokeWidth={1.7} />Menu</button>
+        <button type="button" data-tour="menu" onClick={() => setDrawer(true)} className="flex-1 flex flex-col items-center justify-center gap-0.5 h-16 text-[11px]" style={{ color: "var(--p-menu-ink)" }}><Menu size={21} strokeWidth={1.7} />Menu</button>
       </nav>
 
       <CoachBubble />
-      <Toaster position="top-center" richColors />
+      <Tour />
+      <HoneyToast />
     </div>
   );
 }

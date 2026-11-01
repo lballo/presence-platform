@@ -36,7 +36,7 @@ app.get("/api/health", async (c) => {
 });
 
 // Configuration publique lue par le navigateur au démarrage (la clé anon est faite pour être publique).
-app.get("/api/config", (c) => c.json({ supabaseUrl: env.supabaseUrl, supabaseAnonKey: env.supabaseAnonKey, membershipUrl: env.membershipUrl }));
+app.get("/api/config", (c) => c.json({ supabaseUrl: env.supabaseUrl, supabaseAnonKey: env.supabaseAnonKey, membershipUrl: env.membershipUrl, appUrl: env.appUrl }));
 
 app.onError((err, c) => {
   console.error(err);
@@ -53,7 +53,14 @@ export default app;
 // Serveur Node autonome (Render, VPS…). Sur Vercel, c’est api/index.ts qui expose l’app.
 if (env.isProduction && !process.env.VERCEL) {
   const { serve } = await import("@hono/node-server");
-  const { serveStaticFiles } = await import("./lib/vite");
+  const { indexWith, serveStaticFiles } = await import("./lib/vite");
+  const { eventShareTags } = await import("./lib/eventShare");
+  // Aperçu de partage (LinkedIn…) : calculé ici, car ces robots n'exécutent pas l'application.
+  app.get("/e/:slug", async (c) => {
+    const share = await eventShareTags(c.req.param("slug"));
+    if (!share.indexable) c.header("X-Robots-Tag", "noindex");
+    return c.html(indexWith(share.head));
+  });
   serveStaticFiles(app);
   const port = parseInt(process.env.PORT || "3000");
   serve({ fetch: app.fetch, port }, () => console.log(`Présence : http://localhost:${port}/`));

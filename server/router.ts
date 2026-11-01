@@ -12,6 +12,11 @@ import { dashboardRouter } from "./routers/dashboard";
 import { talksRouter } from "./routers/talks";
 import { messagesRouter } from "./routers/messages";
 import { uploadsRouter } from "./routers/uploads";
+import { notificationsRouter } from "./routers/notifications";
+import { onboardingRouter } from "./routers/onboarding";
+import { honeyRouter } from "./routers/honey";
+import { adminRouter } from "./routers/admin";
+import { reportsRouter } from "./routers/reports";
 
 export const appRouter = createRouter({
   ping: publicProc.query(() => ({ ok: true, ts: Date.now() })),
@@ -28,6 +33,11 @@ export const appRouter = createRouter({
   talks: talksRouter,
   messages: messagesRouter,
   uploads: uploadsRouter,
+  notifications: notificationsRouter,
+  onboarding: onboardingRouter,
+  honey: honeyRouter,
+  admin: adminRouter,
+  reports: reportsRouter,
 });
 
 export type AppRouter = typeof appRouter;

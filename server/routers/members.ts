@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, ne, or, inArray, isNotNull, isNull, desc, asc, gte } from "drizzle-orm";
+import { eq, and, ne, or, inArray, isNull, desc, asc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { can } from "../lib/permissions";
@@ -8,6 +8,8 @@ import { getDb } from "../queries/connection";
 import { members, swipes, messages, hiveMembers, talks, events } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { INTENT_CODES, INTENT_GROUPS, intentLabel, myIntentLabel } from "../lib/intents";
+import { isOurImage } from "../lib/storage";
+import { award } from "../lib/honey";
 
 async function requireMember(id: number) {
   const db = getDb();
@@ -30,6 +32,8 @@ export const membersRouter = createRouter({
       memberRole: m.role,
       accessType: m.accessType,
       accessEndsAt: m.accessEndsAt,
+      goals: m.goals,
+      tour: m.tour,
       rencontreEnabled: m.rencontreEnabled, rencontrePref: m.rencontrePref, rencontreBlurb: m.rencontreBlurb,
       // Ce que l'interface affiche ou masque : la décision reste celle de can()
       permissions: {
@@ -40,6 +44,7 @@ export const membersRouter = createRouter({
         validateOrganizers: can(m, "organizer.validate"),
         manageMembers: can(m, "members.manage"),
         moderate: can(m, "moderate"),
+        adminPanel: can(m, "admin.panel"),
         applyOrganizer: can(m, "organizer.apply"),
       },
       organizerRequest: m.organizerRequest,
@@ -58,26 +63,6 @@ export const membersRouter = createRouter({
     return { ok: true };
   }),
 
-  /** Administrateur : candidatures organisateur en attente. */
-  organizerRequests: profileProc.query(async ({ ctx }) => {
-    if (!can(ctx.member, "organizer.validate")) return [];
-    const list = await getDb().select().from(members).where(and(isNotNull(members.organizerRequestedAt), eq(members.role, "membre")));
-    return list.map((m) => ({ ...publicMember(m), motivation: m.organizerRequest, requestedAt: m.organizerRequestedAt! }));
-  }),
-
-  /** Administrateur : changer le rôle d'un membre (membre, organisateur, administrateur). */
-  setRole: procFor("members.manage").input(z.object({ memberId: z.number(), role: z.enum(["membre", "organisateur", "administrateur"]) })).mutation(async ({ ctx, input }) => {
-    if (input.memberId === ctx.memberId && input.role !== "administrateur") throw new TRPCError({ code: "BAD_REQUEST", message: "Vous ne pouvez pas retirer votre propre rôle d’administratrice." });
-    await getDb().update(members).set({ role: input.role, organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
-    return { ok: true };
-  }),
-
-  /** Administrateur : refuser une candidature (le membre reste membre simple). */
-  declineOrganizer: procFor("organizer.validate").input(z.object({ memberId: z.number() })).mutation(async ({ input }) => {
-    await getDb().update(members).set({ organizerRequest: "", organizerRequestedAt: null }).where(eq(members.id, input.memberId));
-    return { ok: true };
-  }),
-
   updateProfile: profileProc
     .input(
       z.object({
@@ -85,6 +70,8 @@ export const membersRouter = createRouter({
         lastName: z.string().max(80).default(""),
         jobTitle: z.string().max(160).default(""),
         city: z.string().max(80).default(""),
+        country: z.string().trim().max(80).default(""),
+        photoUrl: z.string().trim().max(1000).nullable().optional(),
         intention: z.string().max(400).default(""),
         bio: z.string().max(1500).default(""),
         ambition: z.string().max(600).default(""),
@@ -100,8 +87,11 @@ export const membersRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      if (input.photoUrl && input.photoUrl !== ctx.member.photoUrl && !isOurImage("avatar", input.photoUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "Importez votre photo depuis le formulaire." });
       await db.update(members).set(input).where(eq(members.id, ctx.memberId));
-      return requireMember(ctx.memberId);
+      const m = await requireMember(ctx.memberId);
+      if (m.photoUrl && m.jobTitle.trim() && m.city.trim() && m.bio.trim()) await award(m.id, "profil");
+      return m;
     }),
 
   /** Annuaire : tous les membres visibles sauf moi. */
@@ -189,7 +179,7 @@ export const membersRouter = createRouter({
     const [memberships, myTalks, hosted, liked, msgs] = await Promise.all([
       db.query.hiveMembers.findMany({ where: eq(hiveMembers.memberId, m.id), with: { hive: true } }),
       db.query.talks.findMany({ where: and(eq(talks.speakerId, m.id), eq(talks.status, "published")), orderBy: [desc(talks.publishedAt)] }),
-      db.query.events.findMany({ where: and(eq(events.hostId, m.id), eq(events.status, "published"), isNull(events.hiveId), gte(events.startsAt, new Date())), orderBy: [asc(events.startsAt)], limit: 4 }),
+      db.query.events.findMany({ where: and(eq(events.hostId, m.id), eq(events.status, "published"), isNull(events.hiveId), isNull(events.cancelledAt), gte(events.startsAt, new Date())), orderBy: [asc(events.startsAt)], limit: 4 }),
       db.select().from(swipes).where(and(eq(swipes.liked, true), or(and(eq(swipes.fromId, ctx.memberId), eq(swipes.toId, m.id)), and(eq(swipes.fromId, m.id), eq(swipes.toId, ctx.memberId))))),
       db.select({ id: messages.id, at: messages.createdAt }).from(messages).where(or(and(eq(messages.fromId, ctx.memberId), eq(messages.toId, m.id)), and(eq(messages.fromId, m.id), eq(messages.toId, ctx.memberId)))).orderBy(desc(messages.createdAt)),
     ]);
@@ -204,7 +194,7 @@ export const membersRouter = createRouter({
       tags: m.intents.map((code) => ({ code, offer: code.endsWith(":offer"), label: intentLabel(code, m.gender) })),
       hives: memberships.filter((h) => h.role !== "pending").map((h) => ({ id: h.hive.id, name: h.hive.name, type: h.hive.type, cover: h.hive.cover, role: h.role })),
       talks: myTalks.map((t) => ({ id: t.id, title: t.title, summary: t.summary, durationMin: t.durationMin, views: t.views })),
-      hosting: hosted.map((e) => ({ id: e.id, title: e.title, kind: e.kind, startsAt: e.startsAt, where: e.where })),
+      hosting: hosted.map((e) => ({ id: e.id, slug: e.slug, title: e.title, kind: e.kind, startsAt: e.startsAt, where: e.where })),
       relation: { matchGoals, messageCount: msgs.length, lastMessageAt: msgs[0]?.at ?? null },
     };
   }),

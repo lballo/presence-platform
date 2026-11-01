@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download, Pencil, Trash2, Ban, Reply } from "lucide-react";
+import { ArrowLeft, Send, PenSquare, Search, Check, CheckCheck, Paperclip, X, FileText, Download, Pencil, Trash2, Ban, Reply, Flag } from "lucide-react";
 import { useUpload, fileSize } from "@/lib/upload";
 import { toast } from "sonner";
+import { ReportButton } from "@/components/ReportButton";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
@@ -188,16 +189,17 @@ function Thread({ withId, onBack }: { withId: number; onBack: () => void }) {
             {g.items.map((m) => (
               <div key={m.id} id={`msg-${m.id}`} className="flex flex-col">
                 <Bubble
-                  mine={m.mine} text={m.text} attachment={m.attachment} deleted={m.deleted}
+                  mine={m.mine} text={m.text} attachment={m.attachment} deleted={m.deleted} hidden={m.hidden}
                   highlighted={editing?.id === m.id || replyTo?.id === m.id || flash === m.id}
                   quote={m.replyTo ? <Quote q={m.replyTo} mine={m.mine} peerName={peer?.firstName ?? ""} onClick={() => jumpTo(m.replyTo!.id)} /> : null}
                   meta={<>{m.edited ? "modifié · " : ""}{hour(new Date(m.at))}{m.mine && !m.deleted && (m.read ? <CheckCheck size={13} /> : <Check size={13} />)}</>}
-                  onSelect={!m.deleted ? () => setSelected(selected === m.id ? null : m.id) : undefined}
-                  actions={!m.deleted && (selected === m.id) ? (
+                  onSelect={!m.deleted && !m.hidden ? () => setSelected(selected === m.id ? null : m.id) : undefined}
+                  actions={!m.deleted && !m.hidden && (selected === m.id) ? (
                     <span className={`flex items-center gap-1 ${m.mine ? "" : "order-last"}`}>
                       <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => startReply(m)}><Reply size={12} /> Répondre</button>
                       {m.mine && m.text && <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)" }} onClick={() => startEdit(m.id, m.text)}><Pencil size={12} /> Modifier</button>}
                       {m.mine && <button type="button" className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border" style={{ borderColor: "var(--p-line-2)", background: "var(--p-surface)", color: "var(--p-accent-text)" }} onClick={() => { setConfirmDel(m.id); setSelected(null); }}><Trash2 size={12} /> Supprimer</button>}
+                      {!m.mine && <ReportButton kind="message" id={m.id} className="h-8 px-2.5 rounded-full text-[12.5px] flex items-center gap-1.5 border"><Flag size={12} /> Signaler</ReportButton>}
                       <button type="button" aria-label="Fermer" className="w-8 h-8 rounded-full flex items-center justify-center p-muted" onClick={() => setSelected(null)}><X size={14} /></button>
                     </span>
                   ) : undefined}
@@ -283,11 +285,11 @@ function Quote({ q, mine, peerName, onClick }: { q: { id: number; mine: boolean;
   );
 }
 
-function Bubble({ mine, text, meta, faded, attachment, deleted, onSelect, actions, highlighted, quote }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att; deleted?: boolean; onSelect?: () => void; actions?: React.ReactNode; highlighted?: boolean; quote?: React.ReactNode }) {
-  if (deleted)
+function Bubble({ mine, text, meta, faded, attachment, deleted, hidden, onSelect, actions, highlighted, quote }: { mine: boolean; text: string; meta: React.ReactNode; faded?: boolean; attachment?: Att; deleted?: boolean; hidden?: boolean; onSelect?: () => void; actions?: React.ReactNode; highlighted?: boolean; quote?: React.ReactNode }) {
+  if (deleted || hidden)
     return (
       <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-        <div className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[14px] italic flex items-center gap-1.5 border border-dashed p-muted" style={{ borderColor: "var(--p-line-2)" }}><Ban size={13} /> Message supprimé <span className="not-italic text-[11px] p-faint ml-1">{meta}</span></div>
+        <div className="max-w-[78%] px-3.5 py-2 rounded-2xl text-[14px] italic flex items-center gap-1.5 border border-dashed p-muted" style={{ borderColor: "var(--p-line-2)" }}><Ban size={13} /> {hidden ? "Message masqué par la modération" : "Message supprimé"} <span className="not-italic text-[11px] p-faint ml-1">{meta}</span></div>
       </div>
     );
   return (

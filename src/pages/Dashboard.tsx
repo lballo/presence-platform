@@ -1,9 +1,15 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router";
-import { Linkedin, Pencil, CalendarPlus, ExternalLink, ChevronLeft, ChevronRight, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import { Linkedin, Pencil, CalendarPlus, ExternalLink, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
-import { longDate, hour, addMin, iso, monthTitle, plural, monthAbr, dayNum } from "@/lib/format";
+import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
+import { AgendaCalendar } from "@/components/events/AgendaCalendar";
+import { FirstSteps } from "@/components/onboarding/FirstSteps";
+import { ReplayTour } from "@/components/onboarding/Tour";
+import { Avatar } from "@/components/Avatar";
+import { useUpload } from "@/lib/upload";
+import { PROFILE_PROMPT } from "@/content/accueil";
 import { PinnedAnnouncements } from "@/components/forum/PinnedAnnouncements";
 
 const PREFS: [string, string][] = [["f", "Une femme"], ["m", "Un homme"], ["all", "Peu importe"]];
@@ -12,7 +18,13 @@ export default function Dashboard() {
   const me = trpc.members.me.useQuery();
   const coaching = trpc.dashboard.coaching.useQuery();
   const news = trpc.dashboard.news.useQuery();
-  const [editing, setEditing] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // « ?profil=1 » ouvre directement le formulaire du profil (tuto, carte Mes premiers pas)
+  const askedProfile = params.get("profil") === "1";
+  const [editingProfile, setEditingProfile] = useState(false);
+  const editing = editingProfile || askedProfile;
+  const setEditing = (on: boolean) => { setEditingProfile(on); if (!on && askedProfile) setParams({}, { replace: true }); window.scrollTo(0, 0); };
+  useEffect(() => { if (askedProfile) window.scrollTo(0, 0); }, [askedProfile]);
   const today = new Date();
 
   return (
@@ -25,13 +37,15 @@ export default function Dashboard() {
 
       <PinnedAnnouncements />
 
+      {!editing && <FirstSteps />}
+
       {me.data && (editing ? <ProfileEditor me={me.data} onDone={() => setEditing(false)} /> : <ProfileCard me={me.data} onEdit={() => setEditing(true)} />)}
 
       {me.data && !editing && <OrganizerCard me={me.data} />}
 
       {coaching.data && <CoachingBand c={coaching.data} />}
 
-      <Agenda />
+      <AgendaCalendar />
 
       <section className="mt-9">
         <span className="p-eyebrow">Cette semaine dans Présence</span>
@@ -104,7 +118,7 @@ function OrganizerCard({ me }: { me: Me }) {
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [motivation, setMotivation] = useState("");
-  const apply = trpc.members.requestOrganizer.useMutation({ onSuccess: () => { utils.members.me.invalidate(); utils.members.organizerRequests.invalidate(); setOpen(false); toast.success("Candidature envoyée à l’équipe Présence"); }, onError: (e) => toast.error(e.message) });
+  const apply = trpc.members.requestOrganizer.useMutation({ onSuccess: () => { utils.members.me.invalidate(); setOpen(false); toast.success("Candidature envoyée à l’équipe Présence"); }, onError: (e) => toast.error(e.message) });
   const cancel = trpc.members.cancelOrganizerRequest.useMutation({ onSuccess: () => utils.members.me.invalidate() });
   if (!me.permissions.applyOrganizer && me.memberRole !== "organisateur") return null;
   if (me.memberRole === "organisateur")
@@ -149,8 +163,8 @@ function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
       </div>
       <div className="flex-[999_1_380px] min-w-0 p-7 flex flex-col gap-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-[14px] p-muted">{[me.jobTitle, me.city].filter(Boolean).join(" · ")}</span>
-          <button type="button" onClick={onEdit} className="p-btn-outline p-btn-sm"><Pencil size={15} /> Modifier mon profil</button>
+          <span className="text-[14px] p-muted">{[me.jobTitle, me.city, me.country].filter(Boolean).join(" · ")}</span>
+          <span className="flex flex-wrap gap-2"><ReplayTour /><button type="button" onClick={onEdit} className="p-btn-outline p-btn-sm"><Pencil size={15} /> Modifier mon profil</button></span>
         </div>
         {me.intention && <p className="m-0 serif italic text-[clamp(26px,3vw,34px)] leading-tight">« {me.intention} »</p>}
         {me.bio && <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{me.bio}</p>}
@@ -191,7 +205,7 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
     onError: (e) => toast.error(e.message),
   });
   const [f, setF] = useState({
-    firstName: me.firstName, lastName: me.lastName, jobTitle: me.jobTitle, city: me.city, intention: me.intention,
+    firstName: me.firstName, lastName: me.lastName, jobTitle: me.jobTitle, city: me.city, country: me.country, photoUrl: me.photoUrl, intention: me.intention,
     bio: me.bio, ambition: me.ambition, passions: me.passions, linkedinUrl: me.linkedinUrl,
     values: me.values, intents: me.intents, langs: me.langs, visibleInDirectory: me.visibleInDirectory,
     rencontreEnabled: me.rencontreEnabled, rencontrePref: me.rencontrePref as "f" | "m" | "all",
@@ -209,6 +223,12 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
     if (!v || f.values.length >= 5 || f.values.some((x) => x.toLowerCase() === v.toLowerCase())) return;
     set({ values: [...f.values, v[0].toUpperCase() + v.slice(1)] }); setNewValue("");
   };
+  const avatar = useUpload("avatar");
+  const pickPhoto = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 5 * 1048576) return void toast.error("La photo dépasse 5 Mo.");
+    try { set({ photoUrl: (await avatar.upload(file)).publicUrl }); } catch (e) { toast.error(e instanceof Error ? e.message : "Envoi impossible"); }
+  };
   const full = f.intents.length >= 3;
   const linkedinOk = !f.linkedinUrl.trim() || /^https?:\/\/([\w-]+\.)?linkedin\.com\/\S+$/i.test(f.linkedinUrl.trim());
 
@@ -218,11 +238,20 @@ function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
         <div><span className="p-eyebrow">Mon profil</span><h2 className="text-[32px] m-0">Modifier mon profil</h2></div>
         <span className="text-[13.5px] p-muted">Ces informations sont visibles par les membres du cercle.</span>
       </div>
+      {!(me.photoUrl && me.jobTitle && me.city && me.bio) && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>{PROFILE_PROMPT}</p>}
+      <div className="flex flex-wrap items-center gap-3.5">
+        <Avatar m={{ initials: me.initials, photoUrl: f.photoUrl }} size={72} />
+        <label className="p-btn-outline p-btn-sm cursor-pointer">
+          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" aria-label="Choisir ma photo" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          {avatar.busy ? `Envoi… ${avatar.progress ?? 0} %` : f.photoUrl ? "Changer ma photo" : "Ajouter ma photo"}
+        </label>
+      </div>
       <div className="grid gap-3.5 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Prénom</span><input className="p-field" value={f.firstName} onChange={(e) => set({ firstName: e.target.value })} /></label>
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Nom</span><input className="p-field" value={f.lastName} onChange={(e) => set({ lastName: e.target.value })} /></label>
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Fonction</span><input className="p-field" value={f.jobTitle} onChange={(e) => set({ jobTitle: e.target.value })} /></label>
         <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Ville</span><input className="p-field" value={f.city} onChange={(e) => set({ city: e.target.value })} /></label>
+        <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Pays</span><input className="p-field" value={f.country} onChange={(e) => set({ country: e.target.value })} placeholder="Ex. France" /></label>
       </div>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Mon intention</span><textarea className="p-field" rows={2} value={f.intention} onChange={(e) => set({ intention: e.target.value })} /></label>
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Ma bio <span className="p-faint">· votre parcours et ce qui vous anime, en quelques lignes</span></span><textarea className="p-field" rows={4} maxLength={1500} value={f.bio} onChange={(e) => set({ bio: e.target.value })} placeholder="Ex. Vingt ans dans l’industrie, dont dix à diriger des équipes de production. J’aime faire grandir les gens et les projets qui ont du sens." /><span className="p-faint text-[12px] self-end">{f.bio.length} / 1500</span></label>
@@ -365,135 +394,5 @@ function CoachingBand({ c }: { c: RouterOutputs["dashboard"]["coaching"] }) {
         <span className="text-[12.5px] text-white/65 text-center flex items-center justify-center gap-1.5"><ExternalLink size={12} /> Ouvre l’agenda de Laura sur Calendly</span>
       </div>
     </section>
-  );
-}
-
-const TYPES: Record<string, { label: string; bar: string }> = {
-  event: { label: "Présence", bar: "var(--p-ink)" },
-  salon: { label: "Salon live · Présence", bar: "var(--p-ink)" },
-  ruche: { label: "Ruche", bar: "var(--p-gold)" },
-  coaching: { label: "Coaching", bar: "var(--p-accent)" },
-};
-
-function Agenda() {
-  const agenda = trpc.dashboard.agenda.useQuery();
-  const items = agenda.data ?? [];
-  const today = new Date();
-  const [m, setM] = useState({ y: today.getFullYear(), m: today.getMonth() });
-  const [sel, setSel] = useState<string | null>(null);
-  const [filter, setFilter] = useState("all");
-
-  const filtered = items.filter((a) => filter === "all" || (filter === "presence" ? a.type === "event" || a.type === "salon" : a.type === filter));
-  const byDay = useMemo(() => {
-    const map: Record<string, typeof filtered> = {};
-    for (const a of filtered) {
-      const d0 = new Date(a.startsAt);
-      for (let i = 0; i < a.days; i++) { const k = iso(new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i)); (map[k] ??= []).push(a); }
-    }
-    return map;
-  }, [filtered]);
-
-  const first = new Date(m.y, m.m, 1);
-  const offset = (first.getDay() + 6) % 7;
-  const dim = new Date(m.y, m.m + 1, 0).getDate();
-  const cells = Array.from({ length: Math.ceil((offset + dim) / 7) * 7 }, (_, i) => new Date(m.y, m.m, 1 - offset + i));
-  const selDay = sel ?? (filtered.find((a) => new Date(a.startsAt) >= today) ? iso(new Date(filtered.find((a) => new Date(a.startsAt) >= today)!.startsAt)) : iso(today));
-  const dayItems = byDay[selDay] ?? [];
-  const upcoming = filtered.filter((a) => new Date(a.startsAt) >= today).slice(0, 4);
-
-  return (
-    <section className="p-card p-5 sm:p-7 flex flex-col gap-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div><h2 className="text-[28px] m-0">Mon agenda</h2><span className="text-[13.5px] p-muted">{plural(filtered.filter((a) => new Date(a.startsAt) >= today).length, "rendez-vous à venir", "rendez-vous à venir")}</span></div>
-        <div className="flex flex-wrap gap-1.5">
-          {[["all", "Tout"], ["presence", "Présence"], ["ruche", "Mes ruches"], ["coaching", "Coachings"]].filter(([k]) => k !== "coaching" || items.some((a) => a.type === "coaching")).map(([k, l]) => (
-            <button key={k} type="button" className={`p-chip h-8 text-[13px] ${filter === k ? "p-chip-on" : ""}`} onClick={() => setFilter(k)}>{l}</button>
-          ))}
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-5 items-start">
-        <div className="flex-[2_1_480px] min-w-0">
-          <div className="flex items-center justify-between mb-2">
-            <button type="button" aria-label="Mois précédent" className="w-10 h-10 rounded-full border flex items-center justify-center" style={{ borderColor: "var(--p-line)" }} onClick={() => setM(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}><ChevronLeft size={16} /></button>
-            <h3 className="text-[26px] m-0">{monthTitle(m.y, m.m)}</h3>
-            <button type="button" aria-label="Mois suivant" className="w-10 h-10 rounded-full border flex items-center justify-center" style={{ borderColor: "var(--p-line)" }} onClick={() => setM(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}><ChevronRight size={16} /></button>
-          </div>
-          <div className="grid grid-cols-7 border-t border-l" style={{ borderColor: "var(--p-line)" }}>
-            {["Lun.", "Mar.", "Mer.", "Jeu.", "Ven.", "Sam.", "Dim."].map((w) => <span key={w} className="py-2 text-center text-[12px] font-medium p-faint border-r border-b" style={{ borderColor: "var(--p-line)" }}>{w}</span>)}
-            {cells.map((d) => {
-              const k = iso(d); const inM = d.getMonth() === m.m; const evs = byDay[k] ?? []; const isToday = k === iso(today); const on = k === selDay;
-              return (
-                <button key={k} type="button" onClick={() => setSel(k)} aria-pressed={on} className="min-h-[88px] p-1.5 border-r border-b text-left flex flex-col gap-1" style={{ borderColor: "var(--p-line)", background: on ? "var(--p-accent-soft)" : inM ? "var(--p-surface)" : "var(--p-surface-2)" }}>
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-[13px]" style={isToday ? { background: "var(--p-accent)", color: "#fff", fontWeight: 600 } : { color: inM ? "var(--p-ink)" : "var(--p-ink-3)" }}>{d.getDate()}</span>
-                  {evs.slice(0, 2).map((a) => <span key={a.id} className="text-[11px] leading-tight truncate pl-1.5 border-l-2" style={{ borderColor: TYPES[a.type].bar }}>{hour(new Date(a.startsAt), true)} {a.title.split(":")[0]}</span>)}
-                  {evs.length > 2 && <span className="text-[11px] p-link">+{evs.length - 2}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <aside className="flex-[1_1_260px] min-w-0 flex flex-col gap-4">
-          <div className="p-soft p-4 flex flex-col gap-3">
-            <span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>{longDate(new Date(selDay + "T12:00:00"))}</span>
-            {dayItems.length === 0 && <span className="text-[14px] p-muted">Rien de prévu ce jour-là.</span>}
-            {dayItems.map((a) => (
-              <Link key={a.id} to={a.href} className="flex gap-3 no-underline" style={{ color: "var(--p-ink)" }}>
-                <span className="w-1 rounded-full flex-none" style={{ background: TYPES[a.type].bar }} />
-                <span className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-[12px] p-muted">{hour(new Date(a.startsAt))} · {TYPES[a.type].label}</span>
-                  <span className="text-[15px] font-semibold leading-snug">{a.title}</span>
-                  <span className="text-[12.5px] p-muted">{a.where}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>À venir</span>
-            {upcoming.map((a) => (
-              <button key={a.id} type="button" onClick={() => { const d = new Date(a.startsAt); setM({ y: d.getFullYear(), m: d.getMonth() }); setSel(iso(d)); }} className="flex items-center gap-3 text-left py-2 border-b" style={{ borderColor: "var(--p-line)" }}>
-                <span className="w-11 flex flex-col items-center leading-none flex-none"><span className="serif text-[26px]">{new Date(a.startsAt).getDate()}</span><span className="text-[11px] p-muted">{monthAbr(new Date(a.startsAt))}</span></span>
-                <span className="flex flex-col min-w-0"><span className="text-[14px] font-medium leading-snug truncate">{a.title}</span><span className="text-[12px] p-muted">{hour(new Date(a.startsAt))}</span></span>
-              </button>
-            ))}
-          </div>
-        </aside>
-      </div>
-      <Suggestions />
-    </section>
-  );
-}
-
-/** Propositions d'événements : programme Présence et événements de mes ruches, deux canaux distincts. */
-function Suggestions() {
-  const utils = trpc.useUtils();
-  const sug = trpc.dashboard.suggestions.useQuery();
-  const join = trpc.events.toggleRegistration.useMutation({
-    onSuccess: (r) => { utils.dashboard.invalidate(); utils.events.invalidate(); utils.hives.invalidate(); toast.success(r.waitlist ? "Vous êtes sur liste d’attente" : "Inscription confirmée, c’est dans votre agenda"); },
-    onError: (e) => toast.error(e.message),
-  });
-  if (!sug.data || (!sug.data.global.length && !sug.data.hive.length)) return null;
-  type S = NonNullable<typeof sug.data>["global"][number];
-  const Col = ({ title, sub, list, more }: { title: string; sub: string; list: S[]; more: { to: string; label: string } }) => (
-    <div className="flex-[1_1_300px] min-w-0 flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>{title}</span><Link to={more.to} className="p-link text-[13px] no-underline">{more.label} →</Link></div>
-      <span className="text-[12.5px] p-faint -mt-1">{sub}</span>
-      {list.map((e) => (
-        <div key={e.id} className="flex items-center gap-3 p-3 rounded-2xl border" style={{ borderColor: "var(--p-line)" }}>
-          <span className="w-11 flex flex-col items-center leading-none flex-none"><span className="serif text-[26px]">{new Date(e.startsAt).getDate()}</span><span className="text-[11px] p-muted">{monthAbr(new Date(e.startsAt))}</span></span>
-          <Link to={e.href} className="flex-1 min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}><span className="text-[14.5px] font-semibold leading-snug truncate">{e.title}</span><span className="text-[12.5px] p-muted truncate">{hour(new Date(e.startsAt))} · {e.hiveName ? `Ruche ${e.hiveName}` : e.where}</span></Link>
-          <button type="button" className="p-btn-outline p-btn-sm flex-none" disabled={join.isPending} onClick={() => join.mutate({ eventId: e.id })}>Je m’inscris</button>
-        </div>
-      ))}
-      {!list.length && <span className="text-[13.5px] p-muted py-2">Vous êtes déjà inscrite à tout ce qui arrive.</span>}
-    </div>
-  );
-  return (
-    <div className="flex flex-col gap-3 pt-5 border-t" style={{ borderColor: "var(--p-line)" }}>
-      <h3 className="m-0 text-[24px]">Pour compléter votre agenda</h3>
-      <div className="flex flex-wrap gap-6">
-        <Col title="Programme Présence" sub="Les événements du cercle" list={sug.data.global} more={{ to: "/evenements", label: "Tout le programme" }} />
-        <Col title="Dans mes ruches" sub="Les rendez-vous des ruches dont vous êtes membre" list={sug.data.hive} more={{ to: "/ruches", label: "Mes ruches" }} />
-      </div>
-    </div>
   );
 }

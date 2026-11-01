@@ -9,12 +9,14 @@ import { signedDownloadUrl } from "../lib/storage";
 import { getDb } from "../queries/connection";
 import { forumDrafts, forumLikes, forumPostHashtags, forumPostInterests, forumPostReads, forumPosts, forumReplies, forumSpaces, hashtags, hiveMembers, hives, type ForumPost, type Member } from "../../db/schema";
 import { publicMember } from "../lib/format";
+import { award } from "../lib/honey";
+import { logAdmin, logIfOnBehalf } from "../lib/adminLog";
 
 const forumProc = procFor("forum.use");
 const manageProc = procFor("forum.manage");
 
 const OPP_TYPES = ["recrut", "fin", "assoc"] as const;
-const draftKey = z.string().regex(/^(new|annonce|hive-\d+|edit-\d+)$/);
+const draftKey = z.string().regex(/^(new|annonce|presentation|hive-\d+|edit-\d+)$/);
 
 const postInput = z.object({
   spaceId: z.number().int().nullable().default(null),
@@ -49,7 +51,7 @@ async function hiveContext(hiveId: number, memberId: number) {
 }
 
 /** Une publication que ce membre a le droit de lire, sinon « introuvable ». */
-async function readablePost(member: Member, postId: number) {
+export async function readablePost(member: Member, postId: number) {
   const post = await getDb().query.forumPosts.findFirst({ where: eq(forumPosts.id, postId), with: { space: true } });
   const hive = post?.hiveId ? await hiveContext(post.hiveId, member.id) : null;
   if (!post || !canReadPost(member, post, hive ?? {})) throw new TRPCError({ code: "NOT_FOUND", message: "Publication introuvable" });
@@ -120,7 +122,9 @@ async function shapePosts(member: Member, rows: LoadedPost[]) {
     const isAnnouncement = !!p.hiveId || space?.kind === "annonces";
     const state = postState(p);
     const postInterests = interests.filter((i) => i.postId === p.id);
-    const canEdit = can(member, "content.edit", { ownerId: p.authorId });
+    // Les annonces, de n'importe qui, se modifient aussi depuis le panneau d'administration.
+    const canEdit = can(member, "content.edit", { ownerId: p.authorId }) || (isAnnouncement && can(member, "forum.manage"));
+    const shownReplies = replyList.filter((r) => !r.hiddenAt || r.authorId === member.id || can(member, "moderate"));
     return {
       id: p.id, title: p.title, text: p.text, html: p.html, coverUrl: p.coverUrl, videoUrl: p.videoUrl, askFeedback: p.askFeedback,
       status: p.status, state, publishedAt: p.publishedAt, endsAt: p.endsAt, editedAt: p.editedAt, audience: p.audience,
@@ -137,8 +141,8 @@ async function shapePosts(member: Member, rows: LoadedPost[]) {
       readCount: isAnnouncement && (isMine || can(member, "moderate")) ? counts.get(p.id) ?? 0 : null,
       interestedCount: postInterests.length,
       interested: postInterests.some((i) => i.memberId === member.id),
-      replies: replyList.length,
-      replyList: replyList.map((r) => ({ id: r.id, text: r.text, createdAt: r.createdAt, editedAt: r.editedAt, author: publicMember(r.author), isMine: r.authorId === member.id, canDelete: can(member, "content.delete", { ownerId: r.authorId }) })),
+      replies: shownReplies.length,
+      replyList: shownReplies.map((r) => ({ id: r.id, text: r.text, createdAt: r.createdAt, editedAt: r.editedAt, hidden: !!r.hiddenAt, author: publicMember(r.author), isMine: r.authorId === member.id, canDelete: can(member, "content.delete", { ownerId: r.authorId }) })),
     };
   }));
 }
@@ -157,6 +161,20 @@ async function resolveTarget(member: Member, input: PostInput, existing?: ForumP
   if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espace introuvable" });
   if (space.adminOnly) assertCan(member, "forum.post_restricted", {}, "Cet espace est réservé aux administrateurs.");
   return { hiveId: null, space };
+}
+
+const isPresentations = (target: Awaited<ReturnType<typeof resolveTarget>>) => target.space?.slug === "presentations";
+
+/** Une seule présentation par membre : elle se modifie, elle ne se multiplie pas. */
+async function assertOnePresentation(memberId: number, target: Awaited<ReturnType<typeof resolveTarget>>, exceptId?: number) {
+  if (!isPresentations(target) || !target.space) return;
+  const [other] = await getDb().select({ id: forumPosts.id }).from(forumPosts).where(and(eq(forumPosts.authorId, memberId), eq(forumPosts.spaceId, target.space.id), exceptId ? ne(forumPosts.id, exceptId) : undefined)).limit(1);
+  if (other) throw badRequest("Vous avez déjà une présentation : modifiez-la depuis l’espace Présentations.");
+}
+
+/** Présentation : 10 miels, 20 avec une vidéo. Une vidéo ajoutée ensuite rapporte seulement la différence. */
+async function awardPresentation(memberId: number, target: Awaited<ReturnType<typeof resolveTarget>>, videoUrl: string) {
+  if (isPresentations(target)) await award(memberId, "presentation", videoUrl ? { rule: "presentation_video" } : {});
 }
 
 /** Les règles d'une publication selon son espace : contenu obligatoire, relecture, options des annonces. */
@@ -300,6 +318,7 @@ export const forumRouter = createRouter({
 
   createPost: forumProc.input(postInput).mutation(async ({ ctx, input }) => {
     const target = await resolveTarget(ctx.member, input);
+    await assertOnePresentation(ctx.memberId, target);
     const values = postValues(ctx.member, input, target);
     const row = await getDb().transaction(async (tx) => {
       const [post] = await tx.insert(forumPosts).values({ ...values, authorId: ctx.memberId }).returning();
@@ -307,6 +326,7 @@ export const forumRouter = createRouter({
       if (input.draftKey) await tx.delete(forumDrafts).where(and(eq(forumDrafts.memberId, ctx.memberId), eq(forumDrafts.key, input.draftKey)));
       return post;
     });
+    await awardPresentation(ctx.memberId, target, values.videoUrl);
     return { id: row.id, status: row.status, publishedAt: row.publishedAt };
   }),
 
@@ -315,14 +335,17 @@ export const forumRouter = createRouter({
     const db = getDb();
     const post = await db.query.forumPosts.findFirst({ where: eq(forumPosts.id, input.id) });
     if (!post) throw new TRPCError({ code: "NOT_FOUND" });
-    assertCan(ctx.member, "content.edit", { ownerId: post.authorId }, "Vous ne pouvez modifier que vos propres publications.");
     const target = await resolveTarget(ctx.member, input, post);
+    if (!(can(ctx.member, "forum.manage") && (target.hiveId || target.space?.kind === "annonces"))) assertCan(ctx.member, "content.edit", { ownerId: post.authorId }, "Vous ne pouvez modifier que vos propres publications.");
+    await assertOnePresentation(ctx.memberId, target, post.id);
     const values = postValues(ctx.member, input, target, post);
     await db.transaction(async (tx) => {
       await tx.update(forumPosts).set({ ...values, editedAt: new Date() }).where(eq(forumPosts.id, input.id));
       await setHashtags(tx, input.id, input.hashtagIds);
       if (input.draftKey) await tx.delete(forumDrafts).where(and(eq(forumDrafts.memberId, ctx.memberId), eq(forumDrafts.key, input.draftKey)));
     });
+    if (post.authorId === ctx.memberId) await awardPresentation(ctx.memberId, target, values.videoUrl);
+    await logIfOnBehalf(ctx.member, post.authorId, { action: "Annonce modifiée", targetType: "publication", targetId: post.id, label: input.title || htmlToText(input.html).slice(0, 80) });
     return { id: input.id, status: values.status };
   }),
 
@@ -332,6 +355,7 @@ export const forumRouter = createRouter({
     if (!post) throw new TRPCError({ code: "NOT_FOUND" });
     assertCan(ctx.member, "content.delete", { ownerId: post.authorId }, "Vous ne pouvez supprimer que vos propres publications.");
     await deleteForumPosts([post.id]);
+    await logIfOnBehalf(ctx.member, post.authorId, { action: "Publication supprimée", targetType: "publication", targetId: post.id, label: post.title || post.text.slice(0, 80) });
     return { ok: true };
   }),
 
@@ -415,6 +439,7 @@ export const forumRouter = createRouter({
     if (!r) throw new TRPCError({ code: "NOT_FOUND" });
     assertCan(ctx.member, "content.delete", { ownerId: r.authorId }, "Vous ne pouvez supprimer que vos propres réponses.");
     await db.delete(forumReplies).where(eq(forumReplies.id, input.id));
+    await logIfOnBehalf(ctx.member, r.authorId, { action: "Réponse supprimée", targetType: "reply", targetId: r.id, label: r.text.slice(0, 80) });
     return { ok: true };
   }),
 
@@ -447,29 +472,32 @@ export const forumRouter = createRouter({
     return { interested: true };
   }),
 
-  /** Équipe : publications à relire avant publication. */
-  pending: procFor("opportunity.validate").query(async ({ ctx }) => {
-    const rows = await getDb().query.forumPosts.findMany({ where: eq(forumPosts.status, "pending"), with: postWith, orderBy: [asc(forumPosts.createdAt)] });
+  /** Administration : toutes les annonces, du réseau et des ruches, en ligne ou non. */
+  announcements: manageProc.query(async ({ ctx }) => {
+    const db = getDb();
+    const spaces = await db.select({ id: forumSpaces.id }).from(forumSpaces).where(eq(forumSpaces.kind, "annonces"));
+    const rows = await db.query.forumPosts.findMany({
+      where: and(eq(forumPosts.status, "published"), or(isNotNull(forumPosts.hiveId), inArray(forumPosts.spaceId, spaces.map((x) => x.id)))),
+      with: postWith,
+      orderBy: [desc(forumPosts.publishedAt), desc(forumPosts.id)],
+      limit: 200,
+    });
     return shapePosts(ctx.member, rows);
   }),
 
-  /** Équipe : publier ou refuser. Publiée, elle prend sa place en tête du fil. */
-  decide: procFor("opportunity.validate").input(z.object({ id: z.number().int(), accept: z.boolean() })).mutation(async ({ input }) => {
-    await getDb().update(forumPosts).set(input.accept ? { status: "published", publishedAt: new Date() } : { status: "rejected" }).where(and(eq(forumPosts.id, input.id), eq(forumPosts.status, "pending")));
-    return { ok: true };
-  }),
-
-  // ─── Page provisoire d'administration ───────────────────────
+  // ─── Administration : espaces et épingles ───────────────────
   updateSpace: manageProc
     .input(z.object({ id: z.number().int(), name: z.string().trim().min(1).max(80), emoji: z.string().trim().max(16), description: z.string().trim().max(400) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { id, ...values } = input;
+      const [before] = await getDb().select().from(forumSpaces).where(eq(forumSpaces.id, id)).limit(1);
       await getDb().update(forumSpaces).set(values).where(eq(forumSpaces.id, id));
+      await logAdmin(ctx.member, { action: "Espace du forum modifié", targetType: "espace", targetId: id, label: values.name, detail: before && before.name !== values.name ? `Ancien nom : ${before.name}` : "" });
       return { ok: true };
     }),
 
   /** Monter ou descendre un espace dans son groupe. */
-  moveSpace: manageProc.input(z.object({ id: z.number().int(), direction: z.enum(["up", "down"]) })).mutation(async ({ input }) => {
+  moveSpace: manageProc.input(z.object({ id: z.number().int(), direction: z.enum(["up", "down"]) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const space = await db.query.forumSpaces.findFirst({ where: eq(forumSpaces.id, input.id) });
     if (!space) throw new TRPCError({ code: "NOT_FOUND", message: "Espace introuvable" });
@@ -481,6 +509,7 @@ export const forumRouter = createRouter({
     await db.transaction(async (tx) => {
       for (const [i, s] of group.entries()) await tx.update(forumSpaces).set({ position: i + 1 }).where(eq(forumSpaces.id, s.id));
     });
+    await logAdmin(ctx.member, { action: "Ordre des espaces modifié", targetType: "espace", targetId: space.id, label: space.name, detail: input.direction === "up" ? "Monté" : "Descendu" });
     return { ok: true };
   }),
 
@@ -495,8 +524,9 @@ export const forumRouter = createRouter({
     return rows.map((p) => ({ id: p.id, title: p.title, excerpt: p.text.slice(0, 120), author: publicMember(p.author).name, publishedAt: p.publishedAt, pinned: !!p.pinnedAt }));
   }),
 
-  setPinned: manageProc.input(z.object({ postId: z.number().int(), pinned: z.boolean() })).mutation(async ({ input }) => {
-    await getDb().update(forumPosts).set({ pinnedAt: input.pinned ? new Date() : null }).where(and(eq(forumPosts.id, input.postId), isNotNull(forumPosts.spaceId)));
+  setPinned: manageProc.input(z.object({ postId: z.number().int(), pinned: z.boolean() })).mutation(async ({ ctx, input }) => {
+    const [post] = await getDb().update(forumPosts).set({ pinnedAt: input.pinned ? new Date() : null }).where(and(eq(forumPosts.id, input.postId), isNotNull(forumPosts.spaceId))).returning();
+    if (post) await logAdmin(ctx.member, { action: input.pinned ? "Publication épinglée" : "Publication désépinglée", targetType: "publication", targetId: post.id, label: post.title || post.text.slice(0, 80) });
     return { ok: true };
   }),
 });

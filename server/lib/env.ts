@@ -14,6 +14,8 @@ export const env = {
   appUrl: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, ""),
   // Page expliquant comment revenir, affichée quand un accès est terminé
   membershipUrl: process.env.MEMBERSHIP_URL ?? "",
+  // Courte vidéo de Laura dans le premier panneau d'accueil (vide : panneau sans vidéo)
+  welcomeVideoUrl: process.env.WELCOME_VIDEO_URL ?? "",
   // Stockage des vidéos de talks (bucket Supabase « talks », envoi direct depuis le navigateur via URL signée)
   supabaseUrl: (process.env.SUPABASE_URL ?? "").replace(/\/$/, ""),
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",

@@ -4,6 +4,7 @@ import { X, Send, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { CoachMascot } from "./CoachMascot";
+import { sectionToShow } from "@/content/accueil";
 
 // Suggestions adaptées à la page où l'on se trouve
 const CONTEXT: { match: RegExp; prompts: string[] }[] = [
@@ -16,20 +17,36 @@ const CONTEXT: { match: RegExp; prompts: string[] }[] = [
   { match: /^\/membres/, prompts: ["Avec qui devrais-je échanger en priorité ?", "Comment demander conseil à un pair ?"] },
 ];
 const DEFAULT = ["J’ai une décision difficile à prendre", "Je prépare une prise de parole importante", "Une relation au travail me pèse"];
+// Suggestions d'après ce qui amène la personne au réseau (panneaux d'accueil)
+const FROM_GOALS: Record<string, string> = {
+  pairs: "Comment entrer en contact avec un pair du réseau ?",
+  oral: "Aide-moi à gagner en aisance à l’oral",
+  recul: "J’ai besoin de prendre du recul sur mon rôle",
+  partenaires: "Comment parler de mon activité sans démarcher ?",
+  projet: "Aide-moi à clarifier le projet que je veux lancer",
+  inspiration: "Quel parcours devrais-je découvrir en premier ?",
+};
 const HINT_KEY = "presence-coach-hint-seen";
 
 export function CoachBubble() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState(false);
+  const tour = trpc.members.me.useQuery().data?.tour;
+  const inTour = tour?.status === "pending";
+  const bubble = !!tour && !!sectionToShow(pathname, tour.seen);
 
   useEffect(() => {
     let seen = false;
-    try { seen = sessionStorage.getItem(HINT_KEY) === "1"; } catch { /* stockage indisponible */ }
-    if (seen) return;
+    try {
+      // Le tuto vient de présenter le coach : pas d'indice en plus
+      if (inTour) sessionStorage.setItem(HINT_KEY, "1");
+      seen = sessionStorage.getItem(HINT_KEY) === "1";
+    } catch { /* stockage indisponible */ }
+    if (seen || inTour) return;
     const t = window.setTimeout(() => setHint(true), 2500);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [inTour]);
   const dismissHint = () => { setHint(false); try { sessionStorage.setItem(HINT_KEY, "1"); } catch { /* ignore */ } };
 
   // La page Présence IA contient déjà le coach en grand format
@@ -38,7 +55,7 @@ export function CoachBubble() {
   return (
     <div className="fixed z-40 right-3 bottom-[80px] sm:right-6 lg:bottom-6 flex flex-col items-end gap-3 pointer-events-none" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
       {open && <Panel pathname={pathname} onClose={() => setOpen(false)} />}
-      {!open && hint && (
+      {!open && hint && !inTour && !bubble && (
         <div className="p-pop pointer-events-auto max-w-[240px] p-3.5 pr-8 rounded-2xl rounded-br-md shadow-lg text-[14px] leading-snug relative" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)", color: "var(--p-ink)" }}>
           Besoin d’un coup de pouce ? Je suis votre coach Présence.
           <button type="button" aria-label="Masquer" className="absolute top-2 right-2 p-muted" onClick={dismissHint}><X size={14} /></button>
@@ -46,6 +63,7 @@ export function CoachBubble() {
       )}
       <button
         type="button"
+        data-tour="coach"
         aria-label={open ? "Fermer le coach Présence" : "Ouvrir le coach Présence"}
         aria-expanded={open}
         onClick={() => { setOpen(!open); dismissHint(); }}
@@ -68,7 +86,8 @@ function Panel({ pathname, onClose }: { pathname: string; onClose: () => void })
   const [pending, setPending] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const prompts = CONTEXT.find((c) => c.match.test(pathname))?.prompts ?? DEFAULT;
+  const fromGoals = (me.data?.goals ?? []).map((g) => FROM_GOALS[g]).filter(Boolean).slice(0, 2);
+  const prompts = [...fromGoals, ...(CONTEXT.find((c) => c.match.test(pathname))?.prompts ?? DEFAULT)].slice(0, 4);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [history.data, pending, send.isPending]);

@@ -15,6 +15,7 @@ export type InviteInput = {
   role: Member["role"];
   accessType: Member["accessType"];
   ficheId?: number; // relier une fiche existante plutôt que d'en créer une
+  accessEndsAt?: Date | null;
   sendEmail: boolean; // false : aucun e-mail, le lien est seulement renvoyé
 };
 
@@ -28,12 +29,12 @@ export async function inviteMember(input: InviteInput) {
   if (input.ficheId && !byId) throw new Error(`Aucune fiche n° ${input.ficheId}.`);
   if (byEmail && byId && byEmail.id !== byId.id) throw new Error(`Cet e-mail appartient déjà à la fiche n° ${byEmail.id}.`);
   const existing = byId ?? byEmail;
-  if (existing?.authUserId && existing.invitedAt && existing.onboardingCompletedAt) throw new Error("Cette personne a déjà un compte actif.");
+  if (existing?.authUserId && existing.passwordChosenAt) throw new Error("Cette personne a déjà un compte actif.");
 
   const now = new Date();
   const [member] = existing
-    ? await db.update(members).set({ email, role: input.role, accessType: input.accessType, invitedAt: now }).where(eq(members.id, existing.id)).returning()
-    : await db.insert(members).values({ email, firstName: input.firstName, lastName: input.lastName, role: input.role, accessType: input.accessType, invitedAt: now }).returning();
+    ? await db.update(members).set({ email, role: input.role, accessType: input.accessType, invitedAt: now, onboardingCompletedAt: null, accessEndsAt: input.accessEndsAt ?? existing.accessEndsAt, status: "actif" }).where(eq(members.id, existing.id)).returning()
+    : await db.insert(members).values({ email, firstName: input.firstName, lastName: input.lastName, role: input.role, accessType: input.accessType, accessEndsAt: input.accessEndsAt ?? null, invitedAt: now }).returning();
 
   // Un nouveau lien remplace le précédent.
   await db.update(invitations).set({ revokedAt: now }).where(and(eq(invitations.memberId, member.id), isNull(invitations.usedAt), isNull(invitations.revokedAt)));
@@ -59,6 +60,8 @@ export async function inviteMember(input: InviteInput) {
     if (error) throw new Error(`Supabase : ${error.message}`);
     userId = data.user.id;
   }
+  const [linked] = await db.select({ id: members.id }).from(members).where(eq(members.authUserId, userId)).limit(1);
+  if (linked && linked.id !== member.id) throw new Error(`Ce compte est déjà relié à la fiche n° ${linked.id}.`);
   await db.update(members).set({ authUserId: userId }).where(eq(members.id, member.id));
   return { memberId: member.id, url, expiresAt };
 }
@@ -86,10 +89,10 @@ export async function openInvitationSession(email: string) {
   return { tokenHash: recovery.data.properties.hashed_token, type: "recovery" as const };
 }
 
-/** Mot de passe choisi : l'accueil est terminé et les jetons de ce membre ne servent plus. */
-export async function completeOnboarding(memberId: number) {
+/** Mot de passe choisi : les jetons de ce membre ne servent plus, les panneaux d'accueil peuvent commencer. */
+export async function markPasswordChosen(memberId: number) {
   const db = getDb();
   const now = new Date();
-  await db.update(members).set({ onboardingCompletedAt: now }).where(and(eq(members.id, memberId), isNull(members.onboardingCompletedAt)));
+  await db.update(members).set({ passwordChosenAt: now }).where(and(eq(members.id, memberId), isNull(members.passwordChosenAt)));
   await db.update(invitations).set({ usedAt: now }).where(and(eq(invitations.memberId, memberId), isNull(invitations.usedAt), isNull(invitations.revokedAt)));
 }

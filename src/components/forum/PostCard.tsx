@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { CalendarClock, Eye, Heart, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Trash2, Users } from "lucide-react";
+import { CalendarClock, Eye, Flag, Heart, MessageCircle, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
+import { ReportButton, ReportDialog } from "@/components/ReportButton";
 import { trpc } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { VideoEmbed } from "@/components/VideoEmbed";
@@ -39,6 +40,7 @@ export function PostCard({ p, showOrigin, openReplies, onEdit }: { p: Post; show
   const ref = useMarkRead(p);
   const [menu, setMenu] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [showReplies, setShowReplies] = useState(!!openReplies);
   const refresh = () => utils.forum.invalidate();
   const like = trpc.forum.toggleLike.useMutation({ onSuccess: refresh, onError: (e) => toast.error(e.message) });
@@ -48,6 +50,8 @@ export function PostCard({ p, showOrigin, openReplies, onEdit }: { p: Post; show
   const OppIcon = p.oppType ? OPP[p.oppType].icon : null;
   return (
     <article ref={ref} id={`post-${p.id}`} className="p-card flex flex-col">
+      <ReportDialog kind="post" id={p.id} open={reporting} onOpenChange={setReporting} />
+      {p.state === "hidden" && <p className="m-0 px-4 py-2 text-[13px] font-medium rounded-t-[17px]" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}>Masquée par la modération : les autres membres ne la voient plus.</p>}
       {p.coverUrl && <img src={p.coverUrl} alt="" className="w-full max-h-[300px] object-cover rounded-t-[17px]" />}
       <div className="p-5 flex flex-col gap-3">
         <div className="flex items-center gap-3">
@@ -57,7 +61,7 @@ export function PostCard({ p, showOrigin, openReplies, onEdit }: { p: Post; show
             <span className="text-[12.5px] p-muted">{[p.author.jobTitle, p.author.city, p.state === "scheduled" ? "" : ago(new Date(p.publishedAt))].filter(Boolean).join(" · ")}{p.editedAt ? " · modifié" : ""}</span>
           </span>
           {p.unread && <UnreadDot />}
-          {(p.canEdit || p.canDelete) && (
+          {(p.canEdit || p.canDelete || !p.isMine) && (
             <span className="relative flex-none">
               <button type="button" aria-label="Options de la publication" aria-expanded={menu} className="w-9 h-9 rounded-full flex items-center justify-center p-muted hover:bg-black/5 dark:hover:bg-white/5" onClick={() => setMenu(!menu)}><MoreHorizontal size={18} /></button>
               {menu && (
@@ -65,6 +69,7 @@ export function PostCard({ p, showOrigin, openReplies, onEdit }: { p: Post; show
                   <button type="button" aria-label="Fermer le menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenu(false)} />
                   <span className="absolute right-0 top-10 z-20 min-w-[170px] p-1.5 rounded-xl shadow-lg flex flex-col" style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)" }}>
                     {p.canEdit && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { setMenu(false); onEdit(p); }}><Pencil size={14} /> Modifier</button>}
+                    {!p.isMine && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" onClick={() => { setMenu(false); setReporting(true); }}><Flag size={14} /> Signaler</button>}
                     {p.canDelete && <button type="button" className="flex items-center gap-2 h-9 px-3 rounded-lg text-[14px] text-left hover:bg-black/5 dark:hover:bg-white/5" style={{ color: "var(--p-accent-text)" }} onClick={() => { setMenu(false); setConfirm(true); }}><Trash2 size={14} /> Supprimer{!p.isMine ? " (modération)" : ""}</button>}
                   </span>
                 </>
@@ -163,7 +168,7 @@ function ReplyItem({ r }: { r: Post["replyList"][number] }) {
       <Avatar m={r.author} size={34} />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-md" style={{ background: "var(--p-surface-2)" }}>
-          <span className="flex items-baseline gap-2 flex-wrap"><span className="text-[13.5px] font-semibold">{r.author.name}</span><span className="text-[12px] p-faint">{ago(new Date(r.createdAt))}{r.editedAt ? " · modifié" : ""}</span></span>
+          <span className="flex items-baseline gap-2 flex-wrap"><span className="text-[13.5px] font-semibold">{r.author.name}</span><span className="text-[12px] p-faint">{ago(new Date(r.createdAt))}{r.hidden ? " · masquée par la modération" : ""}{r.editedAt ? " · modifié" : ""}</span></span>
           {editing ? (
             <div className="flex flex-col gap-2 mt-1.5">
               <textarea className="p-field text-[14.5px]" rows={2} value={text} onChange={(e) => setText(e.target.value)} />
@@ -171,7 +176,7 @@ function ReplyItem({ r }: { r: Post["replyList"][number] }) {
             </div>
           ) : <p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{r.text}</p>}
         </div>
-        {!editing && (r.isMine || r.canDelete) && (
+        {!editing && (
           <span className="flex items-center gap-3 pl-2 text-[12.5px] p-muted">
             {confirm ? (
               <>
@@ -182,6 +187,7 @@ function ReplyItem({ r }: { r: Post["replyList"][number] }) {
             ) : (
               <>
                 {r.isMine && <button type="button" className="hover:underline" onClick={() => setEditing(true)}>Modifier</button>}
+                {!r.isMine && <ReportButton kind="reply" id={r.id} className="hover:underline">Signaler</ReportButton>}
                 {r.canDelete && <button type="button" className="hover:underline" onClick={() => setConfirm(true)}>Supprimer{!r.isMine ? " (modération)" : ""}</button>}
               </>
             )}

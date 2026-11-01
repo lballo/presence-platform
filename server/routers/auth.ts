@@ -5,7 +5,7 @@ import { blockMessage, createRouter, procFor, publicProc } from "../middleware";
 import { getDb } from "../queries/connection";
 import { members } from "../../db/schema";
 import { accountBlock } from "../lib/permissions";
-import { completeOnboarding, openInvitationSession, readInvitation } from "../lib/invitations";
+import { markPasswordChosen, openInvitationSession, readInvitation } from "../lib/invitations";
 
 const token = z.object({ token: z.string().min(20).max(200) });
 
@@ -15,7 +15,7 @@ export const authRouter = createRouter({
     if (!ctx.member) return { state: "anonymous" as const };
     const block = accountBlock(ctx.member);
     if (block) return { state: "blocked" as const, block, message: blockMessage(block, ctx.member.accessEndsAt) };
-    return { state: "ok" as const, needsPassword: !ctx.member.onboardingCompletedAt };
+    return { state: "ok" as const, needsPassword: !ctx.member.passwordChosenAt, needsOnboarding: !ctx.member.onboardingCompletedAt };
   }),
 
   /** Page d'invitation : le lien est-il encore valable ? (ne le consomme pas : les antivirus ouvrent les liens) */
@@ -38,7 +38,7 @@ export const authRouter = createRouter({
 
   /** Mot de passe choisi. */
   passwordChosen: procFor("profile.use").mutation(async ({ ctx }) => {
-    await completeOnboarding(ctx.memberId);
+    await markPasswordChosen(ctx.memberId);
     return { ok: true };
   }),
 });

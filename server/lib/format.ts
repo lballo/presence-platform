@@ -8,8 +8,9 @@ export function publicMember<T extends { firstName: string; lastName: string; ph
   // Compte, droits, candidature et Espace Rencontre ne sortent jamais d'une fiche publique.
   const {
     organizerRequest: _r, organizerRequestedAt: _a, email: _e, authUserId: _u, role: _ro, status: _s, accessType: _t, accessEndsAt: _d,
-    invitedAt: _i, onboardingCompletedAt: _o, rencontreEnabled: _re, rencontrePref: _rp, rencontreBlurb: _rb, ...rest
-  } = m as T & Partial<Record<"organizerRequest" | "organizerRequestedAt" | "email" | "authUserId" | "role" | "status" | "accessType" | "accessEndsAt" | "invitedAt" | "onboardingCompletedAt" | "rencontreEnabled" | "rencontrePref" | "rencontreBlurb", unknown>>;
+    invitedAt: _i, onboardingCompletedAt: _o, rencontreEnabled: _re, rencontrePref: _rp, rencontreBlurb: _rb,
+    passwordChosenAt: _pc, deletedAt: _del, onboardingStep: _os, goals: _g, goalsOther: _go, matchProfiles: _mp, matchSectors: _ms, tour: _to, ...rest
+  } = m as T & Partial<Record<"organizerRequest" | "organizerRequestedAt" | "email" | "authUserId" | "role" | "status" | "accessType" | "accessEndsAt" | "invitedAt" | "onboardingCompletedAt" | "rencontreEnabled" | "rencontrePref" | "rencontreBlurb" | "passwordChosenAt" | "deletedAt" | "onboardingStep" | "goals" | "goalsOther" | "matchProfiles" | "matchSectors" | "tour", unknown>>;
   return { ...rest, name: `${m.firstName} ${m.lastName}`, initials: initialsOf(m.firstName, m.lastName) };
 }
 

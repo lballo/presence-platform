@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { assertCan, createRouter, procFor } from "../middleware";
 import { can } from "../lib/permissions";
 import { getDb } from "../queries/connection";
-import { hives, hiveMembers, hivePosts, hiveResources, events, eventRegistrations, forumPosts } from "../../db/schema";
+import { hives, hiveMembers, hivePosts, hiveResources, events, eventRegistrations, forumPosts, type Member } from "../../db/schema";
+import { logAdmin } from "../lib/adminLog";
 import { publicMember } from "../lib/format";
 import { eventAccess } from "../lib/eventAccess";
 import { deleteForumPosts } from "./forum";
@@ -16,6 +17,13 @@ async function roleOf(hiveId: number, memberId: number): Promise<Role> {
   const row = await db.query.hiveMembers.findFirst({ where: and(eq(hiveMembers.hiveId, hiveId), eq(hiveMembers.memberId, memberId)) });
   return (row?.role ?? "") as Role;
 }
+/** Une administratrice qui n'est ni fondatrice ni leader de la ruche agit au titre de l'administration. */
+async function logAsAdmin(actor: Member, role: Role, hiveId: number, action: string, detail = "") {
+  if (actor.role !== "administrateur" || role === "founder" || role === "leader") return;
+  const [h] = await getDb().select({ name: hives.name }).from(hives).where(eq(hives.id, hiveId)).limit(1);
+  await logAdmin(actor, { action, targetType: "ruche", targetId: hiveId, label: h?.name ?? "", detail });
+}
+
 const isIn = (r: Role) => r === "founder" || r === "leader" || r === "member";
 const hiveProc = procFor("hive.read");
 
@@ -34,7 +42,9 @@ export const hivesRouter = createRouter({
     return all.map((h) => {
       const active = h.memberships.filter((m) => m.role !== "pending");
       const mine = h.memberships.find((m) => m.memberId === ctx.memberId);
-      const next = h.events.filter((e) => e.status === "published" && e.startsAt >= new Date()).sort((a, b) => +a.startsAt - +b.startsAt)[0];
+      // Les événements d'une ruche restent réservés à ses membres.
+      const seesEvents = isIn((mine?.role ?? "") as Role) || can(ctx.member, "moderate");
+      const next = seesEvents ? h.events.filter((e) => e.status === "published" && !e.cancelledAt && e.startsAt >= new Date()).sort((a, b) => +a.startsAt - +b.startsAt)[0] : undefined;
       return {
         id: h.id, type: h.type, parentId: h.parentId, parentName: h.parent?.name ?? null,
         name: h.name, theme: h.theme, cover: h.cover, access: h.access, phase: h.phase, endMonth: h.endMonth,
@@ -58,7 +68,7 @@ export const hivesRouter = createRouter({
         memberships: { with: { member: true }, orderBy: [asc(hiveMembers.createdAt)] },
         posts: { with: { author: true }, orderBy: [desc(hivePosts.createdAt)] },
         resources: { with: { author: true }, orderBy: [desc(hiveResources.pinned), desc(hiveResources.createdAt)] },
-        events: { where: eq(events.status, "published"), with: { host: true, registrations: true }, orderBy: [asc(events.startsAt)] },
+        events: { where: and(eq(events.status, "published"), isNull(events.cancelledAt)), with: { host: true, registrations: true }, orderBy: [asc(events.startsAt)] },
         parent: true,
         children: { with: { memberships: true } },
       },
@@ -79,9 +89,10 @@ export const hivesRouter = createRouter({
       members: h.memberships.filter((m) => m.role === "member").map((m) => publicMember(m.member)),
       requests: can(ctx.member, "hive.validate_member", { hiveRole: role }) ? h.memberships.filter((m) => m.role === "pending").map((m) => ({ ...publicMember(m.member), note: m.note })) : [],
       memberCount: h.memberships.filter((m) => m.role !== "pending").length,
-      posts: open ? h.posts.map((p) => ({ ...p, author: publicMember(p.author), isLeader: leaders.some((l) => l.memberId === p.authorId) })) : [],
+      posts: open ? h.posts.filter((p) => !p.hiddenAt || p.authorId === ctx.memberId || can(ctx.member, "moderate")).map((p) => ({ ...p, hidden: !!p.hiddenAt, author: publicMember(p.author), isLeader: leaders.some((l) => l.memberId === p.authorId) })) : [],
       resources: open ? h.resources.map((r) => ({ ...r, author: publicMember(r.author) })) : [],
-      events: h.events.map((e) => {
+      seesEvents: inside || can(ctx.member, "moderate"),
+      events: (inside || can(ctx.member, "moderate") ? h.events : []).map((e) => {
         const { address, meetingUrl, registrations, ...pub } = e;
         const registered = registrations.some((r) => r.memberId === ctx.memberId && !r.waitlist);
         return {
@@ -89,6 +100,7 @@ export const hivesRouter = createRouter({
           registered,
           count: registrations.filter((r) => !r.waitlist).length,
           isMine: e.hostId === ctx.memberId,
+          canManage: can(ctx.member, "event.edit", { ownerId: e.hostId, hiveId: e.hiveId, hiveRole: role }),
           ...eventAccess({ address, meetingUrl, kind: e.kind }, registered || e.hostId === ctx.memberId || manager),
         };
       }),
@@ -123,20 +135,24 @@ export const hivesRouter = createRouter({
   /** Leaders : accepter ou refuser une demande d'adhésion. */
   decideRequest: hiveProc.input(z.object({ id: z.number(), memberId: z.number(), accept: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    assertCan(ctx.member, "hive.validate_member", { hiveRole: await roleOf(input.id, ctx.memberId) });
+    const role = await roleOf(input.id, ctx.memberId);
+    assertCan(ctx.member, "hive.validate_member", { hiveRole: role });
     const where = and(eq(hiveMembers.hiveId, input.id), eq(hiveMembers.memberId, input.memberId), eq(hiveMembers.role, "pending"));
     if (input.accept) await db.update(hiveMembers).set({ role: "member" }).where(where);
     else await db.delete(hiveMembers).where(where);
+    await logAsAdmin(ctx.member, role, input.id, input.accept ? "Demande d’adhésion acceptée" : "Demande d’adhésion refusée", `Fiche n° ${input.memberId}`);
     return { ok: true };
   }),
 
   /** Fondatrice, leaders ou administrateur : nommer un leader. Retirer le rôle : fondatrice ou administrateur. */
   setLeader: hiveProc.input(z.object({ id: z.number(), memberId: z.number(), leader: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    assertCan(ctx.member, input.leader ? "hive.name_leader" : "hive.remove_leader", { hiveRole: await roleOf(input.id, ctx.memberId) });
+    const role = await roleOf(input.id, ctx.memberId);
+    assertCan(ctx.member, input.leader ? "hive.name_leader" : "hive.remove_leader", { hiveRole: role });
     const rows = await db.update(hiveMembers).set({ role: input.leader ? "leader" : "member" })
       .where(and(eq(hiveMembers.hiveId, input.id), eq(hiveMembers.memberId, input.memberId), sql`${hiveMembers.role} in ('member', 'leader')`)).returning();
     if (!rows.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette personne doit d’abord être membre de la ruche." });
+    await logAsAdmin(ctx.member, role, input.id, input.leader ? "Leader nommé" : "Rôle de leader retiré", `Fiche n° ${input.memberId}`);
     return { ok: true };
   }),
 
@@ -191,41 +207,13 @@ export const hivesRouter = createRouter({
     return { ok: true };
   }),
 
-  /** Leaders : créer un événement de ruche (ou un salon live). */
-  createEvent: hiveProc
-    .input(
-      z.object({
-        id: z.number(),
-        kind: z.enum(["onsite", "online", "salon"]).default("online"),
-        title: z.string().min(1).max(200),
-        description: z.string().max(2000).default(""),
-        startsAt: z.coerce.date(),
-        durationMin: z.number().int().min(15).max(600).default(60),
-        city: z.string().max(80).optional(),
-        where: z.string().max(200).default(""),
-        address: z.string().max(400).default(""),
-        meetingUrl: z.string().max(500).default(""),
-        maxSeats: z.number().int().min(2).max(500).optional(),
-        inAgenda: z.boolean().default(true),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const db = getDb();
-      assertCan(ctx.member, "hive.create_event", { hiveRole: await roleOf(input.id, ctx.memberId) }, "Seuls les leaders créent des événements.");
-      if (input.kind === "onsite" && !input.address.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez l’adresse de l’événement." });
-      if (input.kind !== "onsite" && !/^https?:\/\/\S+$/.test(input.meetingUrl.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez le lien de la visio (https://…)." });
-      const { id, ...rest } = input;
-      // Les événements de ruche restent dans la ruche : ils ne rejoignent pas le programme de Présence.
-      const [ev] = await db.insert(events).values({ ...rest, inAgenda: false, hiveId: id, hostId: ctx.memberId, where: rest.where || (rest.kind === "onsite" ? rest.city ?? "" : "En ligne") }).returning();
-      await db.insert(eventRegistrations).values({ eventId: ev.id, memberId: ctx.memberId });
-      return ev;
-    }),
-
   /** Fondatrice, leaders ou administratrice : changer la confidentialité de la ruche. */
   setAccess: hiveProc.input(z.object({ id: z.number(), access: z.enum(["libre", "validation"]) })).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    assertCan(ctx.member, "hive.manage", { hiveRole: await roleOf(input.id, ctx.memberId) }, "Réservé aux leaders de la ruche.");
+    const role = await roleOf(input.id, ctx.memberId);
+    assertCan(ctx.member, "hive.manage", { hiveRole: role }, "Réservé aux leaders de la ruche.");
     await db.update(hives).set({ access: input.access }).where(eq(hives.id, input.id));
+    await logAsAdmin(ctx.member, role, input.id, "Confidentialité de la ruche modifiée", input.access === "libre" ? "Adhésion libre" : "Sur validation, contenu réservé aux membres");
     // En passant en accès libre, les demandes en attente sont acceptées.
     let accepted = 0;
     if (input.access === "libre") {
@@ -236,7 +224,7 @@ export const hivesRouter = createRouter({
   }),
 
   /** Administrateur : supprimer la ruche et son contenu. */
-  remove: procFor("hive.delete").input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  remove: procFor("hive.delete").input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const h = await requireHive(input.id);
     const evs = await db.select({ id: events.id }).from(events).where(eq(events.hiveId, h.id));
@@ -248,6 +236,7 @@ export const hivesRouter = createRouter({
     await db.delete(hiveMembers).where(eq(hiveMembers.hiveId, h.id));
     await db.update(hives).set({ parentId: null }).where(eq(hives.parentId, h.id)); // les projets nés ici continuent
     await db.delete(hives).where(eq(hives.id, h.id));
+    await logAdmin(ctx.member, { action: "Ruche supprimée", targetType: "ruche", targetId: h.id, label: h.name });
     return { ok: true, name: h.name };
   }),
 });

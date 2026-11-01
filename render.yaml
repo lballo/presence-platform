@@ -21,6 +21,8 @@ services:
         sync: false
       - key: MEMBERSHIP_URL
         sync: false
+      - key: WELCOME_VIDEO_URL
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY

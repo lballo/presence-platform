@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { forumPostHashtags, hashtags } from "../../db/schema";
+import { logAdmin } from "../lib/adminLog";
 
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null);
 const name = z.string().trim().min(1).max(40).transform((s) => s.replace(/^#+/, "").trim().replace(/\s+/g, "-")).refine((s) => /^[\p{L}\p{N}_-]+$/u.test(s), "Lettres, chiffres et tirets uniquement.");
@@ -24,21 +25,24 @@ export const hashtagsRouter = createRouter({
       .orderBy(asc(hashtags.name))
   ),
 
-  create: procFor("forum.manage").input(z.object({ name, color })).mutation(async ({ input }) => {
+  create: procFor("forum.manage").input(z.object({ name, color })).mutation(async ({ ctx, input }) => {
     await assertFree(input.name);
     const [row] = await getDb().insert(hashtags).values(input).returning();
+    await logAdmin(ctx.member, { action: "Hashtag ajouté", targetType: "hashtag", targetId: row.id, label: `#${row.name}` });
     return row;
   }),
 
-  update: procFor("forum.manage").input(z.object({ id: z.number().int(), name, color })).mutation(async ({ input }) => {
+  update: procFor("forum.manage").input(z.object({ id: z.number().int(), name, color })).mutation(async ({ ctx, input }) => {
     await assertFree(input.name, input.id);
     await getDb().update(hashtags).set({ name: input.name, color: input.color }).where(eq(hashtags.id, input.id));
+    await logAdmin(ctx.member, { action: "Hashtag modifié", targetType: "hashtag", targetId: input.id, label: `#${input.name}` });
     return { ok: true };
   }),
 
   /** Le hashtag disparaît aussi des publications qui le portaient ; elles restent en ligne. */
-  remove: procFor("forum.manage").input(z.object({ id: z.number().int() })).mutation(async ({ input }) => {
-    await getDb().delete(hashtags).where(eq(hashtags.id, input.id));
+  remove: procFor("forum.manage").input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+    const [row] = await getDb().delete(hashtags).where(eq(hashtags.id, input.id)).returning();
+    if (row) await logAdmin(ctx.member, { action: "Hashtag supprimé", targetType: "hashtag", targetId: row.id, label: `#${row.name}` });
     return { ok: true };
   }),
 });

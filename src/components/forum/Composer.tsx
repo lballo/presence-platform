@@ -10,9 +10,10 @@ import { hour } from "@/lib/format";
 import { EditorToolbar, IMAGE_ACCEPT, ToolButton, useRichEditor, type ToolPanel } from "./RichEditor";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { AUDIENCES, OPP, SPACE_GROUPS, TagLabel, type OppType, type Post, type Space } from "./shared";
+import { VIDEO_TIPS } from "@/content/accueil";
 
 export type ComposerTarget =
-  | { mode: "new"; spaceSlug?: string; announcement?: boolean; hive?: { id: number; name: string } }
+  | { mode: "new"; spaceSlug?: string; announcement?: boolean; hive?: { id: number; name: string }; prefill?: { title: string; html: string }; tips?: boolean }
   | { mode: "edit"; post: Post };
 
 type Attachment = { path: string; name: string; type: string; size: number };
@@ -43,6 +44,7 @@ const hasContent = (f: Form) => !!(f.title.trim() || f.html || f.coverUrl || f.v
 function draftKeyOf(target: ComposerTarget) {
   if (target.mode === "edit") return `edit-${target.post.id}`;
   if (target.hive) return `hive-${target.hive.id}`;
+  if (target.tips) return "presentation";
   return target.announcement ? "annonce" : "new";
 }
 
@@ -56,7 +58,7 @@ function presetSpace(target: Extract<ComposerTarget, { mode: "new" }>, spaces: S
 
 function baseForm(target: ComposerTarget, spaces: Space[]): Form {
   const empty: Form = { spaceId: null, title: "", html: "", coverUrl: "", videoUrl: "", attachments: [], hashtagIds: [], pinned: false, audience: "tous", publishAt: "", endsAt: "", oppType: "recrut", facts: "" };
-  if (target.mode === "new") return { ...empty, spaceId: presetSpace(target, spaces) };
+  if (target.mode === "new") return { ...empty, spaceId: presetSpace(target, spaces), ...(target.prefill ?? {}) };
   const p = target.post;
   return {
     spaceId: p.spaceId,
@@ -277,7 +279,12 @@ function ComposerForm({ target, draftKey, spaces, canManage, saved, onClose, onS
 
         <div className="px-4 sm:px-6 pb-4 flex flex-col gap-3 [&>*]:flex-none">
           {needsVideo && !form.videoUrl && <span className="text-[13px] p-muted flex items-center gap-1.5"><Video size={14} style={{ color: "var(--p-accent-text)" }} /> Ajoutez votre vidéo (lien ou fichier) pour demander un retour.</span>}
-          {space?.slug === "presentations" && !form.videoUrl && <span className="text-[13px] p-muted flex items-center gap-1.5"><Video size={14} style={{ color: "var(--p-accent-text)" }} /> Une courte vidéo de présentation est la bienvenue.</span>}
+          {space?.slug === "presentations" && (
+            <details className="p-soft px-3.5 py-2.5 text-[13.5px]" open={target.mode === "new" && !!target.tips}>
+              <summary className="cursor-pointer font-medium flex items-center gap-1.5"><Video size={14} style={{ color: "var(--p-accent-text)" }} /> {VIDEO_TIPS.title}</summary>
+              <ul className="m-0 mt-2 pl-5 list-disc p-muted flex flex-col gap-1">{VIDEO_TIPS.tips.map((t) => <li key={t}>{t}</li>)}</ul>
+            </details>
+          )}
 
           {uploading && <div className="text-[13px] p-muted" role="status">Envoi du fichier… {image.progress ?? video.progress ?? file.progress ?? 0} %</div>}
 

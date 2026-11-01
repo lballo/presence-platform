@@ -1,17 +1,19 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate } from "react-router";
+import { Link, Navigate, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/auth";
 import { AuthShell, FormError, authErrorMessage } from "./AuthShell";
 
 export default function Connexion() {
   const { session, loading } = useAuth();
+  const [params] = useSearchParams();
+  const retour = params.get("retour");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
-  if (!loading && session) return <Navigate to="/" replace />;
+  if (!loading && session) return <Navigate to={retour?.startsWith("/") && !retour.startsWith("//") ? retour : "/"} replace />;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

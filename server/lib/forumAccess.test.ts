@@ -40,6 +40,22 @@ describe("état d'une publication", () => {
   });
 });
 
+describe("publication masquée par la modération", () => {
+  const masquee = (over = {}) => post({ hiddenAt: hier, ...over });
+  it("a son propre état", () => {
+    expect(postState(masquee())).toBe("hidden");
+  });
+  it("seuls son auteur et l'administration la lisent", () => {
+    expect(canReadPost(person("membre"), masquee())).toBe(false);
+    expect(canReadPost(person("organisateur"), masquee())).toBe(false);
+    expect(canReadPost(person("membre", "collectif", 99), masquee())).toBe(true);
+    expect(canReadPost(person("administrateur"), masquee())).toBe(true);
+  });
+  it("dans une ruche, un leader ne la lit plus", () => {
+    expect(canReadPost(person("membre"), masquee({ hiveId: 3 }), { hiveRole: "leader", hiveOpen: true })).toBe(false);
+  });
+});
+
 describe("annonces de ruche", () => {
   const annonce = (over = {}) => post({ hiveId: 3, ...over });
   it("ruche sur validation : réservée à ses membres", () => {

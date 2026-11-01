@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { eq, desc, and } from "drizzle-orm";
 import { createRouter, procFor } from "../middleware";
-import { can } from "../lib/permissions";
 import { getDb } from "../queries/connection";
 import { talks } from "../../db/schema";
 import { publicMember } from "../lib/format";
@@ -46,26 +45,6 @@ export const talksRouter = createRouter({
     await getDb().delete(talks).where(and(eq(talks.id, input.id), eq(talks.speakerId, ctx.memberId), eq(talks.status, "pending")));
     return { ok: true };
   }),
-
-  /** Validation (administratrice) : talks en attente. */
-  pending: talkProc.query(async ({ ctx }) => {
-    if (!can(ctx.member, "talk.validate")) return [];
-    const list = await getDb().query.talks.findMany({ where: eq(talks.status, "pending"), with: { speaker: true }, orderBy: [desc(talks.submittedAt)] });
-    return list.map((t) => ({ ...t, speaker: publicMember(t.speaker) }));
-  }),
-
-  /** Publier ou refuser un talk (administratrice). */
-  decide: procFor("talk.validate")
-    .input(z.object({ id: z.number(), accept: z.boolean(), summary: z.string().max(400).optional(), durationMin: z.number().int().min(1).max(120).optional() }))
-    .mutation(async ({ input }) => {
-      const db = getDb();
-      if (input.accept) {
-        await db.update(talks).set({ status: "published", publishedAt: new Date(), ...(input.summary ? { summary: input.summary } : {}), ...(input.durationMin ? { durationMin: input.durationMin } : {}) }).where(eq(talks.id, input.id));
-      } else {
-        await db.update(talks).set({ status: "rejected" }).where(eq(talks.id, input.id));
-      }
-      return { ok: true };
-    }),
 
   /** Compteur de vues. */
   view: talkProc.input(z.object({ id: z.number() })).mutation(async ({ input }) => {

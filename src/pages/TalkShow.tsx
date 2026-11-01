@@ -2,16 +2,16 @@ import { useRef, useState } from "react";
 import { Play, Clock, Eye, Upload, Link2, X, CheckCircle2, Hourglass, XCircle, Film } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
+import { AdminPendingLink } from "@/components/AdminPendingLink";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 import { Avatar } from "@/components/Avatar";
-import { ago, plural } from "@/lib/format";
+import { ago } from "@/lib/format";
 import { embedUrl } from "@/components/VideoEmbed";
 
 type Talk = RouterOutputs["talks"]["list"][number];
 
 export default function TalkShow() {
-  const me = trpc.members.me.useQuery();
   const talks = trpc.talks.list.useQuery();
   const [first, ...rest] = talks.data ?? [];
   const [playing, setPlaying] = useState<Talk | null>(null);
@@ -24,7 +24,7 @@ export default function TalkShow() {
       <PageHeader eyebrow="Talk Show" title="Des membres, des idées qui transforment" intro="Chaque mois, des leaders du cercle racontent l’idée qui a changé leur façon de diriger. En vidéo, puis en direct."
         action={<button type="button" className="p-btn-primary" onClick={openForm}><Film size={17} /> Proposer mon talk</button>} />
 
-      {me.data?.permissions.validateTalks && <PendingPanel onPlay={setPlaying} />}
+      <AdminPendingLink kind="talk" one="talk" many="talks" />
 
       {proposing && <div ref={formRef}><SubmitForm onDone={() => setProposing(false)} /></div>}
 
@@ -89,7 +89,7 @@ function SubmitForm({ onDone }: { onDone: () => void }) {
   const utils = trpc.useUtils();
   const cfg = trpc.talks.uploadConfig.useQuery();
   const createUrl = trpc.talks.createUploadUrl.useMutation();
-  const submit = trpc.talks.submit.useMutation({ onSuccess: () => { utils.talks.mine.invalidate(); utils.talks.pending.invalidate(); toast.success("Talk envoyé en validation"); onDone(); }, onError: (e) => toast.error(e.message) });
+  const submit = trpc.talks.submit.useMutation({ onSuccess: () => { utils.talks.mine.invalidate(); utils.admin.invalidate(); toast.success("Talk envoyé en validation"); onDone(); }, onError: (e) => toast.error(e.message) });
   const [f, setF] = useState({ title: "", description: "", durationMin: 10, link: "" });
   const [mode, setMode] = useState<"file" | "link">("file");
   const [file, setFile] = useState<File | null>(null);
@@ -216,39 +216,10 @@ function MySubmissions({ onPlay }: { onPlay: (t: unknown) => void }) {
             <span className="flex items-center gap-1.5 text-[13.5px] font-medium" style={{ color: st.color }}><Icon size={15} /> {st.label}</span>
             {t.videoUrl && me.data && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => onPlay({ ...t, speaker: me.data })}><Play size={14} /> Voir</button>}
             {t.status === "pending" && <button type="button" className="p-btn-ghost text-[13.5px]" onClick={() => withdraw.mutate({ id: t.id })}>Retirer</button>}
+            {t.reviewNote && <p className="basis-full m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-surface-2)" }}>Message de l’équipe : {t.reviewNote}</p>}
           </div>
         ); })}
       </div>
-    </section>
-  );
-}
-
-/* ───────────── Validation (équipe Présence) ───────────── */
-
-function PendingPanel({ onPlay }: { onPlay: (t: Talk) => void }) {
-  const utils = trpc.useUtils();
-  const pending = trpc.talks.pending.useQuery();
-  const decide = trpc.talks.decide.useMutation({ onSuccess: (_r, v) => { utils.talks.invalidate(); utils.dashboard.invalidate(); toast.success(v.accept ? "Talk publié" : "Talk refusé"); }, onError: (e) => toast.error(e.message) });
-  if (!pending.data?.length) return null;
-  return (
-    <section className="mb-8 p-5 sm:p-6 rounded-3xl flex flex-col gap-4" style={{ background: "var(--p-accent-soft)", border: "1px solid var(--p-accent-line)" }}>
-      <div><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-accent-text)" }}>Équipe Présence · à valider</span><h2 className="m-0 text-[28px] leading-tight">{plural(pending.data.length, "talk en attente", "talks en attente")}</h2></div>
-      {pending.data.map((t) => (
-        <article key={t.id} className="p-card p-5 flex flex-wrap gap-4 items-start">
-          <Avatar m={t.speaker} size={48} />
-          <div className="flex-[1_1_320px] min-w-0 flex flex-col gap-1.5">
-            <span className="text-[13px] p-muted">{t.speaker.name} · {t.speaker.jobTitle} · envoyé {ago(new Date(t.submittedAt))}</span>
-            <h3 className="m-0 text-[24px] leading-tight">{t.title}</h3>
-            <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{t.description}</p>
-            <span className="text-[12.5px] p-faint flex items-center gap-1"><Clock size={12} /> {t.durationMin} min</span>
-          </div>
-          <div className="flex flex-wrap gap-2 self-center">
-            {t.videoUrl && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => onPlay(t as Talk)}><Play size={14} /> Regarder</button>}
-            <button type="button" className="p-btn-primary p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: t.id, accept: true })}>Publier</button>
-            <button type="button" className="p-btn-outline p-btn-sm" disabled={decide.isPending} onClick={() => decide.mutate({ id: t.id, accept: false })}>Refuser</button>
-          </div>
-        </article>
-      ))}
     </section>
   );
 }

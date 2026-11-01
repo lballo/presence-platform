@@ -4,6 +4,7 @@ import { trpc } from "@/providers/trpc";
 import { ago, longDate, hour, plural } from "@/lib/format";
 import { COVERS } from "./Ruches";
 import { RolePicker } from "./Membres";
+import { ReplayTour } from "@/components/onboarding/Tour";
 
 const KIND = { salon: "Salon live", online: "En ligne", onsite: "Présentiel" } as const;
 const ROLE = { founder: "Fondatrice·eur", leader: "Leader", member: "Membre", pending: "" } as const;
@@ -39,7 +40,8 @@ export default function Profil() {
           {m.bio && <p className="m-0 text-[16px] leading-relaxed whitespace-pre-line">{m.bio}</p>}
           <div className="flex flex-wrap gap-2.5 pt-1">
             {!m.isMe && <Link to={`/messages?to=${m.id}`} className="p-btn-primary no-underline"><MessageCircle size={17} /> Écrire à {m.firstName}</Link>}
-            {m.isMe && <Link to="/" className="p-btn-outline no-underline">Modifier mon profil</Link>}
+            {m.isMe && <Link to="/?profil=1" className="p-btn-outline no-underline">Modifier mon profil</Link>}
+            {m.isMe && <ReplayTour className="p-btn-outline" />}
             {m.linkedinUrl && <a href={m.linkedinUrl} target="_blank" rel="noopener" className="p-btn-outline no-underline"><Linkedin size={16} /> LinkedIn</a>}
           </div>
         </div>
@@ -106,7 +108,7 @@ export default function Profil() {
             <section className="p-card p-5 flex flex-col gap-3">
               <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}><CalendarDays size={13} /> Anime prochainement</span>
               {m.hosting.map((e) => (
-                <Link key={e.id} to={`/evenements?e=${e.id}`} className="flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
+                <Link key={e.id} to={`/e/${e.slug}`} className="flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
                   <span className="text-[14.5px] font-medium leading-snug">{e.title}</span>
                   <span className="text-[12.5px] p-muted">{longDate(new Date(e.startsAt))} · {hour(new Date(e.startsAt))} · {KIND[e.kind]}</span>
                 </Link>
@@ -114,7 +116,7 @@ export default function Profil() {
             </section>
           )}
 
-          {me.data?.permissions.manageMembers && !m.isMe && <RolePicker memberId={m.id} role={m.memberRole ?? "membre"} />}
+          {me.data?.permissions.manageMembers && !m.isMe && <RolePicker memberId={m.id} />}
         </aside>
       </div>
     </>

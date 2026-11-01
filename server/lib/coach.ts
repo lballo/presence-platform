@@ -1,4 +1,6 @@
 import { env } from "./env";
+import { goalLabels } from "./onboardingOptions";
+import { myIntentLabel } from "./intents";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 const MODEL = "gemini-2.5-flash";
@@ -17,9 +19,16 @@ export const EXERCISES = [
   { id: "non", title: "Le non qui respecte", minutes: 4, text: "Écrivez une demande que vous voulez refuser. Formulez votre non en trois temps : ce que vous entendez, ce que vous décidez, ce que vous proposez à la place." },
 ];
 
+/** Ce qui amène la personne au réseau et ce qu'elle cherche, d'après ses réponses à l'accueil. */
+function context(m: { goals: string[]; goalsOther: string; intents: string[] }) {
+  const goals = [...goalLabels(m.goals), m.goalsOther].filter(Boolean).join(", ");
+  const seeking = m.intents.map(myIntentLabel).join(", ");
+  return `${goals ? ` Ce qui l'amène au réseau : ${goals}.` : ""}${seeking ? ` Ce qu'elle cherche ou propose : ${seeking}.` : ""}`;
+}
+
 export type ChatTurn = { role: "user" | "coach"; text: string };
 
-export async function coachReply(history: ChatTurn[], member: { firstName: string; jobTitle: string; intention: string }): Promise<string> {
+export async function coachReply(history: ChatTurn[], member: { firstName: string; jobTitle: string; intention: string; goals: string[]; goalsOther: string; intents: string[] }): Promise<string> {
   if (!env.geminiApiKey) {
     // Sans clé Gemini : réponse de secours pour que l'interface reste utilisable.
     const last = history[history.length - 1]?.text ?? "";
@@ -30,7 +39,7 @@ export async function coachReply(history: ChatTurn[], member: { firstName: strin
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: `${SYSTEM}\n\nLa personne s'appelle ${member.firstName}, ${member.jobTitle}. Son intention du moment : « ${member.intention} ».` }] },
+      systemInstruction: { parts: [{ text: `${SYSTEM}\n\nLa personne s'appelle ${member.firstName}, ${member.jobTitle}. Son intention du moment : « ${member.intention} ».${context(member)}` }] },
       contents,
       generationConfig: { temperature: 0.7, maxOutputTokens: 600 },
     }),

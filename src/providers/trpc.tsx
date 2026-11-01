@@ -3,8 +3,9 @@ import { httpBatchLink } from "@trpc/client";
 import { QueryCache, MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import superjson from "superjson";
 import type { AppRouter } from "../../server/router";
-import type { inferRouterOutputs } from "@trpc/server";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
+export type RouterInputs = inferRouterInputs<AppRouter>;
 import type { ReactNode } from "react";
 import { accessToken, supabase } from "@/lib/supabase";
 
@@ -24,7 +25,8 @@ function handleAccessError(error: unknown) {
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({ onError: handleAccessError }),
-  mutationCache: new MutationCache({ onError: handleAccessError }),
+  // Après chaque action, on regarde si du miel a été gagné (le coach l'annonce).
+  mutationCache: new MutationCache({ onError: handleAccessError, onSuccess: (_d, _v, _c, mutation) => { const key = mutation.options.mutationKey as unknown[] | undefined; if (!JSON.stringify(key ?? "").includes("honey")) void queryClient.invalidateQueries({ queryKey: [["honey"]] }); } }),
   defaultOptions: {
     queries: {
       retry: (count, error) => {

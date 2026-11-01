@@ -6,6 +6,7 @@ import { getDb } from "../queries/connection";
 import { messages, members } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { signedDownloadUrl } from "../lib/storage";
+import { award } from "../lib/honey";
 import { matchedPeers, GOAL_LABELS } from "../lib/matches";
 
 /** Messages échangés entre deux membres, dans les deux sens. */
@@ -43,7 +44,7 @@ export const messagesRouter = createRouter({
         return {
           peer: publicMember(p),
           goals,
-          lastText: last.deletedAt ? "Message supprimé" : last.text || (last.attachmentName ? `Pièce jointe : ${last.attachmentName}` : ""),
+          lastText: last.deletedAt ? "Message supprimé" : last.hiddenAt ? "Message masqué par la modération" : last.text || (last.attachmentName ? `Pièce jointe : ${last.attachmentName}` : ""),
           lastAt: last.createdAt,
           lastMine: last.fromId === me,
           unread,
@@ -67,7 +68,7 @@ export const messagesRouter = createRouter({
     // liens de téléchargement temporaires pour les pièces jointes (bucket privé)
     const urls = new Map<number, { view: string | null; download: string | null }>();
     await Promise.all(
-      list.filter((m) => m.attachmentPath && !m.deletedAt).map(async (m) => {
+      list.filter((m) => m.attachmentPath && !m.deletedAt && !m.hiddenAt).map(async (m) => {
         const [view, download] = await Promise.all([signedDownloadUrl("message", m.attachmentPath!), signedDownloadUrl("message", m.attachmentPath!, m.attachmentName ?? "fichier")]);
         urls.set(m.id, { view, download });
       })
@@ -78,11 +79,11 @@ export const messagesRouter = createRouter({
       messages: list.map((m) => ({
         replyTo: m.replyToId && byId.has(m.replyToId) ? (() => {
           const q = byId.get(m.replyToId)!;
-          return { id: q.id, mine: q.fromId === ctx.memberId, deleted: !!q.deletedAt, text: q.deletedAt ? "" : q.text || (q.attachmentName ? `Pièce jointe : ${q.attachmentName}` : "") };
+          return { id: q.id, mine: q.fromId === ctx.memberId, deleted: !!q.deletedAt || !!q.hiddenAt, text: q.deletedAt || q.hiddenAt ? "" : q.text || (q.attachmentName ? `Pièce jointe : ${q.attachmentName}` : "") };
         })() : null,
-        id: m.id, text: m.deletedAt ? "" : m.text, at: m.createdAt, mine: m.fromId === ctx.memberId, read: !!m.readAt,
-        edited: !!m.editedAt && !m.deletedAt, deleted: !!m.deletedAt,
-        attachment: m.attachmentPath && !m.deletedAt ? { name: m.attachmentName ?? "fichier", type: m.attachmentType ?? "", size: m.attachmentSize ?? 0, url: urls.get(m.id)?.view ?? null, downloadUrl: urls.get(m.id)?.download ?? null } : null,
+        id: m.id, text: m.deletedAt || m.hiddenAt ? "" : m.text, at: m.createdAt, mine: m.fromId === ctx.memberId, read: !!m.readAt,
+        edited: !!m.editedAt && !m.deletedAt, deleted: !!m.deletedAt, hidden: !!m.hiddenAt && !m.deletedAt,
+        attachment: m.attachmentPath && !m.deletedAt && !m.hiddenAt ? { name: m.attachmentName ?? "fichier", type: m.attachmentType ?? "", size: m.attachmentSize ?? 0, url: urls.get(m.id)?.view ?? null, downloadUrl: urls.get(m.id)?.download ?? null } : null,
       })),
     };
   }),
@@ -100,7 +101,7 @@ export const messagesRouter = createRouter({
     if (input.attachment && !input.attachment.path.startsWith(`membre-${ctx.memberId}/`)) throw new TRPCError({ code: "FORBIDDEN", message: "Pièce jointe invalide." });
     const db = getDb();
     const peer = await db.query.members.findFirst({ where: eq(members.id, input.toId) });
-    if (!peer) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable" });
+    if (!peer || peer.deletedAt) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable" });
     if (input.replyToId) {
       const q = await db.query.messages.findFirst({ where: eq(messages.id, input.replyToId) });
       const sameThread = q && ((q.fromId === ctx.memberId && q.toId === input.toId) || (q.fromId === input.toId && q.toId === ctx.memberId));
@@ -108,6 +109,7 @@ export const messagesRouter = createRouter({
     }
     const a = input.attachment;
     const [row] = await db.insert(messages).values({ fromId: ctx.memberId, toId: input.toId, text: input.text, replyToId: input.replyToId ?? null, attachmentPath: a?.path, attachmentName: a?.name, attachmentType: a?.type, attachmentSize: a?.size }).returning();
+    await award(ctx.memberId, "premier_message");
     return { id: row.id };
   }),
 
