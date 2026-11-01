@@ -15,6 +15,7 @@ type Drag = { kind: "section"; id: number } | { kind: "lesson"; id: number };
 
 const iconBtn = "w-9 h-9 flex items-center justify-center rounded-lg p-muted disabled:opacity-30";
 const typeOptions = LESSON_TYPES.map((t): [LessonType, string] => [t, LESSON_TYPE_LABEL[t]]);
+const isPublished = (l: { status: string }) => l.status === "publie";
 
 /** Le plan d'une formation : créer et réordonner les sections et leurs leçons, au glisser-déposer ou avec les flèches sur téléphone. */
 export function Outline({ c }: { c: Course }) {
@@ -29,8 +30,27 @@ export function Outline({ c }: { c: Course }) {
   const movedLesson = trpc.build.reorderLessons.useMutation({ onSuccess: refresh, onError: (e) => { refresh(); toast.error(e.message, { duration: 8000 }); } });
   const dupSection = trpc.build.duplicateSection.useMutation({ onSuccess: () => { refresh(); toast.success("Section et leçons copiées dans Notion, en brouillon"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   const dupLesson = trpc.build.duplicateLesson.useMutation({ onSuccess: () => { refresh(); toast.success("Leçon copiée dans Notion, en brouillon"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
-  const setSection = trpc.build.setSectionStatus.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.status === "publie" ? "Section publiée dans Notion et ici" : "Section dépubliée dans Notion et ici"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
-  const setLesson = trpc.build.setLessonStatus.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.status === "publie" ? "Leçon publiée dans Notion et ici" : "Leçon dépubliée dans Notion et ici"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  // Un membre ne voit une leçon que si sa section est publiée aussi : le message dit ce qu'il reste à faire
+  const setSection = trpc.build.setSectionStatus.useMutation({
+    onSuccess: (_r, v) => {
+      refresh();
+      const empty = !c.sections.find((s) => s.id === v.id)?.lessons.some(isPublished);
+      if (v.status !== "publie") toast.success("Section dépubliée dans Notion et ici");
+      else if (empty) toast.success("Section publiée. Les membres la verront dès qu’une de ses leçons sera publiée.", { duration: 8000 });
+      else toast.success("Section publiée dans Notion et ici");
+    },
+    onError: (e) => toast.error(e.message, { duration: 8000 }),
+  });
+  const setLesson = trpc.build.setLessonStatus.useMutation({
+    onSuccess: (_r, v) => {
+      refresh();
+      const section = c.sections.find((s) => s.lessons.some((l) => l.id === v.id));
+      if (v.status !== "publie") toast.success("Leçon dépubliée dans Notion et ici");
+      else if (section && section.status !== "publie") toast.success(`Leçon publiée. Les membres la verront quand la section « ${section.title} » sera publiée.`, { duration: 8000 });
+      else toast.success("Leçon publiée dans Notion et ici");
+    },
+    onError: (e) => toast.error(e.message, { duration: 8000 }),
+  });
   const archiveSection = trpc.build.archiveSection.useMutation({ onSuccess: () => { refresh(); toast.success("Section et leçons à la corbeille de Notion"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   const archiveLesson = trpc.build.archiveLesson.useMutation({ onSuccess: () => { refresh(); toast.success("Leçon à la corbeille de Notion"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   const busy = moved.isPending || movedLesson.isPending || dupSection.isPending || dupLesson.isPending;
@@ -122,10 +142,10 @@ export function Outline({ c }: { c: Course }) {
               <span className="w-9 h-9 rounded-full flex items-center justify-center flex-none font-semibold text-[14px]" style={{ background: "var(--p-surface)" }}>{s.position}</span>
               <Link to={`/admin/construire/${c.id}/section/${s.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
                 <span className="font-semibold text-[16px] leading-snug break-words">{s.title}</span>
-                <span className="text-[12.5px] p-muted flex flex-wrap items-center gap-x-2.5"><span>{s.lessons.length} leçon{s.lessons.length > 1 ? "s" : ""}</span>{s.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{s.issues.length} point{s.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
+                <span className="text-[12.5px] p-muted flex flex-wrap items-center gap-x-2.5"><span>{s.lessons.length} leçon{s.lessons.length > 1 ? "s" : ""}</span>{s.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{s.issues.length} point{s.issues.length > 1 ? "s" : ""} à regarder</span>}{s.status !== "publie" && s.lessons.some(isPublished) && <span style={{ color: "var(--p-gold)" }}>publiez la section pour que les membres voient ses leçons publiées</span>}{s.status === "publie" && s.lessons.length > 0 && !s.lessons.some(isPublished) && <span style={{ color: "var(--p-gold)" }}>invisible tant qu’aucune de ses leçons n’est publiée</span>}</span>
               </Link>
               <Badge tone={statusTone(s.status)}>{STATUS_LABEL[s.status]}</Badge>
-              <button type="button" className="p-btn-outline p-btn-sm flex-none" disabled={setSection.isPending} onClick={() => setSection.mutate({ id: s.id, status: s.status === "publie" ? "brouillon" : "publie" })}>{s.status === "publie" ? "Dépublier" : "Publier"}</button>
+              <button type="button" className={`${s.status !== "publie" && s.lessons.some(isPublished) ? "p-btn-primary" : "p-btn-outline"} p-btn-sm flex-none`} disabled={setSection.isPending} onClick={() => setSection.mutate({ id: s.id, status: s.status === "publie" ? "brouillon" : "publie" })}>{s.status === "publie" ? "Dépublier" : "Publier"}</button>
               <span className="flex items-center gap-0.5 flex-none">
                 <button type="button" aria-label={`Monter la section ${s.title}`} disabled={i === 0 || busy} className={iconBtn} onClick={() => stepSection(s, -1)}><ArrowUp size={16} /></button>
                 <button type="button" aria-label={`Descendre la section ${s.title}`} disabled={i === c.sections.length - 1 || busy} className={iconBtn} onClick={() => stepSection(s, 1)}><ArrowDown size={16} /></button>

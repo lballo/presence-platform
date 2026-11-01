@@ -15,7 +15,8 @@ type Section = RouterOutputs["build"]["section"];
 export default function BuildSection() {
   const { id, sectionId } = useParams();
   // Une saisie en cours ne doit jamais être écrasée : la fiche ne se recharge qu'après un enregistrement.
-  const q = trpc.build.section.useQuery({ id: Number(sectionId) }, { retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
+  // Rien n'est gardé en mémoire : une fiche rouverte sur une ancienne copie remettrait son ancien statut à l'enregistrement.
+  const q = trpc.build.section.useQuery({ id: Number(sectionId) }, { retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0 });
   const [revision, setRevision] = useState(0);
   const back = <Link to={`/admin/construire/${id}`} className="p-btn-outline p-btn-sm no-underline self-start"><ArrowLeft size={15} /> La formation</Link>;
   if (q.isLoading) return <p className="p-muted text-center py-10 m-0">Chargement…</p>;

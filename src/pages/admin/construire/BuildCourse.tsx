@@ -41,7 +41,7 @@ export default function BuildCourse() {
       {c.status !== "publie" && <p className="m-0 p-3 rounded-xl text-[14px]" style={{ background: "var(--p-accent-soft)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses sections et ses leçons le sont.</p>}
       <Chips value={tab} onChange={setTab} label="Rubriques de la formation" options={[["sections", "Sections", c.sections.length], ["reglages", "Réglages"], ["participants", "Participants", c.participants.length], ["stats", "Statistiques"]]} />
       {tab === "sections" && <Outline c={c} />}
-      {tab === "reglages" && <Settings key={revision} c={c} onSaved={() => setRevision((r) => r + 1)} />}
+      {tab === "reglages" && <Settings key={`${revision}-${c.status}`} c={c} onSaved={() => setRevision((r) => r + 1)} />}
       {tab === "participants" && <Participants c={c} />}
       {tab === "stats" && <Stats c={c} />}
     </div>
