@@ -35,7 +35,7 @@ export function MemberLearning({ memberId, name }: { memberId: number; name: str
         <ul className="list-none m-0 p-0 flex flex-col">
           {d.courses.map((c) => (
             <li key={c.id} className="py-2.5 border-t first:border-t-0 flex flex-wrap items-center gap-x-3 gap-y-2" style={{ borderColor: "var(--p-line)" }}>
-              <Link to={`/admin/construire/${c.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
+              <Link to={`/admin/createur/${c.id}`} className="flex-[1_1_220px] min-w-0 flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
                 <span className="font-medium leading-snug">{c.title}</span>
                 <span className="text-[13px] p-muted">{c.startedAt ? `Commencée le ${fullDate(c.startedAt)} · ${c.done} leçon${c.done > 1 ? "s" : ""} sur ${c.total}` : "Pas commencée"}{c.status !== "publie" ? " · pas encore publiée" : ""}</span>
               </Link>

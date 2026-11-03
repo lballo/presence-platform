@@ -14,6 +14,7 @@ import {
   primaryKey,
   uniqueIndex,
   uuid,
+  date,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { CourseBlock, CourseContent, PageContent } from "../server/lib/courseBlocks";
@@ -1112,3 +1113,106 @@ export const emailSends = pgTable(
   },
   (t) => ({ memberIdx: index("email_sends_member_idx").on(t.memberId, t.createdAt), courseIdx: index("email_sends_course_idx").on(t.courseId, t.memberId, t.createdAt) })
 );
+
+// ─────────────────────────────────────────────────────────────
+// Suivi du coaching individuel (db/migrations/supabase/0021_coaching_suivi.sql)
+// Copie des bases Notion de Laura : Notion fait foi. Les textes sont chiffrés (server/lib/privateBox.ts).
+// ─────────────────────────────────────────────────────────────
+
+export const coachingOffers = pgTable("coaching_offers", {
+  id: serial("id").primaryKey(),
+  notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+  title: varchar("title", { length: 300 }).notNull().default(""),
+  sessions: integer("sessions"),
+  individual: boolean("individual").notNull().default(true),
+  presenceAccess: boolean("presence_access").notNull().default(false),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coachingEngagements = pgTable(
+  "coaching_engagements",
+  {
+    id: serial("id").primaryKey(),
+    notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+    memberId: integer("member_id").references(() => members.id, { onDelete: "set null" }),
+    clientPageId: varchar("client_page_id", { length: 64 }).notNull().default(""),
+    clientName: varchar("client_name", { length: 200 }).notNull().default(""),
+    clientEmail: varchar("client_email", { length: 255 }).notNull().default(""),
+    offerId: integer("offer_id").references(() => coachingOffers.id, { onDelete: "set null" }),
+    title: varchar("title", { length: 300 }).notNull().default(""),
+    status: varchar("status", { length: 20 }).notNull().default(""),
+    startsOn: date("starts_on", { mode: "string" }),
+    plannedEndOn: date("planned_end_on", { mode: "string" }),
+    sessionsPlanned: integer("sessions_planned"),
+    accessEndsAt: timestamp("access_ends_at", { withTimezone: true }),
+    accessAppliedAt: timestamp("access_applied_at", { withTimezone: true }),
+    midpointEmailAt: timestamp("midpoint_email_at", { withTimezone: true }),
+    inspirationEnc: text("inspiration_enc").notNull().default(""),
+    exerciseEnc: text("exercise_enc").notNull().default(""),
+    notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ memberIdx: index("coaching_engagements_member_idx").on(t.memberId) })
+);
+export type CoachingEngagement = typeof coachingEngagements.$inferSelect;
+
+export const coachingMeetings = pgTable(
+  "coaching_meetings",
+  {
+    id: serial("id").primaryKey(),
+    notionPageId: varchar("notion_page_id", { length: 64 }).notNull().unique(),
+    engagementId: integer("engagement_id").references(() => coachingEngagements.id, { onDelete: "cascade" }),
+    number: integer("number"),
+    kind: varchar("kind", { length: 40 }).notNull().default(""),
+    state: varchar("state", { length: 20 }).notNull().default("Non planifié"),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    keyPointsEnc: text("key_points_enc").notNull().default(""),
+    actionsEnc: text("actions_enc").notNull().default(""),
+    reportShared: boolean("report_shared").notNull().default(false),
+    notionEditedAt: timestamp("notion_edited_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ engagementIdx: index("coaching_meetings_engagement_idx").on(t.engagementId) })
+);
+export type CoachingMeeting = typeof coachingMeetings.$inferSelect;
+
+export const coachingGoals = pgTable("coaching_goals", {
+  id: serial("id").primaryKey(),
+  engagementId: integer("engagement_id").notNull().references(() => coachingEngagements.id, { onDelete: "cascade" }),
+  textEnc: text("text_enc").notNull(),
+  doneAt: timestamp("done_at", { withTimezone: true }),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coachingNotes = pgTable("coaching_notes", {
+  id: serial("id").primaryKey(),
+  engagementId: integer("engagement_id").notNull().references(() => coachingEngagements.id, { onDelete: "cascade" }),
+  meetingId: integer("meeting_id").references(() => coachingMeetings.id, { onDelete: "set null" }),
+  textEnc: text("text_enc").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coachingJournal = pgTable("coaching_journal", {
+  id: serial("id").primaryKey(),
+  engagementId: integer("engagement_id").notNull().references(() => coachingEngagements.id, { onDelete: "cascade" }),
+  memberId: integer("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  textEnc: text("text_enc").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coachingSyncRuns = pgTable("coaching_sync_runs", {
+  id: serial("id").primaryKey(),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  status: varchar("status", { length: 12 }).notNull().default("en_cours"),
+  detail: text("detail").notNull().default(""),
+});

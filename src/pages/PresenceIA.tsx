@@ -13,7 +13,7 @@ export default function PresenceIA() {
   const [tab, setTab] = useState<"coach" | "video">("coach");
   return (
     <>
-      <PageHeader eyebrow="Présence IA" title="Votre coach, à toute heure" intro="Un coach IA pour préparer vos moments importants, et l’analyse de vos vidéos de prise de parole, reprise de PresenceAI." />
+      <PageHeader eyebrow="Mon parcours" title="Présence IA" intro="Votre coach, à toute heure, pour préparer vos moments importants, et l’analyse de vos vidéos de prise de parole, reprise de PresenceAI." />
       <div className="flex gap-2 mb-6">
         {([["coach", "Coach IA"], ["video", "Analyse vidéo"]] as const).map(([k, l]) => (
           <button key={k} type="button" className={`p-chip h-10 ${tab === k ? "p-chip-on" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -121,7 +121,7 @@ function VideoAnalysis() {
       setState("processing");
       const result = await analyze.mutateAsync({ id: speech.id, videoDataUrl: dataUrl });
       utils.speech.list.invalidate();
-      navigate(`/presence-ia/analyse/${result.id}`);
+      navigate(`/parcours/presence-ia/analyse/${result.id}`);
     } catch (e) {
       setState("error"); setError(e instanceof Error ? e.message : "L’analyse a échoué. Réessayez.");
       utils.speech.list.invalidate();
@@ -165,7 +165,7 @@ function VideoAnalysis() {
         <span className="p-eyebrow">Mes analyses</span>
         {list.data?.length === 0 && <p className="text-[14px] p-muted m-0">Aucune analyse pour l’instant.</p>}
         {list.data?.map((s) => (
-          <Link key={s.id} to={s.status === "completed" ? `/presence-ia/analyse/${s.id}` : "#"} className="p-card p-4 flex items-center gap-3 no-underline" style={{ color: "var(--p-ink)" }}>
+          <Link key={s.id} to={s.status === "completed" ? `/parcours/presence-ia/analyse/${s.id}` : "#"} className="p-card p-4 flex items-center gap-3 no-underline" style={{ color: "var(--p-ink)" }}>
             <span className="w-11 h-11 rounded-xl flex items-center justify-center flex-none" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}><Video size={18} /></span>
             <span className="flex flex-col min-w-0 flex-1"><span className="font-semibold truncate">{s.title}</span><span className="text-[12.5px] p-muted">{ago(new Date(s.createdAt))} · {s.status === "completed" ? `score ${s.overallScore}` : s.status === "failed" ? "échec" : "en cours"}</span></span>
             {s.status === "completed" && <ArrowRight size={16} className="p-faint" />}

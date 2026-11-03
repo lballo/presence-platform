@@ -15,9 +15,10 @@ function key(): Buffer | null {
 
 export const privateBoxReady = () => !!key();
 
-const aad = (memberId: number) => Buffer.from(`membre:${memberId}`);
+// Le texte est lié à son propriétaire : un membre, ou un accompagnement (« coaching:12 »)
+const aad = (owner: number | string) => Buffer.from(typeof owner === "number" ? `membre:${owner}` : owner);
 
-export function seal(memberId: number, text: string): string {
+export function seal(memberId: number | string, text: string): string {
   const k = key();
   if (!k) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Le journal privé n’est pas encore activé : la clé de chiffrement manque sur le serveur." });
   const iv = randomBytes(12);
@@ -28,7 +29,7 @@ export function seal(memberId: number, text: string): string {
 }
 
 /** null : illisible (clé changée, texte déplacé). L'interface le dit plutôt que de tout bloquer. */
-export function open(memberId: number, sealed: string): string | null {
+export function open(memberId: number | string, sealed: string): string | null {
   const k = key();
   if (!k) return null;
   const [v, iv, tag, data] = sealed.split(".");

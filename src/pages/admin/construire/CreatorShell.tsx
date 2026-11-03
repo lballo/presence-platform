@@ -7,16 +7,14 @@ import { trpc } from "@/providers/trpc";
 
 /**
  * L'espace créateur : une pleine page pour écrire, sans le menu du réseau.
- * Toujours en clair, comme le verront les maquettes, quelles que soient les préférences du site.
+ * Elle suit l'apparence choisie (clair, sombre ou douceur), comme le reste du réseau.
  */
 export default function CreatorLayout() {
   const me = trpc.members.me.useQuery();
   useEffect(() => {
     const root = document.documentElement;
-    const wasDark = root.classList.contains("dark");
-    root.classList.remove("dark");
     root.classList.add("creator-mode");
-    return () => { root.classList.remove("creator-mode"); if (wasDark) root.classList.add("dark"); };
+    return () => root.classList.remove("creator-mode");
   }, []);
   if (!me.data) return <p className="p-muted py-20 text-center m-0">Chargement…</p>;
   if (!me.data.permissions.buildCourses) return <div className="py-20 text-center p-muted">Cette page est réservée aux administrateurs.</div>;
@@ -48,18 +46,18 @@ export function CreatorShell({ aside, crumbs, actions, children, wide }: { aside
   const panel = aside ?? <CreatorNav />;
   return (
     <div className="creator flex min-h-screen">
-      <aside aria-label="Espace créateur" className={`hidden lg:flex flex-none flex-col sticky top-0 h-screen overflow-y-auto border-r ${wide ? "w-[300px]" : "w-[220px]"}`} style={{ background: "#fff", borderColor: "var(--p-line)" }}>{panel}</aside>
+      <aside aria-label="Espace créateur" className={`hidden lg:flex flex-none flex-col sticky top-0 h-screen overflow-y-auto border-r ${wide ? "w-[300px]" : "w-[220px]"}`} style={{ background: "var(--p-surface)", borderColor: "var(--p-line)" }}>{panel}</aside>
       {drawer && (
         <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-label="Menu de l’espace créateur">
           <button type="button" aria-label="Fermer le menu" className="absolute inset-0 w-full h-full cursor-default" style={{ background: "rgba(61, 49, 40, .35)" }} onClick={() => setDrawer(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-[86%] max-w-[320px] overflow-y-auto flex flex-col" style={{ background: "#fff" }}>
+          <div className="absolute left-0 top-0 bottom-0 w-[86%] max-w-[320px] overflow-y-auto flex flex-col" style={{ background: "var(--p-surface)" }}>
             <button type="button" aria-label="Fermer le menu" className="cr-icon absolute right-2 top-2 z-10" onClick={() => setDrawer(false)}><X size={17} /></button>
             {panel}
           </div>
         </div>
       )}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 min-h-[68px] px-4 lg:px-10 py-3 border-b" style={{ background: "#fff", borderColor: "var(--p-line)" }}>
+        <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 min-h-[68px] px-4 lg:px-10 py-3 border-b" style={{ background: "var(--p-surface)", borderColor: "var(--p-line)" }}>
           <div className="flex items-center gap-2 min-w-0 flex-[1_1_200px]">
             <button type="button" aria-label="Ouvrir le menu" aria-expanded={drawer} className="cr-icon lg:hidden flex-none" onClick={() => setDrawer(true)}><Menu size={18} /></button>
             <nav aria-label="Fil d’Ariane" className="flex items-center gap-2 text-[12px] p-muted min-w-0">
@@ -88,12 +86,12 @@ function CreatorNav() {
   const colors = ({ isActive }: { isActive: boolean }) => (isActive ? { background: "var(--p-accent-soft)", color: "var(--p-accent)" } : { color: "var(--p-ink-2)" });
   return (
     <div className="flex flex-col flex-1 px-5 py-7">
-      <Link to="/admin/construire" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
+      <Link to="/admin/createur" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
       <p className="m-0 mt-10 text-[10px] font-semibold tracking-[0.16em] p-muted">ESPACE CRÉATEUR</p>
       <nav aria-label="Espace créateur" className="mt-4 flex flex-col gap-1">
-        <NavLink to="/admin/construire" end className={item} style={colors}><BookOpen size={16} /> Mes formations{!!list.data?.length && <span className="ml-auto text-[12px]">{String(list.data.length).padStart(2, "0")}</span>}</NavLink>
-        <NavLink to="/admin/construire/tests" className={item} style={colors}><ClipboardCheck size={16} /> Tests</NavLink>
-        <NavLink to="/admin/construire/relances" className={item} style={colors}><BellRing size={16} /> Relances</NavLink>
+        <NavLink to="/admin/createur" end className={item} style={colors}><BookOpen size={16} /> Mes formations{!!list.data?.length && <span className="ml-auto text-[12px]">{String(list.data.length).padStart(2, "0")}</span>}</NavLink>
+        <NavLink to="/admin/createur/tests" className={item} style={colors}><ClipboardCheck size={16} /> Tests</NavLink>
+        <NavLink to="/admin/createur/relances" className={item} style={colors}><BellRing size={16} /> Relances</NavLink>
         <Link to="/admin" className={item({ isActive: false })} style={colors({ isActive: false })}><Settings2 size={16} /> Administration</Link>
         <Link to="/" className={item({ isActive: false })} style={colors({ isActive: false })}><ArrowUpRight size={16} /> Mon espace membre</Link>
       </nav>

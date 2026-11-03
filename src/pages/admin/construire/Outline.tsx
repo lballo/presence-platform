@@ -18,7 +18,7 @@ type Drag = { kind: "section"; id: number } | { kind: "lesson"; id: number };
 type Target = { kind: "section"; index: number } | { kind: "lesson"; sectionId: number; index: number };
 
 const iconBtn = "cr-icon";
-const TYPE_TILE: Record<LessonType, { icon: typeof Video; fg: string }> = { contenu: { icon: FileText, fg: "#6C6059" }, video: { icon: Video, fg: "#A83932" }, exercice: { icon: PenLine, fg: "#AA564C" }, test: { icon: CircleCheck, fg: "#3D3128" }, defi: { icon: Flag, fg: "#AD261E" } };
+const TYPE_TILE: Record<LessonType, { icon: typeof Video; fg: string }> = { contenu: { icon: FileText, fg: "var(--p-ink-2)" }, video: { icon: Video, fg: "var(--p-accent)" }, exercice: { icon: PenLine, fg: "var(--p-gold)" }, test: { icon: CircleCheck, fg: "var(--p-ink-warm)" }, defi: { icon: Flag, fg: "var(--p-accent-hover)" } };
 
 /** Le champ Type n'est plus à choisir dans Construire : une leçon de contenu avec une vidéo ou un test se montre comme telle. */
 export const shownType = (l: { type: LessonType; hasVideo: boolean; hasTest: boolean }): LessonType => (l.type !== "contenu" ? l.type : l.hasVideo ? "video" : l.hasTest ? "test" : "contenu");
@@ -26,7 +26,7 @@ export const shownType = (l: { type: LessonType; hasVideo: boolean; hasTest: boo
 /** Le format d'une leçon, d'un coup d'œil. */
 export function TypeTile({ type, size = 32 }: { type: LessonType; size?: number }) {
   const { icon: Icon, fg } = TYPE_TILE[type];
-  return <span aria-hidden="true" className="flex-none rounded-md flex items-center justify-center" style={{ width: size, height: size, background: "#F3ECE8", color: fg }}><Icon size={size >= 32 ? 16 : 14} /></span>;
+  return <span aria-hidden="true" className="flex-none rounded-md flex items-center justify-center" style={{ width: size, height: size, background: "var(--p-surface-2)", color: fg }}><Icon size={size >= 32 ? 16 : 14} /></span>;
 }
 const mouse = window.matchMedia("(pointer: fine)").matches; // au doigt, les flèches suffisent
 const isPublished = (l: { status: string }) => l.status === "publie";
@@ -242,7 +242,7 @@ export function Outline({ c }: { c: Course }) {
         <div className="min-w-0"><h3 className="m-0 text-[16px]">Votre parcours pédagogique</h3><p className="m-0 mt-1 text-[12px] p-muted">{sections.length} section{sections.length > 1 ? "s" : ""} · {totalLessons} leçon{totalLessons > 1 ? "s" : ""}{(busy || writing) ? " · écriture dans Notion…" : ""}</p></div>
         <button type="button" className="cr-btn h-8 px-3" onClick={() => setAddingSection(true)}><Plus size={16} /> Ajouter une section</button>
       </div>
-      {sections.length === 0 && <div className="rounded-2xl p-7 text-center p-muted" style={{ background: "#F3ECE8" }}>Aucune section pour l’instant.</div>}
+      {sections.length === 0 && <div className="rounded-2xl p-7 text-center p-muted" style={{ background: "var(--p-surface-2)" }}>Aucune section pour l’instant.</div>}
       {/* Un lien ne doit pas lancer le glissement du navigateur à la place du nôtre */}
       <ol className="list-none m-0 p-0 flex flex-col gap-4" onDragStart={(e) => e.preventDefault()}>
         {sections.map((s, i) => {
@@ -254,19 +254,19 @@ export function Outline({ c }: { c: Course }) {
             {sectionMark(i) && <DropMarker edge="top" offset={14} />}
             {i === sections.length - 1 && sectionMark(i + 1) && <DropMarker edge="bottom" offset={14} />}
             <div className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--p-line)", ...held("section", s.id), ...(goal?.section?.id === s.id ? { outline: "2px solid var(--p-accent)" } : {}) }}>
-            <div data-section-head onPointerDown={press({ kind: "section", id: s.id }, s.title)} className="p-3 sm:p-4 flex flex-wrap items-center gap-x-2 gap-y-2 lg:cursor-grab lg:select-none" style={{ background: landed === `s${s.id}` ? "#E0D3BD" : "#F3ECE8", borderBottom: open ? "1px solid var(--p-line)" : undefined }}>
+            <div data-section-head onPointerDown={press({ kind: "section", id: s.id }, s.title)} className="p-3 sm:p-4 flex flex-wrap items-center gap-x-2 gap-y-2 lg:cursor-grab lg:select-none" style={{ background: landed === `s${s.id}` ? "var(--p-line-2)" : "var(--p-surface-2)", borderBottom: open ? "1px solid var(--p-line)" : undefined }}>
               <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex w-7 justify-center p-muted"><GripVertical size={16} /></span>
-              <span className="w-[30px] h-[30px] rounded-[5px] flex items-center justify-center flex-none font-semibold text-[11px]" style={{ background: "#E8DDD6" }}>{String(s.position).padStart(2, "0")}</span>
-              <Link to={`/admin/construire/${c.id}/section/${s.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col no-underline px-1" style={{ color: "var(--p-ink)" }}>
+              <span className="w-[30px] h-[30px] rounded-[5px] flex items-center justify-center flex-none font-semibold text-[11px]" style={{ background: "var(--p-line)" }}>{String(s.position).padStart(2, "0")}</span>
+              <Link to={`/admin/createur/${c.id}/section/${s.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col no-underline px-1" style={{ color: "var(--p-ink)" }}>
                 <span className="font-semibold text-[14px] leading-snug break-words">{s.title}</span>
-                <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-2"><span>{s.lessons.length} leçon{s.lessons.length > 1 ? "s" : ""}{total ? ` · ${total} min` : ""}</span>{s.lessons.length > 0 && <span>{s.lessons.filter(isPublished).length} publiée{s.lessons.filter(isPublished).length > 1 ? "s" : ""}</span>}{s.issues.length > 0 && <span style={{ color: "#AA564C" }}>{s.issues.length} point{s.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
+                <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-2"><span>{s.lessons.length} leçon{s.lessons.length > 1 ? "s" : ""}{total ? ` · ${total} min` : ""}</span>{s.lessons.length > 0 && <span>{s.lessons.filter(isPublished).length} publiée{s.lessons.filter(isPublished).length > 1 ? "s" : ""}</span>}{s.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>{s.issues.length} point{s.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
               </Link>
-              <span className="flex items-center gap-1.5 text-[11px] whitespace-nowrap" title="Une section apparaît dès qu’une de ses leçons est publiée" style={{ color: shown ? "#2b7a4b" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: shown ? "#2b7a4b" : "var(--p-ink-2)" }} />{shown ? "Visible" : "Pas encore visible"}</span>
+              <span className="flex items-center gap-1.5 text-[11px] whitespace-nowrap" title="Une section apparaît dès qu’une de ses leçons est publiée" style={{ color: shown ? "var(--p-ok)" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: shown ? "var(--p-ok)" : "var(--p-ink-2)" }} />{shown ? "Visible" : "Pas encore visible"}</span>
               <span className="flex items-center flex-none">
                 <button type="button" aria-label={`Monter la section ${s.title}`} disabled={i === 0 || busy} className={iconBtn} onClick={() => stepSection(s, -1)}><ArrowUp size={16} /></button>
                 <button type="button" aria-label={`Descendre la section ${s.title}`} disabled={i === sections.length - 1 || busy} className={iconBtn} onClick={() => stepSection(s, 1)}><ArrowDown size={16} /></button>
                 <button type="button" aria-label={`Dupliquer la section ${s.title}`} title="Dupliquer avec ses leçons" disabled={busy || writing} className={iconBtn} onClick={() => dupSection.mutate({ id: s.id })}><Copy size={16} /></button>
-                <Link to={`/admin/construire/${c.id}/section/${s.id}`} aria-label={`Modifier la section ${s.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
+                <Link to={`/admin/createur/${c.id}/section/${s.id}`} aria-label={`Modifier la section ${s.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
                 <ConfirmButton label={<Trash2 size={16} />} className={iconBtn} question={`Supprimer « ${s.title} » et ses ${s.lessons.length} leçon(s) ? Elles partent à la corbeille de Notion et disparaissent pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveSection.isPending} onConfirm={() => archiveSection.mutate({ id: s.id })} />
                 <button type="button" aria-expanded={open} aria-label={`${open ? "Replier" : "Déplier"} la section ${s.title}`} className={iconBtn} onClick={() => setClosed({ ...closed, [s.id]: open })}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button>
               </span>
@@ -274,22 +274,22 @@ export function Outline({ c }: { c: Course }) {
             {open && <ul className="list-none m-0 p-0 flex flex-col" aria-label={`Leçons de ${s.title}`}>
               {s.lessons.length === 0 && <li className="relative p-4 text-center text-[13px] p-muted">{lessonMark(s.id, 0) && <DropMarker edge="top" offset={6} />}Aucune leçon : cette section reste invisible pour les membres. Déposez une leçon ici ou ajoutez-en une.</li>}
               {s.lessons.map((l, n) => (
-                <li key={l.id} data-lesson={n} onPointerDown={press({ kind: "lesson", id: l.id }, l.title)} className={`relative px-3 sm:px-4 py-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 lg:cursor-grab lg:select-none ${drag ? "" : "hover:bg-[#FBF8F6]"}`} style={{ ...(n > 0 ? { borderTop: "1px solid var(--p-line)" } : {}), ...held("lesson", l.id), ...(landed === `l${l.id}` ? { background: "#F3ECE8" } : {}) }}>
+                <li key={l.id} data-lesson={n} onPointerDown={press({ kind: "lesson", id: l.id }, l.title)} className={`relative px-3 sm:px-4 py-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 lg:cursor-grab lg:select-none ${drag ? "" : "hover:bg-[var(--p-hover-soft)]"}`} style={{ ...(n > 0 ? { borderTop: "1px solid var(--p-line)" } : {}), ...held("lesson", l.id), ...(landed === `l${l.id}` ? { background: "var(--p-surface-2)" } : {}) }}>
                   {lessonMark(s.id, n) && <DropMarker edge="top" offset={6} />}
                   {n === s.lessons.length - 1 && lessonMark(s.id, n + 1) && <DropMarker edge="bottom" offset={6} />}
                   <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex w-7 justify-center p-muted"><GripVertical size={16} /></span>
                   <TypeTile type={shownType(l)} />
-                  <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col gap-0.5 px-1 no-underline" style={{ color: "var(--p-ink)" }}>
+                  <Link to={`/admin/createur/${c.id}/lecon/${l.id}`} className="flex-[1_1_180px] min-w-0 flex flex-col gap-0.5 px-1 no-underline" style={{ color: "var(--p-ink)" }}>
                     <span className="font-medium text-[13px] leading-snug break-words">{l.title}</span>
-                    <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-1.5"><span>{LESSON_TYPE_LABEL[shownType(l)]}</span>{l.durationMin ? <span>· {l.durationMin} min</span> : null}{l.hasVideo && shownType(l) !== "video" && <span className="flex items-center gap-1">· <Video size={11} /> vidéo</span>}{l.hasTest && shownType(l) !== "test" && <span className="flex items-center gap-1">· <CircleCheck size={11} /> test</span>}{l.issues.length > 0 && <span style={{ color: "#AA564C" }}>· {l.issues.length} point{l.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
+                    <span className="text-[11px] p-muted flex flex-wrap items-center gap-x-1.5"><span>{LESSON_TYPE_LABEL[shownType(l)]}</span>{l.durationMin ? <span>· {l.durationMin} min</span> : null}{l.hasVideo && shownType(l) !== "video" && <span className="flex items-center gap-1">· <Video size={11} /> vidéo</span>}{l.hasTest && shownType(l) !== "test" && <span className="flex items-center gap-1">· <CircleCheck size={11} /> test</span>}{l.issues.length > 0 && <span style={{ color: "var(--p-gold)" }}>· {l.issues.length} point{l.issues.length > 1 ? "s" : ""} à regarder</span>}</span>
                   </Link>
-                  <button type="button" className="flex-none flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium whitespace-nowrap" aria-label={`${l.status === "publie" ? "Dépublier" : "Publier"} ${l.title}`} title={l.status === "publie" ? "Cliquer pour dépublier" : "Cliquer pour publier"} disabled={setLesson.isPending} style={l.status === "publie" ? { background: "rgba(46, 125, 80, .12)", color: "#2b7a4b" } : { background: "#F3ECE8", color: "var(--p-ink-2)" }} onClick={() => setLesson.mutate({ id: l.id, status: l.status === "publie" ? "brouillon" : "publie" })}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{LESSON_STATUS_LABEL[l.status]}</button>
+                  <button type="button" className="flex-none flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium whitespace-nowrap" aria-label={`${l.status === "publie" ? "Dépublier" : "Publier"} ${l.title}`} title={l.status === "publie" ? "Cliquer pour dépublier" : "Cliquer pour publier"} disabled={setLesson.isPending} style={l.status === "publie" ? { background: "rgba(46, 125, 80, .12)", color: "var(--p-ok)" } : { background: "var(--p-surface-2)", color: "var(--p-ink-2)" }} onClick={() => setLesson.mutate({ id: l.id, status: l.status === "publie" ? "brouillon" : "publie" })}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{LESSON_STATUS_LABEL[l.status]}</button>
                   <span className="flex items-center flex-none">
                     <button type="button" aria-label={`Monter ${l.title}`} disabled={busy || (i === 0 && n === 0)} className={iconBtn} onClick={() => stepLesson(l, s, -1)}><ArrowUp size={16} /></button>
                     <button type="button" aria-label={`Descendre ${l.title}`} disabled={busy || (i === sections.length - 1 && n === s.lessons.length - 1)} className={iconBtn} onClick={() => stepLesson(l, s, 1)}><ArrowDown size={16} /></button>
                     <button type="button" aria-label={`Dupliquer ${l.title}`} title="Dupliquer" disabled={busy || writing} className={iconBtn} onClick={() => dupLesson.mutate({ id: l.id })}><Copy size={16} /></button>
-                    <Link to={`/admin/construire/${c.id}/apercu/${l.id}`} aria-label={`Aperçu de ${l.title}`} title="Aperçu comme un membre" className={iconBtn}><Eye size={16} /></Link>
-                    <Link to={`/admin/construire/${c.id}/lecon/${l.id}`} aria-label={`Modifier ${l.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
+                    <Link to={`/admin/createur/${c.id}/apercu/${l.id}`} aria-label={`Aperçu de ${l.title}`} title="Aperçu comme un membre" className={iconBtn}><Eye size={16} /></Link>
+                    <Link to={`/admin/createur/${c.id}/lecon/${l.id}`} aria-label={`Modifier ${l.title}`} title="Modifier" className={iconBtn}><Pencil size={16} /></Link>
                     <ConfirmButton label={<Trash2 size={16} />} className={iconBtn} question={`Supprimer « ${l.title} » ? Elle part à la corbeille de Notion et disparaît pour les membres. Leurs réponses restent dans leur journal.`} confirm="Supprimer" disabled={archiveLesson.isPending} onConfirm={() => archiveLesson.mutate({ id: l.id })} />
                   </span>
                 </li>
@@ -330,7 +330,7 @@ export function AddSection({ c, open, onClose }: { c: Pick<Course, "id">; open: 
   const navigate = useNavigate();
   const [f, setF] = useState({ title: "", intention: "" });
   const create = trpc.build.createSection.useMutation({
-    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF({ title: "", intention: "" }); toast.success("Section créée dans Notion"); navigate(`/admin/construire/${c.id}/section/${r.id}`); },
+    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF({ title: "", intention: "" }); toast.success("Section créée dans Notion"); navigate(`/admin/createur/${c.id}/section/${r.id}`); },
     onError: (e) => toast.error(e.message),
   });
   return (
@@ -355,7 +355,7 @@ export function AddLesson({ courseId, section, onClose }: { courseId: number; se
   const blank = { title: "", intention: "", type: "contenu" as LessonType, source: "structure", templateId: "" };
   const [f, setF] = useState(blank);
   const create = trpc.build.createLesson.useMutation({
-    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF(blank); toast.success("Leçon créée dans Notion, en brouillon"); navigate(`/admin/construire/${courseId}/lecon/${r.id}`); },
+    onSuccess: (r) => { utils.build.invalidate(); onClose(); setF(blank); toast.success("Leçon créée dans Notion, en brouillon"); navigate(`/admin/createur/${courseId}/lecon/${r.id}`); },
     onError: (e) => toast.error(e.message),
   });
   const ready = f.title.trim() && (f.source !== "notion" || f.templateId);

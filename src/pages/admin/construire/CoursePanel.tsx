@@ -23,14 +23,14 @@ export function CoursePanel({ c, currentLesson, currentSection, onHide }: { c: C
   return (
     <div className="flex flex-col flex-1 px-5 pt-7 pb-6">
       <div className="flex items-center justify-between gap-2">
-        <Link to="/admin/construire" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
+        <Link to="/admin/createur" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
         {onHide && <button type="button" aria-label="Masquer le parcours" title="Masquer le parcours" className="cr-icon hidden lg:inline-flex" style={{ color: "var(--p-ink-2)" }} onClick={onHide}><PanelLeftClose size={17} /></button>}
       </div>
-      <Link to="/admin/construire" className="mt-7 inline-flex items-center gap-1.5 text-[12px] font-medium no-underline" style={{ color: "var(--p-accent)" }}><ArrowLeft size={14} /> Mes formations</Link>
+      <Link to="/admin/createur" className="mt-7 inline-flex items-center gap-1.5 text-[12px] font-medium no-underline" style={{ color: "var(--p-accent)" }}><ArrowLeft size={14} /> Mes formations</Link>
       {!c ? <p className="m-0 mt-6 text-[13px] p-muted">Chargement…</p> : (
         <>
           <p className="m-0 mt-4 text-[10px] font-semibold tracking-[0.16em] p-muted">PARCOURS</p>
-          <Link to={`/admin/construire/${c.id}`} className="mt-1.5 text-[18px] leading-[1.3] font-bold no-underline" style={{ color: "var(--p-ink)" }}>{c.title}</Link>
+          <Link to={`/admin/createur/${c.id}`} className="mt-1.5 text-[18px] leading-[1.3] font-bold no-underline" style={{ color: "var(--p-ink)" }}>{c.title}</Link>
           <p className="m-0 mt-1.5 text-[12px] p-muted">{c.sections.length} section{c.sections.length > 1 ? "s" : ""} · {total.length} leçon{total.length > 1 ? "s" : ""}{totalMin ? ` · ${totalMin} min` : ""}</p>
           <nav aria-label="Sections et leçons" className="mt-5 flex flex-col gap-1.5">
             {c.sections.map((s, i) => {
@@ -38,7 +38,7 @@ export function CoursePanel({ c, currentLesson, currentSection, onHide }: { c: C
               return (
                 <div key={s.id} className="border-t pt-3 pb-1.5" style={{ borderColor: "var(--p-line)" }}>
                   <div className="flex items-center gap-2.5 px-0.5 py-1">
-                    <Link to={`/admin/construire/${c.id}/section/${s.id}`} aria-current={currentSection === s.id ? "page" : undefined} className="flex items-baseline gap-2.5 flex-1 min-w-0 no-underline" style={{ color: currentSection === s.id ? "var(--p-accent)" : "var(--p-ink)" }}>
+                    <Link to={`/admin/createur/${c.id}/section/${s.id}`} aria-current={currentSection === s.id ? "page" : undefined} className="flex items-baseline gap-2.5 flex-1 min-w-0 no-underline" style={{ color: currentSection === s.id ? "var(--p-accent)" : "var(--p-ink)" }}>
                       <span className="text-[12px] font-semibold" style={{ color: "var(--p-accent)" }}>{pad(i + 1)}</span>
                       <span className="flex-1 min-w-0 text-[14px] font-semibold leading-snug">{s.title}</span>
                     </Link>
@@ -50,7 +50,7 @@ export function CoursePanel({ c, currentLesson, currentSection, onHide }: { c: C
                       {s.lessons.map((l) => {
                         const on = l.id === currentLesson;
                         return (
-                          <Link key={l.id} to={`/admin/construire/${c.id}/lecon/${l.id}`} aria-current={on ? "page" : undefined} className="flex items-center gap-2.5 rounded-[10px] p-2 no-underline" style={on ? { background: "var(--p-accent-soft)", color: "var(--p-accent)" } : { color: "var(--p-ink)" }}>
+                          <Link key={l.id} to={`/admin/createur/${c.id}/lecon/${l.id}`} aria-current={on ? "page" : undefined} className="flex items-center gap-2.5 rounded-[10px] p-2 no-underline" style={on ? { background: "var(--p-accent-soft)", color: "var(--p-accent)" } : { color: "var(--p-ink)" }}>
                             <TypeTile type={shownType(l)} size={28} />
                             <span className="flex-1 min-w-0"><span className={`block text-[12px] leading-[1.35] ${on ? "font-semibold" : "font-medium"}`}>{l.title}</span><span className="block mt-px text-[10px] p-muted">{[l.durationMin ? `${l.durationMin} min` : "", l.status === "publie" ? "" : l.status === "relecture" ? "En relecture" : "Brouillon"].filter(Boolean).join(" · ")}</span></span>
                           </Link>

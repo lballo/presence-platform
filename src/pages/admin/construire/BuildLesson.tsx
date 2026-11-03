@@ -64,7 +64,7 @@ export default function BuildLesson() {
   const q = trpc.build.lesson.useQuery({ id: Number(lessonId) }, { retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0 });
   const course = trpc.build.course.useQuery({ id: Number(id) }, { retry: false, refetchOnWindowFocus: false });
   const [revision, setRevision] = useState(0);
-  const crumbs = [{ label: "Mes formations", to: "/admin/construire" }, { label: course.data?.title ?? "Formation", to: `/admin/construire/${id}` }];
+  const crumbs = [{ label: "Mes formations", to: "/admin/createur" }, { label: course.data?.title ?? "Formation", to: `/admin/createur/${id}` }];
   if (!q.data) return <CreatorShell wide aside={<CoursePanel c={course.data} currentLesson={Number(lessonId)} />} crumbs={crumbs}><p className="p-muted text-center py-16 m-0">{q.isLoading ? "Chargement…" : (q.error?.message ?? "Leçon introuvable")}</p></CreatorShell>;
   return <Editor key={`${q.data.id}-${revision}`} l={q.data} course={course.data} crumbs={crumbs} reload={() => setRevision((r) => r + 1)} refetch={() => q.refetch()} />;
 }
@@ -158,8 +158,8 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
   ];
   const setStatus = (status: Lesson["status"]) => { live.current = { ...live.current, f: { ...live.current.f, status } }; setF((x) => ({ ...x, status })); saver.touchAndSave(); };
 
-  const archive = trpc.build.archiveLesson.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Leçon supprimée, à la corbeille de Notion"); navigate(`/admin/construire/${l.courseId}`); }, onError: (e) => toast.error(e.message) });
-  const duplicate = trpc.build.duplicateLesson.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Leçon copiée dans Notion, en brouillon"); navigate(`/admin/construire/${l.courseId}/lecon/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  const archive = trpc.build.archiveLesson.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Leçon supprimée, à la corbeille de Notion"); navigate(`/admin/createur/${l.courseId}`); }, onError: (e) => toast.error(e.message) });
+  const duplicate = trpc.build.duplicateLesson.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Leçon copiée dans Notion, en brouillon"); navigate(`/admin/createur/${l.courseId}/lecon/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   useLeaveWarning(saver.state !== "saved");
   const leave = useLeaveGuard({ pending: saver.pending, auto, save: saver.saveNow });
   useEffect(() => {
@@ -175,7 +175,7 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
     <CreatorShell wide={panel} aside={panel ? <CoursePanel c={course} currentLesson={l.id} onHide={() => setPanel(false)} /> : <div className="flex flex-col items-center pt-7 w-[60px]"><button type="button" aria-label="Afficher le parcours" title="Afficher le parcours" className="cr-icon w-9 h-9" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent)" }} onClick={() => setPanel(true)}><PanelLeftOpen size={17} /></button></div>} crumbs={[...crumbs, { label: f.title || "Sans titre" }]} actions={
       <>
         <SaveStatus state={saver.state} auto={auto} />
-        <Link to={`/admin/construire/${l.courseId}/apercu/${l.id}`} className="cr-btn"><Eye size={16} /> Aperçu</Link>
+        <Link to={`/admin/createur/${l.courseId}/apercu/${l.id}`} className="cr-btn"><Eye size={16} /> Aperçu</Link>
         <button type="button" className="cr-btn cr-btn-primary" disabled={!f.title.trim() || saver.state === "saving" || conflict} title="Ctrl ou Cmd + S" onClick={() => void saver.saveNow()}><Check size={16} /> Enregistrer</button>
       </>
     }>
@@ -210,10 +210,10 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
             )}
 
             {shown.has("defi") && (
-              <section className="cr-removable flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
-                <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
+              <section className="cr-removable flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "var(--p-surface-2)" }} aria-label="Défi dans le réseau">
+                <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "var(--p-surface)", color: "var(--p-gold)" }}><Flag size={15} /></span>
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 px-2"><span className="text-[11px] tracking-[0.22em]" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span><RemoveBlock label="Défi dans le réseau" filled={hasWritten(rubrics.defi)} onRemove={() => removeRubric("defi")} /></div>
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 px-2"><span className="text-[11px] tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>DÉFI DANS LE RÉSEAU</span><RemoveBlock label="Défi dans le réseau" filled={hasWritten(rubrics.defi)} onRemove={() => removeRubric("defi")} /></div>
                   <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={rubrics.defi} onChange={(b) => setBlocks("defi", b)} />
                   <span className="text-[11px] px-2 p-muted">Les membres verront aussi le bouton « J’ai relevé ce défi ».</span>
                 </div>
@@ -230,8 +230,8 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
             <PageAdd items={offered.filter((o) => !shown.has(o.block))} onInsert={insertInContent} />
 
             <nav aria-label="Leçons voisines" className="mt-9 pt-4 border-t flex flex-wrap justify-between gap-4 text-[13px]" style={{ borderColor: "var(--p-line)" }}>
-              {prev ? <Link to={`/admin/construire/${l.courseId}/lecon/${prev.id}`} className="flex items-center gap-2 no-underline p-muted"><ArrowLeft size={14} /> {prev.title}</Link> : <span className="flex items-center gap-2 p-muted opacity-50"><ArrowLeft size={14} /> Début du parcours</span>}
-              {next ? <Link to={`/admin/construire/${l.courseId}/lecon/${next.id}`} className="flex items-center gap-2 no-underline font-medium text-right" style={{ color: "var(--p-accent)" }}>{next.title} <ArrowRight size={14} /></Link> : <span className="flex items-center gap-2 p-muted opacity-50">Fin du parcours <ArrowRight size={14} /></span>}
+              {prev ? <Link to={`/admin/createur/${l.courseId}/lecon/${prev.id}`} className="flex items-center gap-2 no-underline p-muted"><ArrowLeft size={14} /> {prev.title}</Link> : <span className="flex items-center gap-2 p-muted opacity-50"><ArrowLeft size={14} /> Début du parcours</span>}
+              {next ? <Link to={`/admin/createur/${l.courseId}/lecon/${next.id}`} className="flex items-center gap-2 no-underline font-medium text-right" style={{ color: "var(--p-accent)" }}>{next.title} <ArrowRight size={14} /></Link> : <span className="flex items-center gap-2 p-muted opacity-50">Fin du parcours <ArrowRight size={14} /></span>}
             </nav>
           </article>
         </DocProvider>
@@ -243,13 +243,13 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
             <div className="flex flex-col gap-2">
               <span className="text-[12px] font-medium">Statut du contenu</span>
               <div role="radiogroup" aria-label="Statut du contenu" className="flex flex-wrap gap-1 rounded-[10px] border p-[3px] bg-white" style={{ borderColor: "var(--p-line)" }}>
-                {(Object.entries(LESSON_STATUS_LABEL) as [Lesson["status"], string][]).map(([s, label]) => <button key={s} type="button" role="radio" aria-checked={f.status === s} disabled={saver.state === "saving"} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium whitespace-nowrap" style={f.status === s ? { background: s === "publie" ? "rgba(46, 125, 80, .12)" : "#F3ECE8", color: s === "publie" ? "#2b7a4b" : "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => { if (f.status !== s) setStatus(s); }}>{label}</button>)}
+                {(Object.entries(LESSON_STATUS_LABEL) as [Lesson["status"], string][]).map(([s, label]) => <button key={s} type="button" role="radio" aria-checked={f.status === s} disabled={saver.state === "saving"} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium whitespace-nowrap" style={f.status === s ? { background: s === "publie" ? "rgba(46, 125, 80, .12)" : "var(--p-surface-2)", color: s === "publie" ? "var(--p-ok)" : "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => { if (f.status !== s) setStatus(s); }}>{label}</button>)}
               </div>
               <span className="text-[11px] p-muted leading-snug">{f.status === "publie" ? "Visible par les membres. Vos modifications leur arrivent quand vous cliquez sur Enregistrer." : "Invisible des membres. Tout s’enregistre au fil de votre écriture."}</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-2 text-[12px] font-medium">Durée (min)<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-white w-full" style={{ borderColor: "var(--p-line)" }} value={f.durationMin ?? ""} onChange={(e) => set({ durationMin: e.target.value === "" ? null : Number(e.target.value) })} /></label>
-              <label className="flex flex-col gap-2 text-[12px] font-medium">Ordre<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-white w-full" style={{ borderColor: "var(--p-line)" }} value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
+              <label className="flex flex-col gap-2 text-[12px] font-medium">Durée (min)<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-[var(--p-surface)] w-full" style={{ borderColor: "var(--p-line)" }} value={f.durationMin ?? ""} onChange={(e) => set({ durationMin: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+              <label className="flex flex-col gap-2 text-[12px] font-medium">Ordre<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-[var(--p-surface)] w-full" style={{ borderColor: "var(--p-line)" }} value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
             </div>
             <div className="flex flex-col gap-2"><span className="text-[12px] font-medium">Hashtags</span><HashtagPicker all={tags.data ?? []} value={f.hashtagIds} onChange={(hashtagIds) => set({ hashtagIds })} /></div>
             <div className="flex flex-col items-start gap-1.5 text-[12px]">

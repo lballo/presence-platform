@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Linkedin, Pencil, CalendarPlus, ExternalLink, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
@@ -7,7 +7,6 @@ import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
 import { AgendaCalendar } from "@/components/events/AgendaCalendar";
 import { FirstSteps } from "@/components/onboarding/FirstSteps";
 import { WeekSection } from "@/components/course/WeekSection";
-import { EmailPreferences } from "@/components/EmailPreferences";
 import { ReplayTour } from "@/components/onboarding/Tour";
 import { Avatar } from "@/components/Avatar";
 import { useUpload } from "@/lib/upload";
@@ -27,11 +26,9 @@ export default function Dashboard() {
   const editing = editingProfile || askedProfile;
   const setEditing = (on: boolean) => { setEditingProfile(on); if (!on && askedProfile) setParams({}, { replace: true }); window.scrollTo(0, 0); };
   useEffect(() => { if (askedProfile) window.scrollTo(0, 0); }, [askedProfile]);
-  useEffect(() => {
-    if (window.location.hash !== "#mes-emails") return;
-    const t = window.setTimeout(() => document.getElementById("mes-emails")?.scrollIntoView(), 500);
-    return () => window.clearTimeout(t);
-  }, []);
+  // Les choix d'e-mails ont rejoint les paramètres : les anciens liens y mènent
+  const navigate = useNavigate();
+  useEffect(() => { if (window.location.hash === "#mes-emails") navigate("/parametres/notifications", { replace: true }); }, [navigate]);
   const today = new Date();
 
   return (
@@ -75,8 +72,6 @@ export default function Dashboard() {
       </section>
 
       <MiracleRoutine />
-
-      <EmailPreferences />
     </>
   );
 }
@@ -209,10 +204,10 @@ function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
   );
 }
 
-function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
+export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
   const utils = trpc.useUtils();
   const save = trpc.members.updateProfile.useMutation({
-    onSuccess: () => { utils.members.me.invalidate(); utils.matching.invalidate(); toast.success("Profil enregistré"); onDone(); },
+    onSuccess: () => { utils.members.me.invalidate(); utils.members.profile.invalidate(); utils.matching.invalidate(); toast.success("Profil enregistré"); onDone(); },
     onError: (e) => toast.error(e.message),
   });
   const [f, setF] = useState({
@@ -394,11 +389,14 @@ function CoachingBand({ c }: { c: RouterOutputs["dashboard"]["coaching"] }) {
         </span>
       </div>
       <div className="flex-[1_1_240px] min-w-0 lg:pl-9 lg:border-l border-white/15 flex flex-col gap-2.5">
-        <span className="flex items-baseline gap-2.5"><span className="serif text-[52px] leading-[0.9]">{c.remaining}</span><span className="text-[15.5px] font-medium">séances restantes</span></span>
-        <span className="flex gap-1" role="img" aria-label={`${c.done} séances réalisées sur ${c.total}`}>
-          {Array.from({ length: c.total }, (_, i) => <span key={i} className="flex-1 h-2 rounded-full" style={i < c.done ? { background: "var(--p-gold-bright)" } : i === c.done ? { border: "1.5px solid #fff" } : { background: "rgba(255,255,255,0.18)" }} />)}
-        </span>
-        <span className="text-[13px] text-white/70">{c.done} séances réalisées sur {c.total}{n ? ` · la prochaine sera la ${n.number}e` : ""}</span>
+        {/* Sans nombre de séances prévu dans Notion, on montre seulement ce qui est fait */}
+        <span className="flex items-baseline gap-2.5"><span className="serif text-[52px] leading-[0.9]">{c.total ? c.remaining : c.done}</span><span className="text-[15.5px] font-medium">{c.total ? "séances restantes" : "séances réalisées"}</span></span>
+        {c.total > 0 && (
+          <span className="flex gap-1" role="img" aria-label={`${c.done} séances réalisées sur ${c.total}`}>
+            {Array.from({ length: c.total }, (_, i) => <span key={i} className="flex-1 h-2 rounded-full" style={i < c.done ? { background: "var(--p-gold-bright)" } : i === c.done ? { border: "1.5px solid #fff" } : { background: "rgba(255,255,255,0.18)" }} />)}
+          </span>
+        )}
+        {c.total > 0 && <span className="text-[13px] text-white/70">{c.done} séances réalisées sur {c.total}{n?.number ? ` · la prochaine sera la ${n.number}e` : ""}</span>}
       </div>
       <div className="flex-[0_1_260px] flex flex-col gap-2">
         <a href={c.calendlyUrl || "#"} target="_blank" rel="noopener" className="p-btn-white no-underline"><CalendarPlus size={18} /> Réserver une séance</a>

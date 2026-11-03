@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, asc, eq, gte, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, gt, inArray, isNull, sql } from "drizzle-orm";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { eventRegistrations, events, forumPosts, forumSpaces, honeyLedger, honeyRules } from "../../db/schema";
@@ -64,6 +64,12 @@ export const honeyRouter = createRouter({
   unannounced: proc.query(async ({ ctx }) => {
     const rows = await getDb().select().from(honeyLedger).where(and(eq(honeyLedger.memberId, ctx.memberId), gt(honeyLedger.amount, honeyLedger.announced))).orderBy(asc(honeyLedger.createdAt));
     return rows.map((r) => ({ id: r.id, action: r.action, gained: r.amount - r.announced }));
+  }),
+
+  /** Ma progression : chaque miel récolté, le plus récent d'abord. */
+  history: proc.query(async ({ ctx }) => {
+    const rows = await getDb().select().from(honeyLedger).where(eq(honeyLedger.memberId, ctx.memberId)).orderBy(desc(honeyLedger.createdAt));
+    return { total: rows.reduce((n, r) => n + r.amount, 0), items: rows.map((r) => ({ id: r.id, action: r.action, amount: r.amount, at: r.createdAt })) };
   }),
 
   markAnnounced: proc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {

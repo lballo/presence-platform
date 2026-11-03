@@ -6,6 +6,7 @@ import { getDb } from "../queries/connection";
 import {
   adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, emailPreferences, emailSends, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
   honeyLedger, invitations, journalEntries, lessonProgress, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, profileThemeShares, reports, sectionProgress, swipes, talks, testResults, workflowRuns, type Member,
+  coachingEngagements, coachingJournal,
 } from "../../db/schema";
 import { logAdmin } from "../lib/adminLog";
 import { accountBlock } from "../lib/permissions";
@@ -63,7 +64,7 @@ async function pendingCounts() {
 }
 
 /** Supprimer un membre : le compte est désactivé et la fiche anonymisée, ses publications restent en ligne. */
-async function anonymize(m: Member) {
+export async function anonymize(m: Member) {
   const db = getDb();
   const now = new Date();
   // Les places libérées profitent à la liste d'attente
@@ -88,6 +89,8 @@ async function anonymize(m: Member) {
     db.delete(hiveMembers).where(and(eq(hiveMembers.memberId, m.id), ne(hiveMembers.role, "founder"))),
     // Formations : le journal, les tests, la mémoire du coach et la progression disparaissent avec le membre
     db.delete(journalEntries).where(eq(journalEntries.memberId, m.id)),
+    db.delete(coachingJournal).where(eq(coachingJournal.memberId, m.id)),
+    db.update(coachingEngagements).set({ memberId: null }).where(eq(coachingEngagements.memberId, m.id)),
     db.delete(testResults).where(eq(testResults.memberId, m.id)),
     db.delete(profileThemeShares).where(eq(profileThemeShares.memberId, m.id)),
     db.delete(coachMemory).where(eq(coachMemory.memberId, m.id)),

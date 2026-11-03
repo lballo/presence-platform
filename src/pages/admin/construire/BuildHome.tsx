@@ -39,33 +39,33 @@ export default function BuildHome() {
           <div role="tablist" aria-label="Filtrer les formations" className="flex-[1_1_320px] flex gap-7">
             {tabs.map(([id, label, n]) => <button key={id} type="button" role="tab" aria-selected={filter === id} className="cr-tab" onClick={() => setFilter(id)}>{label} · {n}</button>)}
           </div>
-          <label className="mb-2.5 flex-[0_1_260px] flex items-center gap-2 rounded-md border px-3 py-2 bg-white p-muted" style={{ borderColor: "var(--p-line)" }}>
+          <label className="mb-2.5 flex-[0_1_260px] flex items-center gap-2 rounded-md border px-3 py-2 bg-[var(--p-surface)] p-muted" style={{ borderColor: "var(--p-line)" }}>
             <Search size={14} className="flex-none" />
             <input type="search" aria-label="Rechercher une formation" placeholder="Rechercher une formation" className="w-full border-0 outline-none bg-transparent text-[13px]" style={{ color: "var(--p-ink)" }} value={search} onChange={(e) => setSearch(e.target.value)} />
           </label>
         </div>
         <section aria-label="Formations" className="mt-7 grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))" }}>
           {shown.map((c) => (
-            <article key={c.id} className="overflow-hidden rounded-2xl border bg-white flex flex-col" style={{ borderColor: "var(--p-line)" }}>
-              <Link to={`/admin/construire/${c.id}`} aria-label={`Ouvrir ${c.title}`} className="relative block h-[150px] no-underline" style={{ background: "#F3ECE8" }}>
+            <article key={c.id} className="overflow-hidden rounded-2xl border bg-[var(--p-surface)] flex flex-col" style={{ borderColor: "var(--p-line)" }}>
+              <Link to={`/admin/createur/${c.id}`} aria-label={`Ouvrir ${c.title}`} className="relative block h-[150px] no-underline" style={{ background: "var(--p-surface-2)" }}>
                 {c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <span aria-hidden="true" className="w-full h-full flex items-center justify-center text-[52px]">{c.emoji || "🌱"}</span>}
-                <span className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px]" style={{ color: isOn(c) ? "#2b7a4b" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{COURSE_STATUS_LABEL[c.status]}</span>
+                <span className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-[var(--p-surface)] px-2.5 py-1 text-[11px]" style={{ color: isOn(c) ? "var(--p-ok)" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{COURSE_STATUS_LABEL[c.status]}</span>
               </Link>
               <div className="px-5 pt-[18px] pb-4 flex flex-col gap-2 flex-1">
                 <span className="flex items-center gap-1.5 text-[11px] font-medium p-muted"><Leaf size={12} style={{ color: "var(--p-accent)" }} />{PUBLIC_LABEL[c.public]} · {RHYTHM_LABEL[c.rhythm]}</span>
                 <h2 className="m-0 text-[17px] leading-[1.35]">{c.title}</h2>
                 {c.tagline && <p className="m-0 text-[13px] leading-relaxed p-muted">{c.tagline}</p>}
                 <p className="m-0 mt-1 text-[11px] p-muted">{c.sectionCount} section{c.sectionCount > 1 ? "s" : ""} · {c.lessonCount} leçon{c.lessonCount > 1 ? "s" : ""}{c.totalMin ? ` · ${c.totalMin} min` : ""} · {c.publishedCount} publiée{c.publishedCount > 1 ? "s" : ""} · {c.participants} participant{c.participants > 1 ? "s" : ""}{c.issueCount ? ` · ${c.issueCount} point${c.issueCount > 1 ? "s" : ""} à regarder` : ""}</p>
-                <div className="mt-auto pt-3 flex items-center gap-1 border-t" style={{ borderColor: "#F3ECE8" }}>
-                  <Link to={`/admin/construire/${c.id}`} className="flex-1 flex items-center gap-1.5 text-[13px] font-medium no-underline" style={{ color: "var(--p-accent)" }}>Ouvrir l’éditeur <ArrowRight size={14} /></Link>
-                  {c.firstLessonId && <Link to={`/admin/construire/${c.id}/apercu/${c.firstLessonId}`} aria-label={`Aperçu de ${c.title}`} title="Aperçu comme un membre" className="cr-icon w-8 h-8"><Eye size={16} /></Link>}
+                <div className="mt-auto pt-3 flex items-center gap-1 border-t" style={{ borderColor: "var(--p-surface-2)" }}>
+                  <Link to={`/admin/createur/${c.id}`} className="flex-1 flex items-center gap-1.5 text-[13px] font-medium no-underline" style={{ color: "var(--p-accent)" }}>Ouvrir l’éditeur <ArrowRight size={14} /></Link>
+                  {c.firstLessonId && <Link to={`/admin/createur/${c.id}/apercu/${c.firstLessonId}`} aria-label={`Aperçu de ${c.title}`} title="Aperçu comme un membre" className="cr-icon w-8 h-8"><Eye size={16} /></Link>}
                 </div>
               </div>
             </article>
           ))}
-          {shown.length === 0 && all.length > 0 && <div className="rounded-2xl border bg-white px-6 py-8 flex flex-col gap-1.5 justify-center" style={{ borderColor: "var(--p-line)" }}><p className="m-0 text-[15px] font-semibold">{search ? "Aucune formation ne correspond" : filter === "publies" ? "Aucune formation publiée pour l’instant" : "Aucun brouillon pour l’instant"}</p><p className="m-0 text-[13px] leading-relaxed p-muted">{filter === "publies" ? "Publiez une formation depuis son éditeur pour la rendre visible à vos membres." : "Tout est publié, ou votre recherche est trop précise."}</p></div>}
+          {shown.length === 0 && all.length > 0 && <div className="rounded-2xl border bg-[var(--p-surface)] px-6 py-8 flex flex-col gap-1.5 justify-center" style={{ borderColor: "var(--p-line)" }}><p className="m-0 text-[15px] font-semibold">{search ? "Aucune formation ne correspond" : filter === "publies" ? "Aucune formation publiée pour l’instant" : "Aucun brouillon pour l’instant"}</p><p className="m-0 text-[13px] leading-relaxed p-muted">{filter === "publies" ? "Publiez une formation depuis son éditeur pour la rendre visible à vos membres." : "Tout est publié, ou votre recherche est trop précise."}</p></div>}
           <button type="button" disabled={!canCreate} className="min-h-[340px] rounded-2xl border border-dashed flex flex-col items-center justify-center gap-2.5 p-6 disabled:opacity-60" style={{ borderColor: "var(--p-line-2)" }} onClick={() => setCreating(true)}>
-            <span className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "#F3ECE8", color: "var(--p-accent)" }}><Plus size={20} /></span>
+            <span className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "var(--p-surface-2)", color: "var(--p-accent)" }}><Plus size={20} /></span>
             <span className="text-[14px] font-semibold">Créer une nouvelle formation</span>
             <span className="text-[12px] leading-relaxed p-muted max-w-[220px] text-center">{canCreate ? "Commencez par un titre, vous construirez le parcours ensuite." : "Possible quand la clé Notion sera configurée."}</span>
           </button>
@@ -99,7 +99,7 @@ export function NotionBar() {
   if (!s) return null;
   const last = s.lastSync;
   return (
-    <section className="flex flex-col gap-2 rounded-xl border bg-white px-4 py-2.5" aria-label="Liaison avec Notion" style={{ borderColor: "var(--p-line)" }}>
+    <section className="flex flex-col gap-2 rounded-xl border bg-[var(--p-surface)] px-4 py-2.5" aria-label="Liaison avec Notion" style={{ borderColor: "var(--p-line)" }}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <span className="flex-[1_1_260px] min-w-0 text-[12.5px] p-muted">
           <span className="font-medium" style={{ color: "var(--p-ink)" }}>Notion fait foi pour les contenus.</span>{" "}
@@ -127,7 +127,7 @@ function CreateCourse({ open, onClose }: { open: boolean; onClose: () => void })
   const [f, setF] = useState(empty);
   const cover = useUpload("courseImage");
   const create = trpc.build.createCourse.useMutation({
-    onSuccess: (r) => { utils.build.invalidate(); setF(empty); onClose(); toast.success("Formation créée dans Notion, en brouillon"); navigate(`/admin/construire/${r.id}`); },
+    onSuccess: (r) => { utils.build.invalidate(); setF(empty); onClose(); toast.success("Formation créée dans Notion, en brouillon"); navigate(`/admin/createur/${r.id}`); },
     onError: (e) => toast.error(e.message),
   });
   return (

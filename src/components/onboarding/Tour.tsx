@@ -68,7 +68,7 @@ export function Tour() {
         {isLast ? (
           <>
             <button type="button" className="p-btn-ghost px-2" disabled={finish.isPending} onClick={() => finish.mutate({ followed: true })}>{TOUR_BUTTONS.later}</button>
-            <button type="button" className="p-btn-primary p-btn-sm" disabled={finish.isPending} onClick={() => { finish.mutate({ followed: true }); navigate("/?profil=1"); }}>{TOUR_BUTTONS.profile}</button>
+            <button type="button" className="p-btn-primary p-btn-sm" disabled={finish.isPending} onClick={() => { finish.mutate({ followed: true }); navigate("/profil?modifier=1"); }}>{TOUR_BUTTONS.profile}</button>
           </>
         ) : (
           <>

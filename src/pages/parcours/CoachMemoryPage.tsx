@@ -38,7 +38,7 @@ export default function CoachMemoryPage() {
   );
 }
 
-function Status({ s, onAsk }: { s: State; onAsk: () => void }) {
+export function Status({ s, onAsk }: { s: State; onAsk: () => void }) {
   const utils = trpc.useUtils();
   const pause = trpc.coachMemory.setPaused.useMutation({ onSuccess: (_r, v) => { utils.coachMemory.invalidate(); toast.success(v.paused ? "Mémoire en pause" : "Mémoire reprise"); }, onError: (e) => toast.error(e.message) });
   const text = s.active ? "La mémoire est active. Vos réponses, vos réflexions, vos tests et vos défis y entrent au fil de l’eau, et le coach s’en sert dans vos conversations."
@@ -97,7 +97,7 @@ function Item({ i }: { i: State["items"][number] }) {
   );
 }
 
-function Danger({ s }: { s: State }) {
+export function Danger({ s }: { s: State }) {
   const utils = trpc.useUtils();
   const removeAll = trpc.coachMemory.removeAll.useMutation({ onSuccess: () => { utils.coachMemory.invalidate(); toast.success("Tout est effacé"); }, onError: (e) => toast.error(e.message) });
   const withdraw = trpc.coachMemory.withdraw.useMutation({ onSuccess: () => { utils.coachMemory.invalidate(); toast.success("Accord retiré, tout est effacé"); }, onError: (e) => toast.error(e.message) });

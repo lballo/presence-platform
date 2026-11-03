@@ -11,6 +11,8 @@ import { publicResults } from "../lib/testCatalog";
 import { INTENT_CODES, INTENT_GROUPS, intentLabel, myIntentLabel } from "../lib/intents";
 import { isOurImage } from "../lib/storage";
 import { award } from "../lib/honey";
+import { isCoachingClient } from "../lib/coachingClient";
+import { goalLabels } from "../lib/onboardingOptions";
 
 async function requireMember(id: number) {
   const db = getDb();
@@ -34,6 +36,7 @@ export const membersRouter = createRouter({
       accessType: m.accessType,
       accessEndsAt: m.accessEndsAt,
       goals: m.goals,
+      goalLabels: [...goalLabels(m.goals), m.goalsOther.trim()].filter(Boolean),
       tour: m.tour,
       rencontreEnabled: m.rencontreEnabled, rencontrePref: m.rencontrePref, rencontreBlurb: m.rencontreBlurb,
       // Ce que l'interface affiche ou masque : la décision reste celle de can()
@@ -51,6 +54,7 @@ export const membersRouter = createRouter({
       },
       organizerRequest: m.organizerRequest,
       organizerRequestedAt: m.organizerRequestedAt,
+      coachingClient: await isCoachingClient(m.id),
     };
   }),
 

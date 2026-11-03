@@ -3,9 +3,10 @@ import { useNavigate } from "react-router";
 import { Bell } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { ago } from "@/lib/format";
+import { HEADER_PANEL, HeaderButton } from "@/components/MessagesBubble";
 
 /** Cloche : ce que l'équipe ou les organisateurs ont à vous dire (annulation, place libérée, décision…). */
-export function NotificationBell({ up }: { up?: boolean }) {
+export function NotificationBell() {
   const utils = trpc.useUtils();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -15,14 +16,13 @@ export function NotificationBell({ up }: { up?: boolean }) {
   const unread = count.data ?? 0;
   return (
     <span className="relative flex-none">
-      <button type="button" aria-label={unread ? `Notifications, ${unread} non lue${unread > 1 ? "s" : ""}` : "Notifications"} aria-expanded={open} className="relative w-10 h-10 flex items-center justify-center rounded-lg" style={{ color: "var(--p-menu-ink)" }} onClick={() => setOpen(!open)}>
-        <Bell size={18} strokeWidth={1.6} />
-        {unread > 0 && <span className="absolute top-0.5 right-0.5 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center text-white" style={{ background: "var(--p-accent)" }}>{unread > 9 ? "9+" : unread}</span>}
-      </button>
+      <HeaderButton label={unread ? `Notifications, ${unread} non lue${unread > 1 ? "s" : ""}` : "Notifications"} count={unread} open={open} onClick={() => setOpen(!open)}>
+        <Bell size={18} strokeWidth={1.7} />
+      </HeaderButton>
       {open && (
         <>
           <button type="button" aria-label="Fermer les notifications" className="fixed inset-0 z-[44] cursor-default" onClick={() => setOpen(false)} />
-          <div className={`absolute z-[45] w-[min(340px,calc(100vw-24px))] max-h-[60vh] overflow-y-auto rounded-2xl shadow-xl ${up ? "bottom-12 left-0" : "top-12 right-0"}`} style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)", color: "var(--p-ink)" }}>
+          <div className={HEADER_PANEL} style={{ background: "var(--p-surface)", border: "1px solid var(--p-line)", color: "var(--p-ink)" }}>
             <div className="flex items-center justify-between gap-2 px-4 py-3 border-b" style={{ borderColor: "var(--p-line)" }}>
               <span className="serif text-[20px]">Notifications</span>
               {unread > 0 && <button type="button" className="p-btn-ghost min-h-0 text-[12.5px]" onClick={() => mark.mutate({})}>Tout marquer comme lu</button>}

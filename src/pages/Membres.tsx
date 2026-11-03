@@ -32,8 +32,7 @@ export default function Membres() {
 
   return (
     <>
-      <PageHeader eyebrow="Le cercle" title="Annuaire des membres" intro="Retrouvez les leaders du réseau, leur ville et ce qu’ils cherchent : mentorat, pairs, association, investissement, recrutement, amitié ou prise de parole."
-        action={<Link to="/matching" className="p-btn-outline no-underline"><Heart size={16} /> Mes affinités de la semaine</Link>} />
+      <PageHeader eyebrow="Le cercle" title="Annuaire des membres" intro="Retrouvez les leaders du réseau, leur ville et ce qu’ils cherchent : mentorat, pairs, association, investissement, recrutement, amitié ou prise de parole." />
       <AdminPendingLink kind="organizer" one="candidature organisateur" many="candidatures organisateur" />
       <div className="flex flex-wrap gap-2 mb-5">
         <button type="button" className={`p-chip h-11 px-5 ${view === "all" ? "p-chip-on" : ""}`} onClick={() => { setView("all"); setSelId(null); }}><Users size={16} /> Tout l’annuaire</button>
@@ -74,7 +73,7 @@ export default function Membres() {
             <div className="p-soft p-8 text-center flex flex-col items-center gap-3">
               <span className="serif text-[26px]">Pas encore de relation</span>
               <span className="text-[14.5px] p-muted max-w-[420px]">Les membres avec qui vous avez matché, et ceux avec qui vous échangez des messages, apparaîtront ici.</span>
-              <Link to="/matching" className="p-btn-primary p-btn-sm no-underline"><Heart size={15} /> Découvrir mes affinités</Link>
+              <Link to="/membres/binome" className="p-btn-primary p-btn-sm no-underline"><Heart size={15} /> Découvrir mes affinités</Link>
             </div>
           ) : <p className="p-muted text-center py-10">Aucun membre ne correspond.</p>)}
         </section>

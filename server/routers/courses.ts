@@ -3,13 +3,14 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
-import { coachingSessions, courseEnrollments, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, journalEntries, lessonProgress, members, sectionProgress, testResults } from "../../db/schema";
+import { courseEnrollments, courseLessonHashtags, courseLessons, courseSectionHashtags, courseSections, journalEntries, lessonProgress, members, sectionProgress, testResults } from "../../db/schema";
 import { logActivity, touchEnrollment } from "../lib/activity";
 import { answerMemory, challengeMemory, testMemory } from "../lib/coach";
 import { consentNeeded, forget, memoryLabel, memoryOrigin, memorySettings, remember } from "../lib/coachMemory";
 import { isQuestion, memberBlocks, plainOf, type CourseBlock } from "../lib/courseBlocks";
 import { lessonView, memberCourses, readableLesson, readableSection } from "../lib/courseState";
 import { env } from "../lib/env";
+import { isCoachingClient } from "../lib/coachingClient";
 import { notify } from "../lib/notify";
 import { open, seal } from "../lib/privateBox";
 
@@ -243,22 +244,22 @@ export const coursesRouter = createRouter({
    */
   journal: courseProc.query(async ({ ctx }) => {
     const db = getDb();
-    const [rows, [session]] = await Promise.all([
+    const [rows, client] = await Promise.all([
       db.select({ e: journalEntries, sectionId: courseSections.id, sectionTitle: courseSections.title, sectionPosition: courseSections.position })
         .from(journalEntries)
         .leftJoin(courseLessons, eq(courseLessons.id, journalEntries.lessonId))
         .leftJoin(courseSections, eq(courseSections.id, courseLessons.sectionId))
         .where(eq(journalEntries.memberId, ctx.memberId))
         .orderBy(desc(journalEntries.updatedAt)),
-      db.select({ id: coachingSessions.id }).from(coachingSessions).where(and(eq(coachingSessions.memberId, ctx.memberId), eq(coachingSessions.done, false))).limit(1),
+      isCoachingClient(ctx.memberId),
     ]);
     return {
       entries: rows.map(({ e, sectionId, sectionTitle, sectionPosition }) => ({
         id: e.id, kind: e.kind, lessonId: e.lessonId, courseTitle: e.courseTitle, sectionId, sectionTitle: sectionTitle ?? "", sectionPosition, lessonTitle: e.lessonTitle, question: e.questionText,
         answer: open(ctx.memberId, e.answerEnc), sharedAt: e.sharedAt, discussedAt: e.coachingDiscussedAt, createdAt: e.createdAt, updatedAt: e.updatedAt,
       })),
-      // Sans accompagnement individuel en cours, l'option reste disponible et propose aussi un appel découverte
-      coaching: { active: ctx.member.accessType !== "collectif" || !!session, discoveryUrl: env.calendlyExploUrl },
+      // « À travailler en coaching » : pour les clients du coaching individuel ; les autres se voient proposer l'appel découverte
+      coaching: { active: client, discoveryUrl: env.calendlyExploUrl },
     };
   }),
 

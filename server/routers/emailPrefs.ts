@@ -4,6 +4,7 @@ import { createRouter, procFor, publicProc } from "../middleware";
 import { getDb } from "../queries/connection";
 import { members } from "../../db/schema";
 import { EMAIL_CATEGORIES, memberPreferences, setPreference, validUnsubscribe, type EmailCategory } from "../lib/email";
+import { isCoachingClient } from "../lib/coachingClient";
 
 const category = z.enum(Object.keys(EMAIL_CATEGORIES) as [EmailCategory, ...EmailCategory[]]);
 const link = z.object({ m: z.number().int(), c: z.string().max(30), t: z.string().max(64) });
@@ -11,8 +12,10 @@ const link = z.object({ m: z.number().int(), c: z.string().max(30), t: z.string(
 /** Les relances que chaque membre accepte de recevoir par e-mail. */
 export const emailPrefsRouter = createRouter({
   get: procFor("profile.use").query(async ({ ctx }) => {
-    const prefs = await memberPreferences(ctx.memberId);
-    return { email: ctx.member.email, categories: (Object.keys(EMAIL_CATEGORIES) as EmailCategory[]).map((key) => ({ key, label: EMAIL_CATEGORIES[key].label, description: EMAIL_CATEGORIES[key].description, enabled: prefs[key] })) };
+    const [prefs, client] = await Promise.all([memberPreferences(ctx.memberId), isCoachingClient(ctx.memberId)]);
+    // « Mon coaching » ne concerne que les clients du coaching individuel
+    const keys = (Object.keys(EMAIL_CATEGORIES) as EmailCategory[]).filter((k) => k !== "coaching" || client);
+    return { email: ctx.member.email, categories: keys.map((key) => ({ key, label: EMAIL_CATEGORIES[key].label, description: EMAIL_CATEGORIES[key].description, soon: EMAIL_CATEGORIES[key].soon, enabled: prefs[key] })) };
   }),
 
   set: procFor("profile.use").input(z.object({ category, enabled: z.boolean() })).mutation(async ({ ctx, input }) => {

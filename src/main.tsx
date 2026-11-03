@@ -6,7 +6,10 @@ import { TRPCProvider } from "@/providers/trpc";
 import { AuthProvider } from "@/providers/auth";
 import { loadConfig } from "@/lib/supabase";
 import App from "./App";
+import { applyTheme, readTheme } from "@/lib/theme";
 
+// L'apparence choisie s'applique dès le chargement, sur toutes les pages
+applyTheme(readTheme());
 const root = createRoot(document.getElementById("root")!);
 
 loadConfig().then((ready) => {

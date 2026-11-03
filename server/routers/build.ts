@@ -235,7 +235,7 @@ async function setFullAccess(actor: Parameters<typeof logAdmin>[0], courseId: nu
   if (!m || m.deletedAt) throw new TRPCError({ code: "NOT_FOUND", message: "Membre introuvable." });
   if (on) {
     await db.insert(courseEnrollments).values({ courseId, memberId, fullAccessAt: new Date(), fullAccessBy: actor.id }).onConflictDoUpdate({ target: [courseEnrollments.courseId, courseEnrollments.memberId], set: { fullAccessAt: new Date(), fullAccessBy: actor.id } });
-    await notify([memberId], { title: `Toutes les sections de « ${course.title} » sont ouvertes pour vous`, href: `/parcours/${courseId}` });
+    await notify([memberId], { title: `Toutes les sections de « ${course.title} » sont ouvertes pour vous`, href: `/parcours/${courseId}` }, "formations");
   } else {
     await db.update(courseEnrollments).set({ fullAccessAt: null, fullAccessBy: null }).where(and(eq(courseEnrollments.courseId, courseId), eq(courseEnrollments.memberId, memberId)));
   }
@@ -674,7 +674,7 @@ export const buildRouter = createRouter({
       const course = await requireCourse(input.courseId);
       const [row] = await getDb().insert(courseAssignments).values({ courseId: input.courseId, memberId: input.memberId ?? null, accessType: input.accessType ?? null, tagId: input.tagId ?? null, createdBy: ctx.memberId }).onConflictDoNothing().returning();
       if (row) {
-        if (input.memberId && course.status === "publie") await notify([input.memberId], { title: `Une formation vous est ouverte : ${course.title}`, href: `/parcours/${course.id}` });
+        if (input.memberId && course.status === "publie") await notify([input.memberId], { title: `Une formation vous est ouverte : ${course.title}`, href: `/parcours/${course.id}` }, "formations");
         await logAdmin(ctx.member, { action: "Formation attribuée", targetType: "formation", targetId: course.id, label: course.title, detail: input.memberId ? `Membre n° ${input.memberId}` : input.accessType ? `Accès ${input.accessType}` : `Étiquette n° ${input.tagId}` });
       }
       return { ok: true };

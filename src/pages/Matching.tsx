@@ -49,7 +49,7 @@ export default function Matching() {
 
   return (
     <>
-      <PageHeader eyebrow="Rencontres du cercle" title="Affinités & Rencontres" intro="Glissez vers la droite pour proposer un échange, vers la gauche pour passer. Quand l’envie est réciproque, c’est un match." />
+      <PageHeader eyebrow="Membres · Trouver mon binôme" title="Affinités & Rencontres" intro="Glissez vers la droite pour proposer un échange, vers la gauche pour passer. Quand l’envie est réciproque, c’est un match." />
       <div className="flex flex-wrap gap-10 items-start">
         <section className="flex-[3_1_400px] min-w-0 flex flex-col items-center gap-5">
           <div className="flex items-center justify-between w-full max-w-[400px] text-[13.5px] p-muted">

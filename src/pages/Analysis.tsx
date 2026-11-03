@@ -23,11 +23,11 @@ export default function Analysis() {
   const [open, setOpen] = useState<Set<number>>(new Set([0]));
 
   if (isLoading) return <p className="p-muted py-20 text-center">Chargement de l’analyse…</p>;
-  if (!s || s.status !== "completed") return <p className="p-muted py-20 text-center">Analyse introuvable. <Link to="/presence-ia" className="p-link">Retour</Link></p>;
+  if (!s || s.status !== "completed") return <p className="p-muted py-20 text-center">Analyse introuvable. <Link to="/parcours/presence-ia" className="p-link">Retour</Link></p>;
 
   return (
     <>
-      <Link to="/presence-ia" className="p-btn-ghost text-[13px] mb-4 no-underline"><ArrowLeft size={14} /> Mes analyses</Link>
+      <Link to="/parcours/presence-ia" className="p-btn-ghost text-[13px] mb-4 no-underline"><ArrowLeft size={14} /> Mes analyses</Link>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div><h1 className="text-[clamp(32px,4vw,44px)] m-0">{s.title}</h1><span className="text-[14px] p-muted">{new Date(s.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span></div>
         <button type="button" className="p-btn-outline p-btn-sm" onClick={() => window.print()}><Printer size={15} /> Imprimer</button>

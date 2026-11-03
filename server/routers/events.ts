@@ -113,13 +113,42 @@ export async function unregisterMember(eventId: number, memberId: number) {
     return { memberId: next.memberId, event: e };
   });
   if (promoted) await awardRegistration(promoted.memberId, promoted.event);
-  if (promoted) await notify([promoted.memberId], { title: `Une place s’est libérée : ${promoted.event.title}`, body: "Vous êtes inscrit·e. L’adresse ou le lien sont sur la page de l’événement.", href: `/e/${promoted.event.slug}` });
+  if (promoted) await notify([promoted.memberId], { title: `Une place s’est libérée : ${promoted.event.title}`, body: "Vous êtes inscrit·e. L’adresse ou le lien sont sur la page de l’événement.", href: `/e/${promoted.event.slug}` }, "evenements");
   return promoted?.memberId ?? null;
+}
+
+/**
+ * En direct : un salon (ou un événement marqué en direct) pendant son créneau. Sert à la pastille du menu et au bandeau des événements.
+ * Le marquage seul ne suffit pas : personne ne le retire à la fin, il resterait allumé pour toujours.
+ */
+export function onAir(e: { kind: string; live: boolean; startsAt: Date; durationMin: number; cancelledAt: Date | null }, now = Date.now()) {
+  if (e.cancelledAt || !(e.live || e.kind === "salon")) return false;
+  const start = e.startsAt.getTime();
+  return start <= now && now < start + e.durationMin * 60000;
 }
 
 const readProc = procFor("events.read");
 
 export const eventsRouter = createRouter({
+  /** Le salon du réseau en cours, s'il y en a un : la pastille rouge du menu. */
+  liveNow: readProc.query(async () => {
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const list = await getDb().query.events.findMany({ where: and(eq(events.status, "published"), isNull(events.hiveId), isNull(events.cancelledAt), gte(events.startsAt, since), or(eq(events.live, true), eq(events.kind, "salon"))), orderBy: [asc(events.startsAt)] });
+    const e = list.find((x) => onAir(x));
+    return e ? { slug: e.slug, title: e.title } : null;
+  }),
+
+  /** Gestion : les événements que j'organise, à venir puis passés. */
+  hosting: procFor("event.publish_directly").query(async ({ ctx }) => {
+    const list = await getDb().query.events.findMany({ where: eq(events.hostId, ctx.memberId), with: { registrations: true, hive: true }, orderBy: [desc(events.startsAt)], limit: 200 });
+    const now = Date.now();
+    return list.map((e) => ({
+      id: e.id, slug: e.slug, kind: e.kind, title: e.title, startsAt: e.startsAt, durationMin: e.durationMin, status: e.status,
+      cancelled: !!e.cancelledAt, live: onAir(e, now), past: e.startsAt.getTime() + e.durationMin * 60000 < now, hive: e.hive?.name ?? null,
+      registered: e.registrations.filter((r) => !r.waitlist).length, waitlist: e.registrations.filter((r) => r.waitlist).length,
+    }));
+  }),
+
   /** Programme du réseau : les événements de ruche restent dans leur ruche. */
   program: readProc.query(async ({ ctx }) => {
     const db = getDb();
@@ -137,7 +166,7 @@ export const eventsRouter = createRouter({
         const mine = e.registrations.find((r) => r.memberId === ctx.memberId);
         return {
           id: e.id, slug: e.slug, kind: e.kind, type: e.type, visibility: e.visibility, title: e.title, tagline: e.tagline, photoUrl: e.photoUrl, photoPosition: e.photoPosition, cover: e.cover, repeatLabel: e.series && !e.series.stoppedAt ? REPEAT_LABEL[e.series.every] : null, startsAt: e.startsAt, durationMin: e.durationMin, days: e.days,
-          city: e.city, where: e.where, maxSeats: e.maxSeats, featured: e.featured, live: e.live, cancelled: !!e.cancelledAt, host: person(e.host),
+          city: e.city, where: e.where, maxSeats: e.maxSeats, featured: e.featured, live: onAir(e, now), cancelled: !!e.cancelledAt, host: person(e.host),
           taken, seatsLeft: e.maxSeats ? Math.max(0, e.maxSeats - taken) : null,
           registered: !!mine && !mine.waitlist, waitlisted: !!mine && mine.waitlist,
           canManage: can(ctx.member, "event.edit", { ownerId: e.hostId }),
@@ -354,7 +383,7 @@ export const eventsRouter = createRouter({
       await db.update(events).set({ cancelledAt: now }).where(eq(events.id, x.id));
       const others = x.registrations.map((r) => r.memberId).filter((id) => id !== ctx.memberId);
       others.forEach((id) => notified.add(id));
-      await notify(others, { title: `Événement annulé : ${x.title}`, body: "L’organisation a annulé cet événement. Votre inscription est levée.", href: `/e/${x.slug}` });
+      await notify(others, { title: `Événement annulé : ${x.title}`, body: "L’organisation a annulé cet événement. Votre inscription est levée.", href: `/e/${x.slug}` }, "evenements");
     }
     if (stopping) await db.update(eventSeries).set({ stoppedAt: now }).where(eq(eventSeries.id, e.seriesId!));
     await logIfOnBehalf(ctx.member, e.hostId, { action: stopping ? "Série d’événements arrêtée" : "Événement annulé", targetType: "evenement", targetId: e.id, label: e.title, detail: notified.size ? `${notified.size} personne(s) prévenue(s)` : "" });

@@ -10,8 +10,9 @@ const TABS = [
   { to: "/admin/ruches", label: "Ruches" },
   { to: "/admin/evenements", label: "Événements" },
   { to: "/admin/forum", label: "Forum et annonces" },
-  { to: "/admin/coaching", label: "Coaching", count: "coaching" },
+  { to: "/admin/coaching", label: "Suivi coaching", count: "coaching" }, // s'ouvre en pleine page
   { to: "/admin/journal", label: "Journal" },
+  { to: "/admin/createur", label: "Espace créateur" }, // s'ouvre en pleine page
 ] as const;
 
 /** Panneau d'administration : réservé aux administrateurs. Le serveur refuse de toute façon chaque appel. */

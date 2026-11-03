@@ -1,25 +1,23 @@
 import { eq, and, asc, desc, gte, isNotNull, isNull } from "drizzle-orm";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
-import { coachingSessions, events, talks, forumPosts, hivePosts } from "../../db/schema";
+import { events, talks, forumPosts, hivePosts } from "../../db/schema";
 import { publicMember } from "../lib/format";
 import { isLive } from "../lib/forumAccess";
 import { env } from "../lib/env";
+import { clientView } from "./coaching";
 
 const dashProc = procFor("dashboard.read");
 
 export const dashboardRouter = createRouter({
   /** Bandeau coaching : prochaine séance, séances restantes, liens Calendly. */
   coaching: dashProc.query(async ({ ctx }) => {
-    const db = getDb();
-    const sessions = await db.query.coachingSessions.findMany({ where: eq(coachingSessions.memberId, ctx.memberId), orderBy: [asc(coachingSessions.number)] });
-    const next = sessions.find((s) => !s.done);
-    const total = sessions[0]?.total ?? 12;
-    const done = sessions.filter((s) => s.done).length;
+    const c = await clientView(ctx.memberId);
+    const durationMin = c?.next?.endsAt ? Math.round((new Date(c.next.endsAt).getTime() - new Date(c.next.startsAt).getTime()) / 60000) : 60;
     return {
-      isCoached: sessions.length > 0,
-      next: next ? { title: next.title, startsAt: next.startsAt, durationMin: next.durationMin, format: next.format, number: next.number } : null,
-      done, total, remaining: total - done,
+      isCoached: !!c,
+      next: c?.next ? { title: c.next.number ? `${c.next.kind || "Séance"} n° ${c.next.number}` : c.next.kind || "Séance", startsAt: c.next.startsAt, durationMin, format: "Visio", number: c.next.number ?? 0 } : null,
+      done: c?.done ?? 0, total: c?.planned ?? 0, remaining: c?.remaining ?? 0,
       calendlyUrl: env.calendlyUrl, calendlyExploUrl: env.calendlyExploUrl,
     };
   }),

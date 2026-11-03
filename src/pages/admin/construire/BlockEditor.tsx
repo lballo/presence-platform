@@ -375,7 +375,7 @@ const Row = memo(function Row({ b, index, total, number, marker, variant, placeh
   const k = keyOf(b);
   const titleOf = isText(b) ? plainOf(b.html).slice(0, 80) : b.type;
   return (
-    <div className={`cr-block relative rounded-[10px] ${isText(b) ? "px-2 py-1" : "px-2 py-2"}`} style={{ opacity: held ? 0.4 : 1, ...(focused ? { background: "#FBF8F6" } : {}) }}>
+    <div className={`cr-block relative rounded-[10px] ${isText(b) ? "px-2 py-1" : "px-2 py-2"}`} style={{ opacity: held ? 0.4 : 1, ...(focused ? { background: "var(--p-hover-soft)" } : {}) }}>
       <div className="cr-gutter">
         <button type="button" aria-label="Insérer un bloc en dessous" className="cr-gut-btn" onClick={() => act.current.open(k)}><Plus size={16} /></button>
         <span role="img" aria-label="Glisser pour déplacer" title="Glisser pour déplacer" className="cr-gut-btn cursor-grab" onPointerDown={act.current.press(k, titleOf)}><GripVertical size={15} /></span>
@@ -668,7 +668,7 @@ export function HashtagPicker({ all, value, onChange }: { all: { id: number; nam
   return (
     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Hashtags">
       {all.length === 0 && <span className="text-[13px] p-muted">La liste de la communauté est vide.</span>}
-      {all.map((t) => { const on = value.includes(t.id); return <button key={t.id} type="button" aria-pressed={on} className="rounded-md border px-2 py-[3px] text-[12px] font-medium" style={on ? { background: "var(--p-accent-soft)", borderColor: "var(--p-accent-soft)", color: "var(--p-accent)" } : { background: "#fff", borderColor: "var(--p-line)", color: "var(--p-ink-2)" }} onClick={() => onChange(on ? value.filter((x) => x !== t.id) : [...value, t.id])}>#{t.name}</button>; })}
+      {all.map((t) => { const on = value.includes(t.id); return <button key={t.id} type="button" aria-pressed={on} className="rounded-md border px-2 py-[3px] text-[12px] font-medium" style={on ? { background: "var(--p-accent-soft)", borderColor: "var(--p-accent-soft)", color: "var(--p-accent)" } : { background: "var(--p-surface)", borderColor: "var(--p-line)", color: "var(--p-ink-2)" }} onClick={() => onChange(on ? value.filter((x) => x !== t.id) : [...value, t.id])}>#{t.name}</button>; })}
     </div>
   );
 }

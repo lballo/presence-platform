@@ -1,5 +1,6 @@
-import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, MapPin, MessageCircle, Linkedin, Sparkles, Mic, CalendarDays, Hexagon, Eye, Clock } from "lucide-react";
+import type { ReactNode } from "react";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { ArrowLeft, MapPin, MessageCircle, Linkedin, Sparkles, Mic, CalendarDays, Hexagon, Eye, Clock, Pencil } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { ago, longDate, hour, plural } from "@/lib/format";
 import { COVERS } from "./Ruches";
@@ -10,11 +11,22 @@ import { MyThemeResults, PublicThemeResults } from "@/components/profile/ThemeRe
 const KIND = { salon: "Salon live", online: "En ligne", onsite: "Présentiel" } as const;
 const ROLE = { founder: "Fondatrice·eur", leader: "Leader", member: "Membre", pending: "" } as const;
 
+/** Le profil d'un membre. Le mien s'ouvre dans Mon profil, avec ses sous-onglets. */
 export default function Profil() {
   const { id } = useParams();
+  const me = trpc.members.me.useQuery();
+  if (me.data && me.data.id === Number(id)) return <Navigate to="/profil" replace />;
+  return <ProfileView id={Number(id)} />;
+}
+
+/**
+ * La fiche elle-même. Pour la mienne : pas de bouton retour, la modification s'ouvre sur place,
+ * et « extra » ajoute ce que moi seul vois (objectifs, réservation).
+ */
+export function ProfileView({ id, onEdit, extra }: { id: number; onEdit?: () => void; extra?: ReactNode }) {
   const navigate = useNavigate();
   const me = trpc.members.me.useQuery();
-  const p = trpc.members.profile.useQuery({ id: Number(id) }, { enabled: !!Number(id) });
+  const p = trpc.members.profile.useQuery({ id }, { enabled: !!id });
 
   if (p.error) return <div className="py-20 text-center p-muted">Ce profil est introuvable. <Link to="/membres" className="p-link">Retour à l’annuaire</Link></div>;
   if (!p.data) return <p className="p-muted py-20 text-center">Chargement…</p>;
@@ -24,7 +36,7 @@ export default function Profil() {
 
   return (
     <>
-      <button type="button" className="p-btn-outline p-btn-sm mb-5" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/membres"))}><ArrowLeft size={15} /> Retour</button>
+      {!m.isMe && <button type="button" className="p-btn-outline p-btn-sm mb-5" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/membres"))}><ArrowLeft size={15} /> Retour</button>}
 
       <article className="p-card overflow-hidden flex flex-wrap mb-6">
         <div className="flex-[1_1_280px] max-w-full h-[300px] sm:h-auto sm:min-h-[340px]" style={{ background: "var(--p-surface-2)" }}>
@@ -41,7 +53,7 @@ export default function Profil() {
           {m.bio && <p className="m-0 text-[16px] leading-relaxed whitespace-pre-line">{m.bio}</p>}
           <div className="flex flex-wrap gap-2.5 pt-1">
             {!m.isMe && <Link to={`/messages?to=${m.id}`} className="p-btn-primary no-underline"><MessageCircle size={17} /> Écrire à {m.firstName}</Link>}
-            {m.isMe && <Link to="/?profil=1" className="p-btn-outline no-underline">Modifier mon profil</Link>}
+            {m.isMe && onEdit && <button type="button" className="p-btn-outline" onClick={onEdit}><Pencil size={15} /> Modifier mon profil</button>}
             {m.isMe && <ReplayTour className="p-btn-outline" />}
             {m.linkedinUrl && <a href={m.linkedinUrl} target="_blank" rel="noopener" className="p-btn-outline no-underline"><Linkedin size={16} /> LinkedIn</a>}
           </div>
@@ -50,6 +62,7 @@ export default function Profil() {
 
       <div className="flex flex-wrap gap-6 items-start">
         <div className="flex-[2_1_520px] min-w-0 flex flex-col gap-6">
+          {extra}
           {(m.ambition || m.passions.length > 0 || m.values.length > 0) && (
             <section className="p-card p-6 flex flex-col gap-5">
               {m.ambition && <div className="flex flex-col gap-1.5"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}>Ambition</span><p className="m-0 text-[16.5px] leading-relaxed">{m.ambition}</p></div>}
@@ -74,7 +87,7 @@ export default function Profil() {
 
           {m.talks.length > 0 && (
             <section className="flex flex-col gap-3">
-              <h2 className="m-0 text-[26px] flex items-center gap-2"><Mic size={20} /> Ses talks</h2>
+              <h2 className="m-0 text-[26px] flex items-center gap-2"><Mic size={20} /> {m.isMe ? "Mes talks" : "Ses talks"}</h2>
               {m.talks.map((t) => (
                 <Link key={t.id} to="/talk-show" className="p-card p-4 flex flex-col gap-1 no-underline" style={{ color: "var(--p-ink)" }}>
                   <span className="serif text-[22px] leading-tight">{t.title}</span>
@@ -97,7 +110,7 @@ export default function Profil() {
 
           {m.hives.length > 0 && (
             <section className="p-card p-5 flex flex-col gap-3">
-              <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}><Hexagon size={13} /> Ses ruches</span>
+              <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}><Hexagon size={13} /> {m.isMe ? "Mes ruches" : "Ses ruches"}</span>
               {m.hives.map((h) => (
                 <Link key={h.id} to={`/ruches/${h.id}`} className="flex items-center gap-3 no-underline" style={{ color: "var(--p-ink)" }}>
                   <span className="w-10 h-10 rounded-xl flex-none" style={{ background: COVERS[h.cover] ?? COVERS.rouge }} />
@@ -109,7 +122,7 @@ export default function Profil() {
 
           {m.hosting.length > 0 && (
             <section className="p-card p-5 flex flex-col gap-3">
-              <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}><CalendarDays size={13} /> Anime prochainement</span>
+              <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}><CalendarDays size={13} /> {m.isMe ? "J’anime prochainement" : "Anime prochainement"}</span>
               {m.hosting.map((e) => (
                 <Link key={e.id} to={`/e/${e.slug}`} className="flex flex-col no-underline" style={{ color: "var(--p-ink)" }}>
                   <span className="text-[14.5px] font-medium leading-snug">{e.title}</span>

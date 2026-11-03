@@ -84,6 +84,10 @@ export type NotionProperty = {
   relation?: { id: string }[];
   files?: FileRef[];
   checkbox?: boolean;
+  email?: string | null;
+  date?: { start: string; end: string | null } | null;
+  formula?: { type: string; number?: number | null; string?: string | null; boolean?: boolean | null; date?: { start: string; end: string | null } | null };
+  rollup?: { type: string; number?: number | null; date?: { start: string; end: string | null } | null };
 };
 
 export type NotionPage = {

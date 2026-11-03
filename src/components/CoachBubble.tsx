@@ -13,7 +13,7 @@ const CONTEXT: { match: RegExp; prompts: string[] }[] = [
   { match: /^\/evenements/, prompts: ["Comment aborder un événement où je ne connais personne ?", "Aide-moi à préparer une présentation de moi en 30 secondes"] },
   { match: /^\/forum/, prompts: ["Aide-moi à formuler un retour bienveillant et précis", "Comment raconter une victoire sans me mettre en avant ?"] },
   { match: /^\/messages/, prompts: ["Aide-moi à écrire un premier message à un membre", "Comment relancer quelqu’un sans insister ?"] },
-  { match: /^\/matching/, prompts: ["Comment préparer un premier échange de 30 minutes ?", "Que demander à un mentor la première fois ?"] },
+  { match: /^\/membres\/binome/, prompts: ["Comment préparer un premier échange de 30 minutes ?", "Que demander à un mentor la première fois ?"] },
   { match: /^\/ruches/, prompts: ["Comment animer une ruche pour qu’elle reste vivante ?", "Aide-moi à lancer un projet avec d’autres membres"] },
   { match: /^\/talk-show/, prompts: ["Aide-moi à trouver l’idée de mon talk", "Comment structurer un talk de dix minutes ?"] },
   { match: /^\/membres/, prompts: ["Avec qui devrais-je échanger en priorité ?", "Comment demander conseil à un pair ?"] },
@@ -52,7 +52,7 @@ export function CoachBubble() {
   const dismissHint = () => { setHint(false); try { sessionStorage.setItem(HINT_KEY, "1"); } catch { /* ignore */ } };
 
   // La page Présence IA contient déjà le coach en grand format
-  if (pathname.startsWith("/presence-ia")) return null;
+  if (pathname.startsWith("/parcours/presence-ia")) return null;
 
   return (
     <div className="fixed z-40 right-3 bottom-[80px] sm:right-6 lg:bottom-6 flex flex-col items-end gap-3 pointer-events-none" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>

@@ -25,7 +25,7 @@ export default function BuildCourse() {
   const [tab, setTab] = useState<Tab>("sections");
   useFreshNotion(status.data);
   const [revision, setRevision] = useState(0);
-  const crumbs = [{ label: "Mes formations", to: "/admin/construire" }];
+  const crumbs = [{ label: "Mes formations", to: "/admin/createur" }];
   if (!q.data) return <CreatorShell crumbs={crumbs}><p className="p-muted text-center py-16 m-0">{q.isLoading ? "Chargement…" : (q.error?.message ?? "Formation introuvable")}</p></CreatorShell>;
   const c = q.data;
   const lessons = c.sections.flatMap((s) => s.lessons);
@@ -37,13 +37,13 @@ export default function BuildCourse() {
     { id: "stats", label: "Statistiques", icon: <BarChart3 size={16} /> },
   ];
   return (
-    <CreatorShell crumbs={[...crumbs, { label: c.title }]} actions={<>{lessons[0] && <Link to={`/admin/construire/${c.id}/apercu/${lessons[0].id}`} className="cr-btn"><Eye size={16} /> Aperçu</Link>}<CourseActions c={c} /></>}>
+    <CreatorShell crumbs={[...crumbs, { label: c.title }]} actions={<>{lessons[0] && <Link to={`/admin/createur/${c.id}/apercu/${lessons[0].id}`} className="cr-btn"><Eye size={16} /> Aperçu</Link>}<CourseActions c={c} /></>}>
       <main className="w-full max-w-[1350px] mx-auto px-4 lg:px-10 pt-8 pb-14">
         <div className="mb-7 flex flex-wrap items-start justify-between gap-3">
           <div><p className="m-0 mb-2 text-[12px] font-medium" style={{ color: "var(--p-accent)" }}>VOTRE ESPACE DE TRANSMISSION</p><h1 className="m-0 text-[30px] leading-9">Un savoir à partager.</h1><p className="m-0 mt-2 text-[14px] p-muted">Donnez vie à votre formation, à votre rythme.</p></div>
           <StatusPill status={c.status} />
         </div>
-        <div className="relative h-[190px] overflow-hidden rounded-2xl flex items-center justify-center" style={{ background: "#F3ECE8" }}>
+        <div className="relative h-[190px] overflow-hidden rounded-2xl flex items-center justify-center" style={{ background: "var(--p-surface-2)" }}>
           {c.coverUrl ? <img src={c.coverUrl} alt="" className="w-full h-full object-cover" /> : <span aria-hidden="true" className="text-[64px]">{c.emoji || "🌱"}</span>}
           {c.tagline && <span className="absolute bottom-4 left-4 right-4 sm:right-auto sm:left-5 flex items-center gap-2 rounded-[14px] px-3 py-1.5 text-[12px] font-medium" style={{ background: "rgba(253, 251, 249, .95)" }}><Leaf size={14} className="flex-none" style={{ color: "var(--p-accent)" }} /><span className="truncate">{PUBLIC_LABEL[c.public]} · {RHYTHM_LABEL[c.rhythm]}</span></span>}
         </div>
@@ -51,7 +51,7 @@ export default function BuildCourse() {
           <div className="min-w-0"><h2 className="m-0 text-[24px] leading-8 break-words">{c.emoji && c.coverUrl ? `${c.emoji} ` : ""}{c.title}</h2>{c.tagline && <p className="m-0 mt-2 max-w-[672px] text-[14px] leading-relaxed p-muted">{c.tagline}</p>}</div>
           <button type="button" aria-label="Modifier les informations de la formation" className="cr-icon w-9 h-9" onClick={() => setTab("reglages")}><Pencil size={16} /></button>
         </div>
-        {c.status !== "publie" && <p className="m-0 mt-4 p-3 rounded-xl text-[13px]" style={{ background: "#F3ECE8" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses leçons le sont.</p>}
+        {c.status !== "publie" && <p className="m-0 mt-4 p-3 rounded-xl text-[13px]" style={{ background: "var(--p-surface-2)" }}>Cette formation n’est pas encore publiée : les membres ne la voient pas, même si ses leçons le sont.</p>}
         <div role="tablist" aria-label="Rubriques de la formation" className="mt-7 flex gap-7 border-b overflow-x-auto" style={{ borderColor: "var(--p-line)", scrollbarWidth: "none" }}>
           {tabs.map((t) => <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className="cr-tab" onClick={() => setTab(t.id)}>{t.icon} {t.label}{t.n ? ` · ${t.n}` : ""}</button>)}
         </div>
@@ -68,7 +68,7 @@ export default function BuildCourse() {
                   <span className="flex items-center gap-2.5"><Clock size={16} className="p-muted" /><span className="p-muted">Durée totale</span><span className="ml-auto font-semibold">{total} min</span></span>
                 </div>
                 <p className="m-0 mt-5 text-[10px] font-medium tracking-[0.12em] p-muted">FORMATS DE LEÇONS</p>
-                <div className="mt-3 flex flex-wrap gap-2">{[...new Set(lessons.map(shownType))].map((t) => <span key={t} className="rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: "var(--p-line)", background: "#FDFBF9" }}>{LESSON_TYPE_LABEL[t]}</span>)}</div>
+                <div className="mt-3 flex flex-wrap gap-2">{[...new Set(lessons.map(shownType))].map((t) => <span key={t} className="rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: "var(--p-line)", background: "var(--p-bg)" }}>{LESSON_TYPE_LABEL[t]}</span>)}</div>
                 <a href={notionUrl(c.notionPageId)} target="_blank" rel="noopener noreferrer" className="mt-5 flex items-center gap-1.5 text-[12px] no-underline p-muted"><ExternalLink size={14} /> Ouvrir dans Notion</a>
                 <div className="mt-7 border-t pt-5" style={{ borderColor: "var(--p-line)" }}>
                   <Leaf size={24} className="mb-3" style={{ color: "var(--p-accent)" }} />
@@ -89,7 +89,7 @@ export default function BuildCourse() {
 
 function StatusPill({ status }: { status: Course["status"] }) {
   const on = status === "publie";
-  return <span className="mt-2 flex items-center gap-1.5 rounded-full border bg-white px-3 py-1 text-[12px] whitespace-nowrap" style={{ borderColor: "var(--p-line)", color: on ? "#2b7a4b" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{COURSE_STATUS_LABEL[status]}</span>;
+  return <span className="mt-2 flex items-center gap-1.5 rounded-full border bg-[var(--p-surface)] px-3 py-1 text-[12px] whitespace-nowrap" style={{ borderColor: "var(--p-line)", color: on ? "var(--p-ok)" : "var(--p-ink-2)" }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />{COURSE_STATUS_LABEL[status]}</span>;
 }
 
 /** Publier ou dépublier en un clic : le statut change d'abord dans Notion. */
@@ -139,7 +139,7 @@ function DeleteCourse({ c }: { c: Course }) {
   const navigate = useNavigate();
   const [typed, setTyped] = useState("");
   const [open, setOpen] = useState(false);
-  const remove = trpc.build.archiveCourse.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Formation supprimée, à la corbeille de Notion"); navigate("/admin/construire"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  const remove = trpc.build.archiveCourse.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Formation supprimée, à la corbeille de Notion"); navigate("/admin/createur"); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   if (!open) return <button type="button" className="p-btn-ghost self-start" onClick={() => setOpen(true)}><Trash2 size={14} /> Supprimer cette formation</button>;
   return (
     <form className="p-3.5 rounded-xl flex flex-col gap-2.5 text-[14.5px]" style={{ background: "var(--p-accent-soft)" }} onSubmit={(e) => { e.preventDefault(); if (typed === "SUPPRIMER") remove.mutate({ id: c.id }); }}>

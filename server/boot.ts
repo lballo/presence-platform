@@ -24,6 +24,7 @@ app.get("/api/health", async (c) => {
     NOTION_TOKEN: !!env.notionToken,
     PRIVATE_DATA_KEY: !!env.privateDataKey,
     RESEND_API_KEY: !!env.resendApiKey,
+    STRIPE_SECRET_KEY: !!env.stripeSecretKey,
     runtime: process.env.VERCEL ? "vercel" : process.env.RENDER ? "render" : "node",
   };
   if (!env.databaseUrl) return c.json({ ok: false, error: "DATABASE_URL manquante", config }, 500);

@@ -29,11 +29,11 @@ export default function Forum() {
 
   return (
     <div className="flex gap-6 lg:gap-8 items-start">
-      <aside className="hidden md:block w-[216px] flex-none sticky top-6 max-h-[calc(100vh-48px)] overflow-y-auto lg:top-0 lg:w-[236px] lg:h-screen lg:max-h-none lg:px-3 lg:py-6 lg:border-r" style={{ borderColor: "var(--p-menu-line)" }} aria-label="Espaces du forum">
+      <aside className="hidden md:block w-[216px] flex-none sticky top-6 max-h-[calc(100vh-48px)] overflow-y-auto lg:top-14 lg:w-[236px] lg:h-[calc(100vh-3.5rem)] lg:max-h-none lg:px-3 lg:py-6 lg:border-r" style={{ borderColor: "var(--p-menu-line)" }} aria-label="Espaces du forum">
         {data && <SpaceNav data={data} onAdd={() => setAdding(true)} />}
       </aside>
 
-      <div className="flex-1 min-w-0 flex flex-col gap-4 lg:max-w-[860px] lg:mx-auto lg:pt-10">
+      <div className="flex-1 min-w-0 flex flex-col gap-4 lg:max-w-[860px] lg:mx-auto lg:pt-4">
         <div className="md:hidden">{data && <SpaceDropdown data={data} onAdd={() => setAdding(true)} label={id ? "Espaces du forum" : space ? `${space.emoji} ${space.name}` : FEED_NAME} />}</div>
 
         {id ? <SinglePost id={Number(id)} onEdit={editPost} /> : (

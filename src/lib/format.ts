@@ -40,6 +40,8 @@ function parisFields(d: Date) {
 }
 /** « Jeudi 5 novembre » à Paris */
 export function parisLongDate(d: Date): string { const p = parisFields(d); return `${cap(JOURS[p.wd])} ${p.d === 1 ? "1er" : p.d} ${MOIS[p.m - 1]}`; }
+/** « 15 juillet 2027 » à Paris : pour une échéance, l'année compte */
+export function parisDateYear(d: Date): string { const p = parisFields(d); return `${p.d === 1 ? "1er" : p.d} ${MOIS[p.m - 1]} ${p.y}`; }
 /** « 18h30 » à Paris */
 export function parisHour(d: Date): string { const p = parisFields(d); return `${p.h}h${String(p.min).padStart(2, "0")}`; }
 /** « 2026-11-05 » : le jour à Paris, pour placer un événement dans le calendrier */

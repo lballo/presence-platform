@@ -18,7 +18,7 @@ export function useLeaveWarning(dirty: boolean) {
 export function IssueList({ issues }: { issues: string[] }) {
   if (!issues.length) return null;
   return (
-    <details className="p-3 rounded-xl text-[13px]" style={{ background: "#F3ECE8" }}>
+    <details className="p-3 rounded-xl text-[13px]" style={{ background: "var(--p-surface-2)" }}>
       <summary className="cursor-pointer font-medium">{issues.length} point{issues.length > 1 ? "s" : ""} à regarder</summary>
       <ul className="m-0 mt-2 pl-4 list-disc flex flex-col gap-1">{issues.map((i) => <li key={i}>{i}</li>)}</ul>
     </details>

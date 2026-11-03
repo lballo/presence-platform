@@ -44,7 +44,7 @@ export async function runWorkflows(now = new Date()) {
         if (s.opened) continue;
         if (!(await once(fresh.key, e.memberId, `section:${s.id}`))) continue;
         const values = { section: s.title, formation: course.title };
-        await notify([e.memberId], { title: fill(fresh.title, values), body: fill(fresh.body, values), href: sectionPath(course.id, s.id) });
+        await notify([e.memberId], { title: fill(fresh.title, values), body: fill(fresh.body, values), href: sectionPath(course.id, s.id) }, "formations");
         await logActivity(e.memberId, "section_disponible", { courseId: course.id, sectionId: s.id, label: s.title });
         counts[fresh.key]++;
         if (fresh.emailEnabled) await sendCourseReminder(member, course, { template: "nouvelle_section", sectionId: s.id, sectionTitle: s.title, lessonId: null, lessonTitle: "" }, { kind: "auto" });
@@ -61,7 +61,7 @@ export async function runWorkflows(now = new Date()) {
       // Une relance par période d'inactivité : reprendre puis s'arrêter à nouveau en redéclenche une
       if (!(await once(pause.key, e.memberId, `pause:${course.id}:${e.lastActivityAt.toISOString().slice(0, 10)}`))) continue;
       const values = { formation: course.title };
-      await notify([e.memberId], { title: fill(pause.title, values), body: fill(pause.body, values), href: `/parcours/${course.id}` });
+      await notify([e.memberId], { title: fill(pause.title, values), body: fill(pause.body, values), href: `/parcours/${course.id}` }, "formations");
       await logActivity(e.memberId, "formation_en_pause", { courseId: course.id, label: course.title });
       counts[pause.key]++;
       if (pause.emailEnabled) {

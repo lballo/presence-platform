@@ -67,7 +67,7 @@ function Action({ s, d, onPresent, text }: { s: Step; d: Data; onPresent: () => 
   const btn = "p-btn-outline p-btn-sm no-underline flex-none";
   switch (s.action) {
     case "tuto": return inTour ? null : <button type="button" className={btn} disabled={restart.isPending} onClick={() => restart.mutate()}>{text.cta}</button>;
-    case "profil": return <button type="button" className={btn} onClick={() => navigate("/?profil=1")}>{text.cta}</button>;
+    case "profil": return <button type="button" className={btn} onClick={() => navigate("/profil?modifier=1")}>{text.cta}</button>;
     case "presentation": return <button type="button" className={btn} onClick={onPresent}>{text.cta}</button>;
     case "premier_message": return <Link to="/membres" className={btn}>{text.cta}</Link>;
     case "premier_evenement": return <Link to="/evenements" className={btn}>{text.cta}</Link>;

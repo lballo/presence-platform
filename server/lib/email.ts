@@ -9,10 +9,15 @@ import { env } from "./env";
  * Les e-mails de compte (invitation, mot de passe) ne sont pas des relances : ils partent toujours.
  * Le marketing demande un accord : il est désactivé tant que le membre ne l'a pas activé.
  */
+// « soon » : aucun e-mail de ce type ne part encore ; le choix du membre sera respecté dès le premier envoi.
 export const EMAIL_CATEGORIES = {
-  formations: { label: "Relances de formation", description: "Une nouvelle section ouverte, ou un rappel quand votre formation est en pause.", byDefault: true },
-  evenements: { label: "Relances d’événements", description: "Les rappels liés aux événements du réseau.", byDefault: true },
-  marketing: { label: "Actualités et offres", description: "Les nouveautés et les propositions de Laura.", byDefault: false },
+  messages: { label: "Nouveaux messages", description: "Quand un membre vous écrit et que vous n’êtes pas connecté·e.", byDefault: true, soon: true },
+  evenements: { label: "Événements", description: "Les rappels liés aux événements du réseau.", byDefault: true, soon: false },
+  ruches: { label: "Annonces de ruche", description: "Les annonces des ruches dont vous faites partie.", byDefault: true, soon: true },
+  resume: { label: "Résumé hebdomadaire", description: "Une fois par semaine, ce qui s’est passé dans le réseau.", byDefault: true, soon: true },
+  coaching: { label: "Mon coaching", description: "Pour les clients du coaching individuel : l’invitation à réserver la séance de mi-parcours.", byDefault: true, soon: false },
+  formations: { label: "Relances de formation", description: "Une nouvelle section ouverte, ou un rappel quand votre formation est en pause.", byDefault: true, soon: false },
+  marketing: { label: "Actualités et offres", description: "Les nouveautés et les propositions de Laura.", byDefault: false, soon: false },
 } as const;
 
 export type EmailCategory = keyof typeof EMAIL_CATEGORIES;

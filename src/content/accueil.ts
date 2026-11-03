@@ -33,9 +33,9 @@ export const PANELS = {
 
 /** Le tuto du coach : une bulle par étape, deux phrases au plus. */
 export const TOUR_STEPS = [
-  { target: "/presence-ia", text: "Voici Présence IA. Entraînez-vous à la prise de parole et faites analyser vos vidéos." },
+  { target: "/parcours", text: "Dans Mon parcours, retrouvez vos formations et Présence IA, pour vous entraîner à la prise de parole et faire analyser vos vidéos." },
   { target: "coach", text: "Et moi, je suis votre coach. Posez-moi vos questions, je vous guide au quotidien." },
-  { target: "/matching", text: "Le matching vous fait découvrir les membres qui correspondent à vos objectifs." },
+  { target: "/membres", text: "Dans Membres, « Trouver mon binôme » vous fait découvrir ceux qui correspondent à vos objectifs." },
   { target: "/ruches", text: "Les ruches sont nos petits cercles. Rejoignez ou créez une communauté ou un projet." },
   { target: null, text: "Complétez votre bio pour gagner vos premiers 20 miels. Un peu de précieux nectar pour bien commencer." },
 ] as const;
@@ -47,9 +47,9 @@ export const SECTION_BUBBLES: Record<string, string> = {
   "/evenements": "Ici, les rendez-vous du réseau. Inscrivez-vous en un clic : l’adresse arrive avec votre place.",
   "/forum": "Le forum, c’est la vie du réseau. Racontez, demandez, répondez : chaque espace a son ton.",
   "/messages": "Écrivez directement à un membre. Votre premier message rapporte 10 miels.",
-  "/membres": "L’annuaire du réseau. Cherchez un parcours, une ville, une envie.",
+  "/membres": "L’annuaire du réseau. Cherchez un parcours, une ville, une envie, ou trouvez votre binôme.",
   "/talk-show": "Les talks des membres. Regardez, inspirez-vous, et proposez le vôtre.",
-  "/parcours": "Vos formations, vos tests, votre journal et ce que le coach retient de vous. Une section s’ouvre chaque semaine, et vos réponses restent privées.",
+  "/parcours": "Vos formations, vos tests, votre journal, Présence IA et ce que le coach retient de vous. Une section s’ouvre chaque semaine, et vos réponses restent privées.",
 };
 
 /** La rubrique dont la bulle reste à montrer sur cette page. */

@@ -73,7 +73,7 @@ export default function TalkShow() {
             <span className="p-eyebrow">Proposer un talk</span>
             <p className="m-0 text-[14px] leading-relaxed p-muted">Une idée qui a changé votre façon de diriger ? Dix minutes, face caméra. Vous envoyez votre vidéo, l’équipe Présence la regarde et la publie.</p>
             <button type="button" className="p-btn-outline p-btn-sm self-start" onClick={openForm}><Film size={15} /> Soumettre ma vidéo</button>
-            <Link to="/presence-ia" className="p-btn-ghost text-[14px] no-underline">Répéter avec Présence IA →</Link>
+            <Link to="/parcours/presence-ia" className="p-btn-ghost text-[14px] no-underline">Répéter avec Présence IA →</Link>
           </section>
         </aside>
       </div>

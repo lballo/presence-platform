@@ -22,7 +22,7 @@ export default function BuildSection() {
   const q = trpc.build.section.useQuery({ id: Number(sectionId) }, { retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0 });
   const course = trpc.build.course.useQuery({ id: Number(id) }, { retry: false, refetchOnWindowFocus: false });
   const [revision, setRevision] = useState(0);
-  const crumbs = [{ label: "Mes formations", to: "/admin/construire" }, { label: course.data?.title ?? "Formation", to: `/admin/construire/${id}` }];
+  const crumbs = [{ label: "Mes formations", to: "/admin/createur" }, { label: course.data?.title ?? "Formation", to: `/admin/createur/${id}` }];
   if (!q.data) return <CreatorShell wide aside={<CoursePanel c={course.data} currentSection={Number(sectionId)} />} crumbs={crumbs}><p className="p-muted text-center py-16 m-0">{q.isLoading ? "Chargement…" : (q.error?.message ?? "Section introuvable")}</p></CreatorShell>;
   return <Editor key={`${q.data.id}-${revision}`} s={q.data} course={course.data} crumbs={crumbs} reload={() => setRevision((r) => r + 1)} refetch={() => q.refetch()} />;
 }
@@ -75,8 +75,8 @@ function Editor({ s, course, crumbs, reload, refetch }: { s: Section; course: Ro
     ...(!shown.objectifs ? [{ id: "b-objectifs", label: "Objectifs", desc: "Ce que le membre saura faire", icon: <ListChecks size={14} />, add: addObjectifs }] : []),
     ...(!shown.defi ? [{ id: "b-defi", label: "Défi dans le réseau", desc: "Avec le bouton « J’ai relevé ce défi »", icon: <Flag size={14} />, add: addDefi }] : []),
   ];
-  const archive = trpc.build.archiveSection.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Section et leçons à la corbeille de Notion"); navigate(`/admin/construire/${s.courseId}`); }, onError: (e) => toast.error(e.message) });
-  const duplicate = trpc.build.duplicateSection.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Section et leçons copiées dans Notion, leçons en brouillon"); navigate(`/admin/construire/${s.courseId}/section/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
+  const archive = trpc.build.archiveSection.useMutation({ onSuccess: () => { utils.build.invalidate(); toast.success("Section et leçons à la corbeille de Notion"); navigate(`/admin/createur/${s.courseId}`); }, onError: (e) => toast.error(e.message) });
+  const duplicate = trpc.build.duplicateSection.useMutation({ onSuccess: (r) => { utils.build.invalidate(); toast.success("Section et leçons copiées dans Notion, leçons en brouillon"); navigate(`/admin/createur/${s.courseId}/section/${r.id}`); }, onError: (e) => toast.error(e.message, { duration: 8000 }) });
   useLeaveWarning(saver.state !== "saved");
   const leave = useLeaveGuard({ pending: saver.pending, auto, save: saver.saveNow });
   useEffect(() => {
@@ -110,10 +110,10 @@ function Editor({ s, course, crumbs, reload, refetch }: { s: Section; course: Ro
               </section>
             )}
             {shown.defi && (
-              <section className="cr-removable flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "#F3ECE8" }} aria-label="Défi dans le réseau">
-                <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "#fff", color: "#AA564C" }}><Flag size={15} /></span>
+              <section className="cr-removable flex gap-3.5 items-start rounded-[14px] p-4 mt-7" style={{ background: "var(--p-surface-2)" }} aria-label="Défi dans le réseau">
+                <span className="w-[30px] h-[30px] flex-none rounded-lg flex items-center justify-center" style={{ background: "var(--p-surface)", color: "var(--p-gold)" }}><Flag size={15} /></span>
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 px-2"><span className="text-[11px] tracking-[0.22em]" style={{ color: "#AA564C" }}>DÉFI DANS LE RÉSEAU</span><RemoveBlock label="Défi dans le réseau" filled={hasWritten(defi)} onRemove={() => { setDefi(keepUnknown(defi)); saver.touch(); setShown((x) => ({ ...x, defi: false })); }} /></div>
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 px-2"><span className="text-[11px] tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>DÉFI DANS LE RÉSEAU</span><RemoveBlock label="Défi dans le réseau" filled={hasWritten(defi)} onRemove={() => { setDefi(keepUnknown(defi)); saver.touch(); setShown((x) => ({ ...x, defi: false })); }} /></div>
                   <BlockEditor label="Défi dans le réseau" variant="defi" addLabel="Ajouter au défi" placeholder="Le défi à relever dans le réseau…" blocks={defi} onChange={(b) => { setDefi(b); saver.touch(); }} />
                   <span className="text-[11px] px-2 p-muted">Facultatif. Les membres voient ce texte et le bouton « J’ai relevé ce défi » ; il ne compte pas pour terminer la section.</span>
                 </div>
@@ -127,7 +127,7 @@ function Editor({ s, course, crumbs, reload, refetch }: { s: Section; course: Ro
           <div className="mt-4 flex flex-col gap-[18px]">
             <IssueList issues={issues} />
             <p className="m-0 text-[12px] p-muted leading-snug">{visible ? "Visible par les membres : une de ses leçons est publiée. Vos modifications leur arrivent quand vous cliquez sur Enregistrer." : "Invisible des membres tant qu’aucune de ses leçons n’est publiée. Tout s’enregistre au fil de votre écriture."}</p>
-            <label className="flex flex-col gap-2 text-[12px] font-medium">Ordre (semaine d’ouverture)<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-white w-full" style={{ borderColor: "var(--p-line)" }} value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
+            <label className="flex flex-col gap-2 text-[12px] font-medium">Ordre (semaine d’ouverture)<input type="number" min={0} className="border rounded-md px-3 py-2.5 text-[14px] font-normal bg-[var(--p-surface)] w-full" style={{ borderColor: "var(--p-line)" }} value={f.position} onChange={(e) => set({ position: Number(e.target.value) })} /></label>
             <div className="flex flex-col gap-2"><span className="text-[12px] font-medium">Hashtags</span><HashtagPicker all={tags.data ?? []} value={f.hashtagIds} onChange={(hashtagIds) => set({ hashtagIds })} /></div>
             <div className="flex flex-col items-start gap-1.5 text-[12px]">
               <a href={notionUrl(s.notionPageId)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline py-1 p-muted"><ExternalLink size={14} /> Ouvrir dans Notion</a>

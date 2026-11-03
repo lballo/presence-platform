@@ -8,7 +8,7 @@ export default function Desinscription() {
   const link = { m: Number(params.get("m")) || 0, c: params.get("c") ?? "", t: params.get("t") ?? "" };
   const q = trpc.emailPrefs.describeLink.useQuery(link, { retry: false });
   const go = trpc.emailPrefs.unsubscribeByLink.useMutation();
-  const prefs = <Link to="/#mes-emails" className="p-link text-[14.5px] self-start">Gérer tous mes e-mails</Link>;
+  const prefs = <Link to="/parametres/notifications" className="p-link text-[14.5px] self-start">Gérer tous mes e-mails</Link>;
   if (q.isLoading) return <AuthShell title="Mes e-mails"><p className="m-0 p-muted">Chargement…</p></AuthShell>;
   if (!q.data?.valid) return <AuthShell title="Lien invalide" intro="Ce lien ne fonctionne pas. Vous pouvez choisir vos e-mails depuis votre tableau de bord.">{prefs}</AuthShell>;
   if (go.data?.ok || !q.data.enabled) return <AuthShell title="C’est noté" intro={`Vous ne recevrez plus : ${q.data.label.toLowerCase()}.`}>{prefs}</AuthShell>;
