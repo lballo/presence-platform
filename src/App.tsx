@@ -1,7 +1,6 @@
 import { Navigate, Routes, Route, useLocation } from "react-router";
 import { Toaster } from "sonner";
 import Layout from "@/components/Layout";
-import Dashboard from "@/pages/Dashboard";
 import Parcours from "@/pages/Parcours";
 import ParcoursLayout from "@/pages/parcours/ParcoursLayout";
 import Ressources from "@/pages/parcours/Ressources";
@@ -11,12 +10,13 @@ import LessonPage, { LegacyModuleRedirect } from "@/pages/parcours/LessonPage";
 import JournalPage from "@/pages/parcours/JournalPage";
 import CoachMemoryPage from "@/pages/parcours/CoachMemoryPage";
 import AccompagnementPage from "@/pages/parcours/AccompagnementPage";
-import ProfilLayout from "@/pages/profil/ProfilLayout";
-import MonProfil from "@/pages/profil/MonProfil";
-import Progression from "@/pages/profil/Progression";
-import Calendrier from "@/pages/profil/Calendrier";
-import Localisation from "@/pages/profil/Localisation";
-import Coaching from "@/pages/profil/Coaching";
+import AccueilLayout from "@/pages/accueil/AccueilLayout";
+import Actualite from "@/pages/accueil/Actualite";
+import MonProfil from "@/pages/accueil/MonProfil";
+import Progression from "@/pages/accueil/Progression";
+import Calendrier from "@/pages/accueil/Calendrier";
+import Localisation from "@/pages/accueil/Localisation";
+import Coaching from "@/pages/accueil/Coaching";
 import ParametresLayout from "@/pages/parametres/ParametresLayout";
 import Identite from "@/pages/parametres/Identite";
 import Notifications from "@/pages/parametres/Notifications";
@@ -108,7 +108,15 @@ export default function App() {
         <Route path=":id" element={<CoachingClient />} />
       </Route>
       <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
+        {/* L'accueil : l'actualité et le profil, en sous-pages sous « Bonjour » (piste E) */}
+        <Route element={<AccueilLayout />}>
+          <Route path="/" element={<Actualite />} />
+          <Route path="/profil" element={<MonProfil />} />
+          <Route path="/profil/progression" element={<Progression />} />
+          <Route path="/profil/calendrier" element={<Calendrier />} />
+          <Route path="/profil/localisation" element={<Localisation />} />
+          <Route path="/profil/coaching" element={<Coaching />} />
+        </Route>
         <Route path="/parcours" element={<ParcoursLayout />}>
           <Route index element={<Parcours />} />
           <Route path="ressources" element={<Ressources />} />
@@ -149,13 +157,6 @@ export default function App() {
           <Route path="binome" element={<Matching />} />
         </Route>
         <Route path="/membres/:id" element={<Profil />} />
-        <Route path="/profil" element={<ProfilLayout />}>
-          <Route index element={<MonProfil />} />
-          <Route path="progression" element={<Progression />} />
-          <Route path="calendrier" element={<Calendrier />} />
-          <Route path="localisation" element={<Localisation />} />
-          <Route path="coaching" element={<Coaching />} />
-        </Route>
         <Route path="/parametres" element={<ParametresLayout />}>
           <Route index element={<Identite />} />
           <Route path="notifications" element={<Notifications />} />

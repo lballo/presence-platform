@@ -146,7 +146,7 @@ export const accountRouter = createRouter({
       exportedAt: new Date(),
       profile: {
         firstName: m.firstName, lastName: m.lastName, email: m.email, jobTitle: m.jobTitle, organisation: m.org, city: m.city, country: m.country, zone: m.zone,
-        intention: m.intention, bio: m.bio, ambition: m.ambition, values: m.values, passions: m.passions, intents: m.intents, goals: m.goals, goalsOther: m.goalsOther,
+        intention: m.intention, bio: m.bio, ambition: m.ambition, values: m.values, passions: m.passions, bucketList: m.bucketList, intents: m.intents, goals: m.goals, goalsOther: m.goalsOther,
         linkedinUrl: m.linkedinUrl, langs: m.langs, photoUrl: m.photoUrl, visibleInDirectory: m.visibleInDirectory, role: m.role, accessType: m.accessType, accessEndsAt: m.accessEndsAt, createdAt: m.createdAt,
       },
       journal: journal.map((e) => ({ course: e.courseTitle, lesson: e.lessonTitle || e.moduleTitle, question: e.questionText, answer: clear(e.answerEnc), sharedWithLaura: !!e.sharedAt, createdAt: e.createdAt, updatedAt: e.updatedAt })),

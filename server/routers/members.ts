@@ -82,6 +82,7 @@ export const membersRouter = createRouter({
         bio: z.string().max(1500).default(""),
         ambition: z.string().max(600).default(""),
         passions: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
+        bucketList: z.array(z.string().trim().min(1).max(80)).max(8).default([]),
         linkedinUrl: z.string().trim().max(300).default("").refine((u) => !u || /^https?:\/\/([\w-]+\.)?linkedin\.com\/\S+$/i.test(u), "Le lien LinkedIn doit ressembler à https://www.linkedin.com/in/votre-nom"),
         values: z.array(z.string().min(1).max(40)).max(5),
         intents: z.array(z.enum(INTENT_CODES)).max(3),

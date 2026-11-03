@@ -72,7 +72,7 @@ export async function anonymize(m: Member) {
   for (const e of upcoming) await unregisterMember(e.id, m.id);
   await db.update(members).set({
     firstName: "Membre", lastName: "supprimé", gender: "f", jobTitle: "", org: "", city: "", country: "", zone: "France", photoUrl: null,
-    bio: "", intention: "", ambition: "", passions: [], linkedinUrl: "", values: [], intents: [], pole: "", langs: "",
+    bio: "", intention: "", ambition: "", passions: [], bucketList: [], linkedinUrl: "", values: [], intents: [], pole: "", langs: "",
     visibleInDirectory: false, rencontreEnabled: false, rencontreBlurb: "", isCoached: false,
     goals: [], goalsOther: "", matchProfiles: [], matchSectors: [], profileType: "", sector: "",
     organizerRequest: "", organizerRequestedAt: null,

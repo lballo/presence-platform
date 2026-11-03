@@ -52,6 +52,7 @@ export const members = pgTable("members", {
   intention: text("intention").notNull().default(""),
   ambition: text("ambition").notNull().default(""), // mon ambition (texte libre)
   passions: jsonb("passions").$type<string[]>().notNull().default([]),
+  bucketList: jsonb("bucket_list").$type<string[]>().notNull().default([]), // ma bucket list : désirs, rêves, lieux à découvrir
   linkedinUrl: text("linkedin_url").notNull().default(""),
   values: jsonb("values").$type<string[]>().notNull().default([]),
   // codes : "mentorat:seek" | "mentorat:offer" | "pairs:sym" | "associe:sym" | "invest:seek" | "invest:offer"

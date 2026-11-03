@@ -1,5 +1,5 @@
-import { Link, Outlet } from "react-router";
-import { Bell, CreditCard, FileText, KeyRound, ShieldCheck, UserRound } from "lucide-react";
+import { Outlet } from "react-router";
+import { Bell, CreditCard, FileText, KeyRound, ShieldCheck } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { SubNav, type SubPage } from "@/components/SubNav";
@@ -23,7 +23,6 @@ export default function ParametresLayout() {
           <span className="p-eyebrow">Mon compte</span>
           <h1 className="m-0 text-[clamp(34px,4.5vw,48px)] leading-[1.05]">Paramètres</h1>
         </div>
-        <Link to="/profil" className="p-btn-outline no-underline"><UserRound size={16} /> Voir mon profil</Link>
       </header>
       <SubNav label="Paramètres" pages={PAGES} />
       <div className="max-w-[820px] flex flex-col gap-5">

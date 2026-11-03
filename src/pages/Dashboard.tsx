@@ -1,112 +1,41 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
-import { Linkedin, Pencil, CalendarPlus, ExternalLink, ArrowRight, Compass, Check, Play, Info } from "lucide-react";
+// Les morceaux de l'ancien tableau de bord, repris par l'accueil (src/pages/accueil) : bandeau coaching,
+// Miracle Routine, candidature organisateur, formulaire du profil.
+import { useState } from "react";
+import { Link } from "react-router";
+import { CalendarPlus, Compass, Play } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
-import { AgendaCalendar } from "@/components/events/AgendaCalendar";
-import { FirstSteps } from "@/components/onboarding/FirstSteps";
-import { WeekSection } from "@/components/course/WeekSection";
-import { ReplayTour } from "@/components/onboarding/Tour";
 import { Avatar } from "@/components/Avatar";
 import { useUpload } from "@/lib/upload";
 import { PROFILE_PROMPT } from "@/content/accueil";
-import { PinnedAnnouncements } from "@/components/forum/PinnedAnnouncements";
 
 const PREFS: [string, string][] = [["f", "Une femme"], ["m", "Un homme"], ["all", "Peu importe"]];
-
-export default function Dashboard() {
-  const me = trpc.members.me.useQuery();
-  const coaching = trpc.dashboard.coaching.useQuery();
-  const news = trpc.dashboard.news.useQuery();
-  const [params, setParams] = useSearchParams();
-  // « ?profil=1 » ouvre directement le formulaire du profil (tuto, carte Mes premiers pas)
-  const askedProfile = params.get("profil") === "1";
-  const [editingProfile, setEditingProfile] = useState(false);
-  const editing = editingProfile || askedProfile;
-  const setEditing = (on: boolean) => { setEditingProfile(on); if (!on && askedProfile) setParams({}, { replace: true }); window.scrollTo(0, 0); };
-  useEffect(() => { if (askedProfile) window.scrollTo(0, 0); }, [askedProfile]);
-  // Les choix d'e-mails ont rejoint les paramètres : les anciens liens y mènent
-  const navigate = useNavigate();
-  useEffect(() => { if (window.location.hash === "#mes-emails") navigate("/parametres/notifications", { replace: true }); }, [navigate]);
-  const today = new Date();
-
-  return (
-    <>
-      <header className="flex flex-col gap-3 mb-8">
-        <span className="p-eyebrow">{longDate(today)}</span>
-        <h1 className="text-[clamp(38px,5vw,56px)] leading-[1.05] m-0">Bonjour {me.data?.firstName ?? ""}</h1>
-        <p className="m-0 text-[17px] p-muted">Votre semaine en un coup d’œil.</p>
-      </header>
-
-      <PinnedAnnouncements />
-
-      {!editing && <WeekSection />}
-
-      {!editing && <FirstSteps />}
-
-      {me.data && (editing ? <ProfileEditor me={me.data} onDone={() => setEditing(false)} /> : <ProfileCard me={me.data} onEdit={() => setEditing(true)} />)}
-
-      {me.data && !editing && <OrganizerCard me={me.data} />}
-
-      {coaching.data && <CoachingBand c={coaching.data} />}
-
-      <AgendaCalendar />
-
-      <section className="mt-9">
-        <span className="p-eyebrow">Cette semaine dans Présence</span>
-        <h2 className="text-[clamp(28px,3.4vw,36px)] mt-1 mb-4">Ce qui se passe dans le cercle</h2>
-        <div className="grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
-          {news.data?.map((n, i) => (
-            <Link key={i} to={n.href} className="p-card flex gap-4 items-start p-5 no-underline" style={{ color: "var(--p-ink)" }}>
-              {n.photoUrl ? <img src={n.photoUrl} alt="" className="p-avatar" style={{ width: 52, height: 52 }} /> : <span className="p-initials" style={{ width: 52, height: 52, fontSize: 18 }}>{n.cat[0]}</span>}
-              <span className="flex-1 min-w-0 flex flex-col gap-1">
-                <span className="text-[11.5px] font-semibold uppercase tracking-[0.24em]" style={{ color: "var(--p-gold)" }}>{n.cat}</span>
-                <span className="text-[16px] font-semibold leading-snug">{n.title}</span>
-                <span className="text-[13.5px] p-muted leading-relaxed">{n.sub}</span>
-              </span>
-              <ArrowRight size={16} className="p-faint mt-1 flex-none" />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <MiracleRoutine />
-    </>
-  );
-}
 
 // Lien vers l’application (Google Play) : VITE_MIRACLE_ROUTINE_URL dans .env, sinon lien neutre.
 const MIRACLE_ROUTINE_URL: string = import.meta.env.VITE_MIRACLE_ROUTINE_URL || "#";
 
-function MiracleRoutine() {
-  const steps = [["Respiration carrée", "3 min", true], ["Intention du jour", "2 min", false], ["Ancrage des pieds", "3 min", false]] as const;
+export function MiracleRoutine() {
+  const steps = [["Respiration carrée", "3 min", true], ["Intention du jour", "2 min", false]] as const;
   return (
-    <section aria-label="Mes rituels avec Miracle Routine" className="mt-9 rounded-3xl border overflow-hidden flex flex-wrap items-stretch gap-x-12" style={{ borderColor: "var(--p-line)", background: "var(--p-surface-2)", padding: "clamp(24px,4vw,44px) clamp(24px,4vw,48px) 0" }}>
-      <div className="flex-[1_1_380px] min-w-0 flex flex-col gap-4" style={{ paddingBottom: "clamp(24px,4vw,44px)" }}>
-        <span className="p-eyebrow">Mes rituels</span>
-        <h2 className="m-0 text-[clamp(30px,3.4vw,40px)] leading-[1.1]">Miracle Routine, vos rituels partout avec vous.</h2>
-        <p className="m-0 max-w-[560px] text-[15.5px] leading-relaxed p-muted">Des routines guidées pour le matin, le soir ou juste avant une prise de parole, avec une alarme pour chaque rituel.</p>
-        <ul className="list-none m-0 p-0 flex flex-col gap-2.5 text-[15px]">
-          {["Une alarme pour chaque rituel", "Un catalogue de routines et d’exercices guidés", "Vos routines favorites et celles que vous créez"].map((t) => <li key={t} className="flex items-center gap-2.5"><Check size={16} className="flex-none" style={{ color: "var(--p-accent-text)" }} /> {t}</li>)}
-        </ul>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pt-1">
-          <a href={MIRACLE_ROUTINE_URL} target={MIRACLE_ROUTINE_URL === "#" ? undefined : "_blank"} rel="noopener" className="p-btn-primary no-underline gap-3 pl-5 pr-6"><Play size={18} fill="currentColor" /><span className="flex flex-col leading-[1.15] text-left"><span className="text-[11px] opacity-70">Télécharger sur</span><span className="text-[16px] font-semibold">Google Play</span></span></a>
-          <span className="text-[13.5px] p-muted">Application Android</span>
-        </div>
-        <p className="m-0 flex items-start gap-2 text-[13.5px] p-muted leading-relaxed"><Info size={15} className="flex-none mt-0.5" /><span>Bientôt, les rituels que vous réalisez dans l’application apparaîtront ici et dans Mon parcours.</span></p>
+    <section aria-label="Mes rituels avec Miracle Routine" className="rounded-[28px] overflow-hidden flex flex-wrap items-stretch gap-x-12" style={{ background: "#1A1A1A", color: "#E8DDD6", padding: "clamp(24px,3.4vw,34px) clamp(22px,3.4vw,40px) 0" }}>
+      <div className="flex-[1_1_380px] min-w-0 flex flex-col gap-3.5" style={{ paddingBottom: "clamp(24px,3.4vw,34px)" }}>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: "#AFA098" }}>Mes rituels</span>
+        <h2 className="m-0 font-['Newsreader'] font-normal text-[clamp(28px,3vw,34px)] leading-[1.1] tracking-[-0.02em]" style={{ color: "#FFFFFF" }}>Miracle Routine, <em className="font-light" style={{ color: "#E8DDD6" }}>vos rituels partout avec vous</em></h2>
+        <p className="m-0 max-w-[520px] text-[14px] leading-relaxed">Des routines guidées pour le matin, le soir ou juste avant une prise de parole, avec une alarme pour chaque rituel.</p>
+        <a href={MIRACLE_ROUTINE_URL} target={MIRACLE_ROUTINE_URL === "#" ? undefined : "_blank"} rel="noopener" className="self-start inline-flex items-center gap-2.5 h-11 px-5 rounded-full text-[14px] font-medium no-underline" style={{ background: "#A83932", color: "#FFFFFF" }}><Play size={14} fill="currentColor" /> Télécharger sur Google Play</a>
+        <p className="m-0 text-[12px]" style={{ color: "#AFA098" }}>Bientôt, les rituels réalisés dans l’application apparaîtront ici et dans Ma progression.</p>
       </div>
-      <div aria-hidden="true" className="flex-[0_1_300px] min-w-[240px] flex items-end justify-center">
-        <div className="w-[240px] rounded-t-[32px] border border-b-0 p-2 pb-0 shadow-xl" style={{ borderColor: "var(--p-line-2)", background: "var(--p-ink)" }}>
-          <div className="rounded-t-[24px] p-4 flex flex-col gap-2 min-h-[280px]" style={{ background: "var(--p-surface)" }}>
-            <span className="text-[10.5px] font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--p-gold)" }}>Routine du matin</span>
-            <span className="serif text-[22px] leading-tight">Bien démarrer la journée</span>
-            <span className="text-[12px] p-muted">12 min · 4 exercices</span>
+      <div aria-hidden="true" className="flex-[0_1_220px] min-w-[200px] flex items-end justify-center">
+        <div className="w-[200px] rounded-t-[26px] border border-b-0 p-2 pb-0" style={{ borderColor: "#4A3B30", background: "#2A211B" }}>
+          <div className="rounded-t-[20px] p-4 flex flex-col gap-2 min-h-[190px]" style={{ background: "#F3ECE8", color: "#1A1A1A" }}>
+            <span className="text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color: "#A83932" }}>Routine du matin</span>
+            <span className="font-['Newsreader'] text-[19px] leading-tight">Bien démarrer la journée</span>
             <div className="flex flex-col gap-1.5 mt-2">
               {steps.map(([t, d, done]) => (
-                <span key={t} className="flex items-center gap-2 text-[12.5px] px-2.5 py-2 rounded-xl" style={{ background: "var(--p-surface-2)" }}>
-                  <span className="w-4 h-4 rounded-full flex items-center justify-center flex-none" style={done ? { background: "var(--p-accent)", color: "#fff" } : { border: "1.5px solid var(--p-line-2)" }}>{done && <Check size={9} strokeWidth={3.4} />}</span>
-                  <span className="flex-1">{t}</span><span className="p-faint">{d}</span>
+                <span key={t} className="flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-full" style={{ background: "#FFFFFF" }}>
+                  <span className="w-2.5 h-2.5 rounded-full flex-none" style={done ? { background: "#A83932" } : { border: "1px solid #AFA098" }} />
+                  <span className="flex-1">{t}</span><span style={{ color: "#6E6557" }}>{d}</span>
                 </span>
               ))}
             </div>
@@ -120,7 +49,7 @@ function MiracleRoutine() {
 type Me = RouterOutputs["members"]["me"];
 
 /** Statut organisateur : candidature depuis l'espace membre. */
-function OrganizerCard({ me }: { me: Me }) {
+export function OrganizerCard({ me }: { me: Me }) {
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const [motivation, setMotivation] = useState("");
@@ -161,49 +90,6 @@ function OrganizerCard({ me }: { me: Me }) {
   );
 }
 
-function ProfileCard({ me, onEdit }: { me: Me; onEdit: () => void }) {
-  return (
-    <article className="p-card flex flex-wrap overflow-hidden mb-6">
-      <div className="flex-[1_1_220px] max-w-full h-[240px] sm:h-auto sm:min-h-[280px]" style={{ background: "var(--p-surface-2)" }}>
-        {me.photoUrl ? <img src={me.photoUrl} alt="" className="w-full h-full object-cover object-[50%_20%]" /> : <div className="w-full h-full flex items-center justify-center serif text-[90px] italic" style={{ color: "var(--p-accent-text)" }}>{me.initials}</div>}
-      </div>
-      <div className="flex-[999_1_380px] min-w-0 p-7 flex flex-col gap-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-[14px] p-muted">{[me.jobTitle, me.city, me.country].filter(Boolean).join(" · ")}</span>
-          <span className="flex flex-wrap gap-2"><ReplayTour /><button type="button" onClick={onEdit} className="p-btn-outline p-btn-sm"><Pencil size={15} /> Modifier mon profil</button></span>
-        </div>
-        {me.intention && <p className="m-0 serif italic text-[clamp(26px,3vw,34px)] leading-tight">« {me.intention} »</p>}
-        {me.bio && <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line">{me.bio}</p>}
-        {me.ambition && <p className="m-0 text-[15px] leading-relaxed"><span className="p-muted">Mon ambition · </span>{me.ambition}</p>}
-        {me.values.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[13.5px] p-muted mr-1">Mes valeurs</span>
-            {me.values.map((v) => <span key={v} className="p-chip h-[30px] cursor-default">{v}</span>)}
-          </div>
-        )}
-        {me.passions.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[13.5px] p-muted mr-1">Mes passions</span>
-            {me.passions.map((v) => <span key={v} className="p-chip h-[30px] cursor-default border-dashed">{v}</span>)}
-          </div>
-        )}
-        {me.linkedinUrl && <a href={me.linkedinUrl} target="_blank" rel="noopener" className="p-link text-[14px] flex items-center gap-1.5 self-start"><Linkedin size={15} /> Mon profil LinkedIn</a>}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13.5px] p-muted mr-1">Je cherche ou propose</span>
-          {me.intentLabels.length === 0 && <span className="text-[13px] p-faint">Rien d’indiqué pour l’instant</span>}
-          {me.intentLabels.map((t) => <span key={t.code} className="p-pill h-[30px]">{t.label}</span>)}
-          {me.rencontreEnabled && <span className="p-chip h-[30px] border-dashed cursor-default p-muted text-[12.5px]">Espace Rencontre activé · visible de vous seule</span>}
-          {!me.visibleInDirectory && <span className="text-[12.5px] p-faint">· profil masqué dans l’annuaire</span>}
-        </div>
-        <div className="mt-auto pt-4 border-t flex flex-wrap items-center justify-between gap-4" style={{ borderColor: "var(--p-line)" }}>
-          <span className="text-[13.5px] p-muted">Vos formations et votre journal privé.</span>
-          <Link to="/parcours" className="p-btn-outline p-btn-sm no-underline"><Compass size={15} /> Mon parcours</Link>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
   const utils = trpc.useUtils();
   const save = trpc.members.updateProfile.useMutation({
@@ -212,7 +98,7 @@ export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
   });
   const [f, setF] = useState({
     firstName: me.firstName, lastName: me.lastName, jobTitle: me.jobTitle, city: me.city, country: me.country, photoUrl: me.photoUrl, intention: me.intention,
-    bio: me.bio, ambition: me.ambition, passions: me.passions, linkedinUrl: me.linkedinUrl,
+    bio: me.bio, ambition: me.ambition, passions: me.passions, bucketList: me.bucketList, linkedinUrl: me.linkedinUrl,
     values: me.values, intents: me.intents, langs: me.langs, visibleInDirectory: me.visibleInDirectory,
     rencontreEnabled: me.rencontreEnabled, rencontrePref: me.rencontrePref as "f" | "m" | "all",
   });
@@ -222,6 +108,12 @@ export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
     const v = newPassion.trim();
     if (!v || f.passions.length >= 8 || f.passions.some((x) => x.toLowerCase() === v.toLowerCase())) return;
     set({ passions: [...f.passions, v[0].toUpperCase() + v.slice(1)] }); setNewPassion("");
+  };
+  const [newWish, setNewWish] = useState("");
+  const addWish = () => {
+    const v = newWish.trim();
+    if (!v || f.bucketList.length >= 8 || f.bucketList.some((x) => x.toLowerCase() === v.toLowerCase())) return;
+    set({ bucketList: [...f.bucketList, v[0].toUpperCase() + v.slice(1)] }); setNewWish("");
   };
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }));
   const addValue = () => {
@@ -273,6 +165,21 @@ export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
             <span className="flex items-center gap-1.5">
               <input className="p-field h-[34px] w-[180px] py-0" value={newPassion} onChange={(e) => setNewPassion(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addPassion(); } }} placeholder="Ex. Randonnée, jazz…" />
               <button type="button" className="p-btn-ghost text-[13px]" onClick={addPassion}>Ajouter</button>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-[13.5px] p-muted">Ma bucket list <span className="p-faint">· un désir, un rêve à réaliser, un lieu à découvrir : huit au maximum</span></span>
+        <div className="flex flex-wrap items-center gap-2">
+          {f.bucketList.map((v) => (
+            <button key={v} type="button" className="p-chip h-[34px] border-dashed" onClick={() => set({ bucketList: f.bucketList.filter((x) => x !== v) })} title="Retirer">{v} ×</button>
+          ))}
+          {f.bucketList.length < 8 && (
+            <span className="flex items-center gap-1.5">
+              <input className="p-field h-[34px] w-[240px] max-w-full py-0" maxLength={80} value={newWish} onChange={(e) => setNewWish(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addWish(); } }} placeholder="Ex. Voir les aurores boréales" aria-label="Ajouter à ma bucket list" />
+              <button type="button" className="p-btn-ghost text-[13px]" onClick={addWish}>Ajouter</button>
             </span>
           )}
         </div>
@@ -349,59 +256,27 @@ export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
   );
 }
 
-function CoachingBand({ c }: { c: RouterOutputs["dashboard"]["coaching"] }) {
-  if (!c.isCoached) {
-    return (
-      <section className="p-band flex flex-wrap items-center gap-6 lg:gap-10 p-6 sm:p-8 mb-6">
-        <div className="flex-[1.5_1_380px] min-w-0 flex items-center gap-5">
-          <span className="w-[88px] h-[88px] rounded-full flex-none flex items-center justify-center border border-white/20 bg-white/10" style={{ color: "var(--p-gold-bright)" }}><Compass size={34} strokeWidth={1.4} /></span>
-          <span className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium uppercase tracking-[0.3em]" style={{ color: "var(--p-gold-bright)" }}>Accompagnement individuel</span>
-            <span className="serif text-[clamp(28px,3vw,36px)] leading-[1.08]">Réservez votre session exploratoire</span>
-            <span className="text-[14.5px] text-white/80 leading-relaxed">Un premier échange de 30 minutes en visio avec Laura, pour faire le point sur ce que vous vivez et voir si un accompagnement vous correspond.</span>
-          </span>
-        </div>
-        <ul className="flex-[1_1_240px] min-w-0 list-none m-0 p-0 lg:pl-9 lg:border-l border-white/15 flex flex-col gap-2.5 text-[14.5px]">
-          {["Faire le point sur votre situation", "Clarifier ce que vous voulez faire évoluer", "Découvrir comment se déroule un accompagnement"].map((t) => <li key={t} className="flex items-center gap-2.5"><span style={{ color: "var(--p-gold-bright)" }}>✓</span>{t}</li>)}
-        </ul>
-        <div className="flex-[0_1_280px] flex flex-col gap-2">
-          <a href={c.calendlyExploUrl || "#"} target="_blank" rel="noopener" className="p-btn-white no-underline"><CalendarPlus size={18} /> Réserver ma session exploratoire</a>
-          <span className="text-[12.5px] text-white/65 text-center flex items-center justify-center gap-1.5"><ExternalLink size={12} /> Ouvre l’agenda de Laura sur Calendly</span>
-        </div>
-      </section>
-    );
-  }
-  const n = c.next;
+export function CoachingBand({ c }: { c: RouterOutputs["dashboard"]["coaching"] }) {
+  const n = c.isCoached ? c.next : null;
+  const url = (c.isCoached ? c.calendlyUrl : c.calendlyExploUrl) || "#";
+  const d = n ? new Date(n.startsAt) : null;
   return (
-    <section className="p-band flex flex-wrap items-center gap-6 lg:gap-10 p-6 sm:p-8 mb-6">
-      <div className="flex-[1.5_1_380px] min-w-0 flex items-center gap-5">
-        {n && (
-          <span className="flex-none w-[88px] flex flex-col items-center py-3 rounded-2xl bg-white/10 border border-white/20 leading-none">
-            <span className="text-[11.5px] uppercase tracking-wider text-white/70">{longDate(new Date(n.startsAt)).slice(0, 3)}.</span>
-            <span className="serif text-[46px] mt-1">{dayNum(new Date(n.startsAt))}</span>
-            <span className="text-[13px] text-white/80 mt-0.5">{monthAbr(new Date(n.startsAt))}</span>
-          </span>
-        )}
-        <span className="flex flex-col gap-1.5 min-w-0">
-          <span className="text-[12px] font-medium uppercase tracking-[0.3em]" style={{ color: "var(--p-gold-bright)" }}>Mon prochain coaching</span>
-          <span className="serif text-[clamp(28px,3vw,36px)] leading-[1.08]">{n ? n.title : "Aucune séance planifiée"}</span>
-          {n && <span className="text-[14.5px] text-white/80">{longDate(new Date(n.startsAt))} · {hour(new Date(n.startsAt))} – {hour(addMin(new Date(n.startsAt), n.durationMin))} · {n.format.toLowerCase()} avec Laura Ballo</span>}
+    <section className="p-band rounded-[26px] flex flex-wrap items-center gap-x-8 gap-y-4 px-6 sm:px-7 py-5 mb-6" aria-label={c.isCoached ? "Mon prochain coaching" : "Accompagnement individuel"}>
+      {d && (
+        <span className="flex-none w-14 flex flex-col items-center leading-none text-white/70">
+          <span className="text-[10px] uppercase tracking-[0.18em]">{longDate(d).slice(0, 3)}</span>
+          <span className="font-['Newsreader'] text-[34px] text-white mt-1">{dayNum(d)}</span>
+          <span className="text-[10px] uppercase tracking-[0.18em] mt-1">{monthAbr(d)}</span>
         </span>
-      </div>
-      <div className="flex-[1_1_240px] min-w-0 lg:pl-9 lg:border-l border-white/15 flex flex-col gap-2.5">
-        {/* Sans nombre de séances prévu dans Notion, on montre seulement ce qui est fait */}
-        <span className="flex items-baseline gap-2.5"><span className="serif text-[52px] leading-[0.9]">{c.total ? c.remaining : c.done}</span><span className="text-[15.5px] font-medium">{c.total ? "séances restantes" : "séances réalisées"}</span></span>
-        {c.total > 0 && (
-          <span className="flex gap-1" role="img" aria-label={`${c.done} séances réalisées sur ${c.total}`}>
-            {Array.from({ length: c.total }, (_, i) => <span key={i} className="flex-1 h-2 rounded-full" style={i < c.done ? { background: "var(--p-gold-bright)" } : i === c.done ? { border: "1.5px solid #fff" } : { background: "rgba(255,255,255,0.18)" }} />)}
-          </span>
-        )}
-        {c.total > 0 && <span className="text-[13px] text-white/70">{c.done} séances réalisées sur {c.total}{n?.number ? ` · la prochaine sera la ${n.number}e` : ""}</span>}
-      </div>
-      <div className="flex-[0_1_260px] flex flex-col gap-2">
-        <a href={c.calendlyUrl || "#"} target="_blank" rel="noopener" className="p-btn-white no-underline"><CalendarPlus size={18} /> Réserver une séance</a>
-        <span className="text-[12.5px] text-white/65 text-center flex items-center justify-center gap-1.5"><ExternalLink size={12} /> Ouvre l’agenda de Laura sur Calendly</span>
-      </div>
+      )}
+      {!c.isCoached && <span className="flex-none w-12 h-12 rounded-full flex items-center justify-center border border-white/20" style={{ color: "var(--p-gold-bright)" }}><Compass size={22} strokeWidth={1.4} /></span>}
+      <span className="flex-[1_1_280px] min-w-0 flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/70">{c.isCoached ? "Mon prochain coaching" : "Accompagnement individuel"}</span>
+        <span className="font-['Newsreader'] text-[26px] leading-[1.2] text-white">{c.isCoached ? (n ? n.title : "Votre prochaine séance est à réserver") : "Réservez votre session exploratoire"}</span>
+        <span className="text-[13px] text-white/75">{n && d ? `${hour(d)} – ${hour(addMin(d, n.durationMin))} · ${n.format.toLowerCase()} avec Laura Ballo` : c.isCoached ? "Avec Laura Ballo" : "Un premier échange de 30 minutes en visio avec Laura, pour voir si un accompagnement vous correspond."}</span>
+      </span>
+      {c.isCoached && c.total > 0 && <span className="flex-[0_1_200px] text-white/80"><span className="font-['Newsreader'] text-[38px] text-white">{c.remaining}</span> <span className="text-[13px]">séance{c.remaining > 1 ? "s" : ""} restante{c.remaining > 1 ? "s" : ""}</span></span>}
+      <a href={url} target="_blank" rel="noopener" className="inline-flex items-center gap-2 h-11 px-5 rounded-full text-[14px] font-medium no-underline flex-none" style={{ background: "#F3ECE8", color: "#1A1A1A" }}><CalendarPlus size={16} /> {c.isCoached ? "Réserver une séance" : "Réserver ma session exploratoire"}</a>
     </section>
   );
 }

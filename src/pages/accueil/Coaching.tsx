@@ -1,7 +1,6 @@
 import { Link, Navigate } from "react-router";
 import { CalendarPlus, Check, ExternalLink, Lock } from "lucide-react";
 import { trpc } from "@/providers/trpc";
-import { PageHeader } from "@/components/Layout";
 import { parisDateYear, parisHour, parisLongDate } from "@/lib/format";
 
 const STATE: Record<string, string> = { "Terminé": "Réalisée", "Planifié": "Prévue", "Reportée": "Reportée", "Absence": "Absence", "Non planifié": "À planifier" };
@@ -14,9 +13,9 @@ export default function Coaching() {
   if (!me.data.coachingClient) return <Navigate to="/profil" replace />;
   const c = q.data;
   return (
-    <>
-      <PageHeader eyebrow="Mon profil" title="Coaching" intro={c ? `Votre accompagnement « ${c.title} » avec Laura.` : "Votre accompagnement individuel avec Laura."} />
-      <p className="m-0 mb-6 text-[13px] p-muted flex items-center gap-1.5"><Lock size={13} /> Visible de vous seul·e, jamais des autres membres.</p>
+    <section className="p-panel" aria-label="Coaching">
+      <div className="p-panel-head"><h2 className="p-panel-title">Coaching</h2><span className="text-[13px] p-muted flex items-center gap-1.5"><Lock size={13} /> Visible de vous seul·e, jamais des autres membres.</span></div>
+      <p className="m-0 mb-6 text-[15px]">{c ? `Votre accompagnement « ${c.title} » avec Laura.` : "Votre accompagnement individuel avec Laura."}</p>
       {c && (
         <>
           <div className="grid gap-3 mb-7" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))" }}>
@@ -52,7 +51,7 @@ export default function Coaching() {
           <p className="mt-6 text-[14px] p-muted">Vos objectifs, les comptes rendus partagés par Laura et votre carnet sont dans <Link to="/parcours/accompagnement" className="p-link">Mon parcours › Mon accompagnement</Link>.</p>
         </>
       )}
-    </>
+    </section>
   );
 }
 

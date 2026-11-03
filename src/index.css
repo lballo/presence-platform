@@ -4,6 +4,8 @@
 @import "@fontsource/plus-jakarta-sans/400.css";
 @import "@fontsource/plus-jakarta-sans/500.css";
 @import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/newsreader/300.css";
+@import "@fontsource/newsreader/300-italic.css";
 @import "@fontsource/newsreader/400.css";
 @import "@fontsource/newsreader/400-italic.css";
 @import "@fontsource/abhaya-libre/500.css";
@@ -75,6 +77,11 @@
     --p-doc-sans: var(--p-sans);
     --p-doc-serif: var(--p-serif);
     --p-doc-head: var(--p-serif);
+    --p-side-w: 256px;
+    --p-nav-size: 15.5px;
+    --p-greet-weight: 400;
+    --p-greet-ink: var(--p-ink-warm);
+    --p-greet-soft: var(--p-ink-3);
   }
   .dark {
     --background: 20 10% 8%;
@@ -139,6 +146,12 @@
     --p-sans: "Figtree", "Plus Jakarta Sans", sans-serif;
     --p-serif: "Newsreader", Georgia, serif;
     --p-doc-head: "Abhaya Libre", Georgia, serif;
+    /* Mise en page de la piste E */
+    --p-side-w: 240px;
+    --p-nav-size: 14px;
+    --p-greet-weight: 300;
+    --p-greet-ink: rgba(61, 49, 40, .86);
+    --p-greet-soft: #AFA098;
   }
   * { @apply border-border; }
   html { color-scheme: light; }
@@ -154,6 +167,7 @@
   h1, h2, h3, .serif { font-family: var(--p-serif); font-weight: 500; }
   .douceur h1, .douceur h2, .douceur h3, .douceur .serif { font-weight: 400; }
   .douceur h1 { color: var(--p-ink-warm); }
+  .douceur h1.p-greeting { font-weight: var(--p-greet-weight); color: var(--p-greet-ink); }
 }
 
 @layer components {
@@ -174,8 +188,19 @@
   textarea.p-field { @apply py-3 leading-relaxed resize-y; }
   .p-avatar { @apply rounded-full object-cover flex-none; }
   .p-initials { @apply rounded-full flex items-center justify-center serif font-semibold flex-none; background: var(--p-pill); color: var(--p-accent-text); }
-  .p-greeting { margin: 0; font-family: "Newsreader", Georgia, serif; font-weight: 400; font-size: clamp(40px, 5.6vw, 58px); line-height: 1.04; letter-spacing: -0.025em; color: var(--p-ink-warm); }
-  .p-greeting em { font-style: italic; color: var(--p-ink-3); }
+  .p-greeting { margin: 0; font-family: "Newsreader", Georgia, serif; font-weight: var(--p-greet-weight); font-size: clamp(40px, 5.6vw, 58px); line-height: 1.04; letter-spacing: -0.025em; color: var(--p-greet-ink); }
+  .p-greeting em { font-style: italic; color: var(--p-greet-soft); }
+  /* L'accueil : onglets en pilules sous « Bonjour », un panneau par sous-page (piste E) */
+  .p-tab-pill { @apply inline-flex items-center gap-[7px] h-11 pl-2.5 pr-3 rounded-full border text-[13px] no-underline whitespace-nowrap flex-none transition-[transform,box-shadow,background-color,color] duration-200; border-color: var(--p-line); background: var(--p-surface); color: var(--p-ink); }
+  .p-tab-pill:hover { transform: translateY(-2px); box-shadow: 0 10px 22px -14px rgba(61, 49, 40, .55); }
+  .p-tab-pill[aria-current="page"] { background: var(--p-chip-on-bg); border-color: var(--p-chip-on-bg); color: var(--p-chip-on-ink); font-weight: 500; transform: none; }
+  .p-tab-count { @apply min-w-[22px] h-5 px-[7px] rounded-full text-[11px] font-semibold inline-flex items-center justify-center; background: var(--p-accent-soft); color: var(--p-accent-text); }
+  .p-tab-pill[aria-current="page"] .p-tab-count { background: rgba(243, 236, 232, .18); color: var(--p-chip-on-ink); }
+  .p-panel { @apply rounded-[28px] border; border-color: var(--p-line); padding: clamp(20px, 3vw, 30px) clamp(18px, 3vw, 32px); }
+  .p-panel-head { @apply flex flex-wrap items-baseline justify-between gap-3 mb-[22px]; }
+  .p-panel-title { margin: 0; font-family: var(--p-serif); font-weight: 400; font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; color: var(--p-ink); }
+  .p-kicker { @apply text-[10px] font-semibold uppercase tracking-[0.22em]; color: var(--p-accent-text); }
+  .p-title-em { font-style: italic; font-weight: 300; color: var(--p-accent-text); }
   .p-muted { color: var(--p-ink-2); }
   .p-faint { color: var(--p-ink-3); }
   .p-link { color: var(--p-accent-text); }

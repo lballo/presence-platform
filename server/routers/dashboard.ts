@@ -30,14 +30,18 @@ export const dashboardRouter = createRouter({
     const post = await db.query.forumPosts.findFirst({ where: and(isNotNull(forumPosts.spaceId), isLive(), eq(forumPosts.audience, "tous")), with: { author: true }, orderBy: [desc(forumPosts.likes)] });
     const hivePost = await db.query.hivePosts.findFirst({ with: { author: true, hive: true }, orderBy: [desc(hivePosts.createdAt)] });
     const live = await db.query.events.findFirst({ where: and(eq(events.kind, "salon"), eq(events.status, "published"), isNull(events.hiveId), isNull(events.cancelledAt), gte(events.startsAt, new Date(now.getTime() - 60 * 60 * 1000))), with: { host: true, registrations: true }, orderBy: [asc(events.startsAt)] });
-    const featured = await db.query.events.findFirst({ where: and(eq(events.featured, true), eq(events.status, "published"), isNull(events.hiveId), isNull(events.cancelledAt), gte(events.startsAt, now)), orderBy: [asc(events.startsAt)] });
-    const items: { cat: string; title: string; sub: string; href: string; photoUrl?: string | null }[] = [];
+    const upcomingNetwork = and(eq(events.status, "published"), isNull(events.hiveId), isNull(events.cancelledAt), gte(events.startsAt, now));
+    // À la une : l'événement mis en avant, sinon le prochain du réseau
+    const featured = (await db.query.events.findFirst({ where: and(eq(events.featured, true), upcomingNetwork), orderBy: [asc(events.startsAt)] }))
+      ?? (await db.query.events.findFirst({ where: upcomingNetwork, orderBy: [asc(events.startsAt)] }));
+    // photoUrl : la personne (petit rond) ; image : la photo d'un événement, pour « À la une »
+    const items: { cat: string; title: string; sub: string; href: string; photoUrl?: string | null; image?: string | null; imagePosition?: string; date?: Date }[] = [];
     if (talk) items.push({ cat: "Talk Show", title: `Nouveau talk : « ${talk.title} »`, sub: `${publicMember(talk.speaker).name} partage ${talk.summary.slice(0, 90)}…`, href: "/talk-show", photoUrl: talk.speaker.photoUrl });
     if (post) items.push({ cat: "Forum", title: `${post.author.firstName} : ${post.title || `${post.text.slice(0, 50)}…`}`, sub: `Déjà ${post.likes} applaudissements.`, href: `/forum/publication/${post.id}`, photoUrl: post.author.photoUrl });
     if (hivePost) items.push({ cat: "Ruches", title: `Chez ${hivePost.hive.name}`, sub: hivePost.text.slice(0, 110), href: `/ruches/${hivePost.hiveId}` });
     if (live) items.push({ cat: "Salons live", title: live.live ? `Un salon en direct : ${live.title}` : `Prochain salon : ${live.title}`, sub: `Animé par ${publicMember(live.host).name}${live.maxSeats ? ` · ${Math.max(0, live.maxSeats - live.registrations.length)} places` : ""}`, href: `/e/${live.slug}` });
-    if (featured) items.push({ cat: "Événements", title: featured.title, sub: featured.where, href: `/e/${featured.slug}` });
-    items.push({ cat: "Matching", title: "Vos affinités de la semaine", sub: "De nouveaux profils correspondent à ce que vous cherchez.", href: "/matching" });
+    if (featured) items.unshift({ cat: "Événements", title: featured.title, sub: featured.tagline || featured.where, href: `/e/${featured.slug}`, image: featured.photoUrl, imagePosition: featured.photoPosition, date: featured.startsAt });
+    items.push({ cat: "Matching", title: "Vos affinités de la semaine", sub: "De nouveaux profils correspondent à ce que vous cherchez.", href: "/membres/binome" });
     return items.slice(0, 6);
   }),
 });

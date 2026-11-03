@@ -63,11 +63,12 @@ export function ProfileView({ id, onEdit, extra }: { id: number; onEdit?: () => 
       <div className="flex flex-wrap gap-6 items-start">
         <div className="flex-[2_1_520px] min-w-0 flex flex-col gap-6">
           {extra}
-          {(m.ambition || m.passions.length > 0 || m.values.length > 0) && (
+          {(m.ambition || m.passions.length > 0 || m.bucketList.length > 0 || m.values.length > 0) && (
             <section className="p-card p-6 flex flex-col gap-5">
               {m.ambition && <div className="flex flex-col gap-1.5"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}>Ambition</span><p className="m-0 text-[16.5px] leading-relaxed">{m.ambition}</p></div>}
               {m.values.length > 0 && <div className="flex flex-col gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}>Valeurs</span><div className="flex flex-wrap gap-1.5">{m.values.map((v) => <span key={v} className="p-chip h-[32px] cursor-default">{v}</span>)}</div></div>}
               {m.passions.length > 0 && <div className="flex flex-col gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}>Passions</span><div className="flex flex-wrap gap-1.5">{m.passions.map((v) => <span key={v} className="p-chip h-[32px] cursor-default border-dashed">{v}</span>)}</div></div>}
+              {m.bucketList.length > 0 && <div className="flex flex-col gap-2"><span className="text-[12px] font-semibold uppercase tracking-[0.24em]" style={gold}>Bucket list</span><div className="flex flex-wrap gap-1.5">{m.bucketList.map((v) => <span key={v} className="p-chip h-[32px] cursor-default border-dashed">{v}</span>)}</div></div>}
             </section>
           )}
 
