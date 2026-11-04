@@ -133,9 +133,9 @@ export function DocToolbar() {
       {open === "color" && (
         <div role="dialog" aria-label="Couleur du texte" className="cr-popover w-[252px]" onMouseDown={keep}>
           <p className="m-0 mb-2 text-[10px] font-semibold tracking-[0.12em] p-muted">COULEUR DU TEXTE</p>
-          <div className="flex flex-wrap gap-2">{TEXT_COLORS.map((c) => <button key={c.name} type="button" aria-label={c.name} title={c.name} className="w-[38px] h-[38px] rounded-full" style={{ background: c.hex, boxShadow: (state?.color ?? "") === c.cls ? `0 0 0 3px #fff, 0 0 0 5px ${c.hex}` : undefined }} onClick={() => paint(c.cls)} />)}</div>
+          <div className="flex flex-wrap gap-2">{TEXT_COLORS.map((c) => <button key={c.name} type="button" aria-label={c.name} title={c.name} className="w-[38px] h-[38px] rounded-full" style={{ background: c.hex, boxShadow: (state?.color ?? "") === c.cls ? `0 0 0 3px var(--p-surface), 0 0 0 5px ${c.hex}` : undefined }} onClick={() => paint(c.cls)} />)}</div>
           <p className="m-0 mt-3 mb-2 text-[10px] font-semibold tracking-[0.12em] p-muted">SURLIGNAGE</p>
-          <div className="flex flex-wrap gap-2">{HIGHLIGHTS.map((c) => <button key={c.name} type="button" aria-label={`Surlignage ${c.name}`} title={c.name} className="w-[38px] h-[38px] rounded-full border" style={{ background: c.hex, borderColor: "var(--p-line)", boxShadow: state?.color === c.cls ? "0 0 0 3px #fff, 0 0 0 5px #AFA098" : undefined }} onClick={() => paint(c.cls)} />)}</div>
+          <div className="flex flex-wrap gap-2">{HIGHLIGHTS.map((c) => <button key={c.name} type="button" aria-label={`Surlignage ${c.name}`} title={c.name} className="w-[38px] h-[38px] rounded-full border" style={{ background: c.hex, borderColor: "var(--p-line)", boxShadow: state?.color === c.cls ? "0 0 0 3px var(--p-surface), 0 0 0 5px #AFA098" : undefined }} onClick={() => paint(c.cls)} />)}</div>
         </div>
       )}
       {open === "link" && (

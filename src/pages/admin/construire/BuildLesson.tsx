@@ -242,7 +242,7 @@ function Editor({ l, course, crumbs, reload, refetch }: { l: Lesson; course: Rou
             <IssueList issues={issues} />
             <div className="flex flex-col gap-2">
               <span className="text-[12px] font-medium">Statut du contenu</span>
-              <div role="radiogroup" aria-label="Statut du contenu" className="flex flex-wrap gap-1 rounded-[10px] border p-[3px] bg-white" style={{ borderColor: "var(--p-line)" }}>
+              <div role="radiogroup" aria-label="Statut du contenu" className="flex flex-wrap gap-1 rounded-[10px] border p-[3px]" style={{ background: "var(--p-surface)", borderColor: "var(--p-line)" }}>
                 {(Object.entries(LESSON_STATUS_LABEL) as [Lesson["status"], string][]).map(([s, label]) => <button key={s} type="button" role="radio" aria-checked={f.status === s} disabled={saver.state === "saving"} className="flex-[1_1_auto] rounded-[7px] px-2 py-[7px] text-[11.5px] font-medium whitespace-nowrap" style={f.status === s ? { background: s === "publie" ? "rgba(46, 125, 80, .12)" : "var(--p-surface-2)", color: s === "publie" ? "var(--p-ok)" : "var(--p-accent)" } : { color: "var(--p-ink-2)" }} onClick={() => { if (f.status !== s) setStatus(s); }}>{label}</button>)}
               </div>
               <span className="text-[11px] p-muted leading-snug">{f.status === "publie" ? "Visible par les membres. Vos modifications leur arrivent quand vous cliquez sur Enregistrer." : "Invisible des membres. Tout s’enregistre au fil de votre écriture."}</span>
