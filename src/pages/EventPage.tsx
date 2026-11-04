@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ArrowLeft, CalendarPlus, CheckCircle2, Clock, Copy, Hexagon, Linkedin, Lock, Mail, MapPin, MessageCircle, Settings, Sparkles, Users, Video } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Copy, Hexagon, Linkedin, Lock, Mail, MapPin, MessageCircle, PlayCircle, Settings, Sparkles, Users, Video } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
@@ -10,8 +10,10 @@ import { useTheme } from "@/lib/theme";
 import { HoneyToast } from "@/components/onboarding/HoneyToast";
 import { eventCover } from "@/components/events/cover";
 import { membershipUrl } from "@/lib/supabase";
-import { downloadIcs, googleCalendarUrl } from "@/lib/calendar";
+import type { CalendarEvent } from "@/lib/calendar";
+import { AddToCalendar, eventOptions } from "@/components/events/AddToCalendar";
 import { addMin, parisHour, parisLongDate, plural } from "@/lib/format";
+import { VideoEmbed } from "@/components/VideoEmbed";
 
 type Ok = Extract<RouterOutputs["events"]["page"], { state: "ok" }>;
 export type Ev = Ok["event"];
@@ -86,6 +88,9 @@ function DiscoverBlock() {
 
 const formatLabel = (e: Pick<Ev, "kind" | "city" | "where">) => (e.kind === "onsite" ? `Présentiel${e.city ? ` · ${e.city}` : ""}` : e.kind === "salon" ? "Salon live en visio" : "En visio");
 const location = (e: Ev) => (e.kind === "onsite" ? e.address || e.city || e.where : e.meetingUrl || "En ligne");
+/** L'événement pour un agenda : l'adresse ou le lien de visio n'y sont que pour qui y a droit (inscrit, équipe). */
+const forCalendar = (e: Ev): CalendarEvent => ({ title: e.title, slug: e.slug, startsAt: new Date(e.startsAt), durationMin: e.durationMin, days: e.days, location: location(e), details: e.kind !== "onsite" && e.meetingUrl ? `Lien de connexion : ${e.meetingUrl}` : undefined });
+const addable = (e: Ev) => !e.past && !e.cancelled && e.status === "published";
 
 function When({ e }: { e: Ev }) {
   const start = new Date(e.startsAt);
@@ -96,7 +101,8 @@ function Facts({ e }: { e: Ev }) {
   const Icon = e.kind === "onsite" ? MapPin : Video;
   return (
     <dl className="m-0 grid gap-x-3 gap-y-2.5 text-[15px]" style={{ gridTemplateColumns: "20px 1fr" }}>
-      <dt className="p-muted pt-0.5"><Clock size={16} /></dt><dd className="m-0"><When e={e} /></dd>
+      <dt className="p-muted pt-0.5"><Clock size={16} /></dt>
+      <dd className="m-0 flex items-start justify-between gap-2"><span className="pt-0.5"><When e={e} /></span>{addable(e) && <span className="-mt-1.5 -mr-1.5"><AddToCalendar options={eventOptions(forCalendar(e))} /></span>}</dd>
       <dt className="p-muted pt-0.5"><Icon size={16} /></dt><dd className="m-0">{formatLabel(e)}</dd>
       {e.seatsLeft !== null && <><dt className="p-muted pt-0.5"><Users size={16} /></dt><dd className="m-0">{e.seatsLeft > 0 ? plural(e.seatsLeft, "place restante", "places restantes") : "Complet · liste d’attente ouverte"}</dd></>}
     </dl>
@@ -117,12 +123,13 @@ function Action({ e, connected, retour, compact }: { e: Ev; connected: boolean; 
   const { register, unregister } = useRegistration(e);
   const full = e.seatsLeft === 0;
   if (e.cancelled) return <p className="m-0 p-3 rounded-xl text-center text-[14.5px] font-medium" style={{ background: "var(--p-accent-soft)", color: "var(--p-accent-text)" }}>Cet événement est annulé.</p>;
+  if (e.replay) return <a href="#replay" className="p-btn-primary w-full no-underline" onClick={(ev) => { ev.preventDefault(); document.getElementById("replay")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><PlayCircle size={17} /> Voir le replay</a>;
   if (!connected) return e.past ? <p className="m-0 text-center text-[14px] p-muted">Cet événement est passé.</p> : compact ? <Link to={retour} className="p-btn-primary no-underline w-full">Je suis membre, je me connecte</Link> : <MemberLogin to={retour} />;
   if (e.registered || e.waitlisted) {
     return (
       <div className="flex flex-col gap-2">
         <p className="m-0 flex items-center justify-center gap-1.5 text-[15px] font-medium" style={{ color: "var(--p-accent-text)" }}><CheckCircle2 size={17} /> {e.registered ? "Vous êtes inscrit·e" : "Vous êtes sur liste d’attente"}</p>
-        {!e.past && <Link to={`/e/${e.slug}/confirmation`} className="p-btn-outline p-btn-sm no-underline"><CalendarPlus size={15} /> Ajouter à mon calendrier</Link>}
+        {addable(e) && <AddToCalendar options={eventOptions(forCalendar(e))} label="Ajouter à mon calendrier" align="left" />}
         {!e.past && <button type="button" className="p-btn-ghost self-center" disabled={unregister.isPending} onClick={() => unregister.mutate({ eventId: e.id })}>{e.registered ? "Me désinscrire" : "Quitter la liste d’attente"}</button>}
       </div>
     );
@@ -143,6 +150,7 @@ function PersonCard({ p, connected }: { p: Ev["host"]; connected: boolean }) {
 
 /** Le corps de la page. En aperçu (fenêtre de création), mêmes rubriques, mais rien n'est cliquable : l'événement n'existe pas encore. */
 export function EventBody({ e, connected, retour, preview }: { e: Ev; connected: boolean; retour: string; preview?: boolean }) {
+  useEffect(() => { if (e.replay && window.location.hash === "#replay") document.getElementById("replay")?.scrollIntoView({ block: "start" }); }, [e.replay]);
   const steps = e.program.split("\n").map((s) => s.trim()).filter(Boolean);
   const speakers = e.speakers.length ? e.speakers : [e.host];
   const action = (compact: boolean) => (preview ? <button type="button" className="p-btn-primary w-full" style={{ opacity: 1, cursor: "default" }} disabled>{e.seatsLeft === 0 ? "Rejoindre la liste d’attente" : "Je m’inscris"}</button> : <Action e={e} connected={connected} retour={retour} compact={compact} />);
@@ -166,6 +174,12 @@ export function EventBody({ e, connected, retour, preview }: { e: Ev; connected:
             {e.tagline && <p className="m-0 text-[clamp(17px,2.4vw,21px)] leading-snug p-muted">{e.tagline}</p>}
           </header>
 
+          {e.replay && (
+            <section id="replay" className="flex flex-col gap-3 scroll-mt-6" aria-label="Le replay">
+              <h2 className="m-0 text-[28px] leading-tight flex items-center gap-2"><PlayCircle size={24} style={{ color: "var(--p-accent)" }} /> Le replay</h2>
+              <VideoEmbed url={e.replay} title={`Replay : ${e.title}`} />
+            </section>
+          )}
           <div className="lg:hidden"><Facts e={e} /></div>
           <AccessInfo e={e} />
           {e.description && <p className="m-0 text-[16.5px] leading-relaxed whitespace-pre-line">{e.description}</p>}
@@ -205,7 +219,6 @@ export function EventBody({ e, connected, retour, preview }: { e: Ev; connected:
 
 /** Après l'inscription : confirmation, ajout au calendrier et partage. */
 function Confirmation({ e }: { e: Ev }) {
-  const cal = { title: e.title, slug: e.slug, startsAt: new Date(e.startsAt), durationMin: e.durationMin, location: location(e) };
   const url = `${window.location.origin}/e/${e.slug}`;
   const text = `${e.title} : ${url}`;
   const copy = async () => { try { await navigator.clipboard.writeText(url); toast.success("Lien copié"); } catch { toast.error("Copie impossible"); } };
@@ -228,10 +241,7 @@ function Confirmation({ e }: { e: Ev }) {
       {e.registered && (
         <section className="flex flex-col gap-2.5">
           <h2 className="m-0 text-[24px]">Ajouter à mon calendrier</h2>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => downloadIcs(cal)}><CalendarPlus size={15} /> Fichier .ics</button>
-            <a href={googleCalendarUrl(cal)} target="_blank" rel="noopener" className="p-btn-outline p-btn-sm no-underline"><CalendarPlus size={15} /> Google Agenda</a>
-          </div>
+          <div className="self-start"><AddToCalendar options={eventOptions(forCalendar(e))} label="Choisir mon agenda" align="left" /></div>
         </section>
       )}
       <section className="flex flex-col gap-2.5">

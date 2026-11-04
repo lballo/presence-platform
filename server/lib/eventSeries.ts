@@ -46,7 +46,7 @@ export async function extendSeries(seriesId?: number): Promise<number> {
     if (!model || !dates.length) continue;
     const limit = s.untilAt && s.untilAt < horizon ? s.untilAt : horizon;
     for (const startsAt of datesBetween(s.anchorAt, s.every, dates[0].startsAt, limit)) {
-      const { id: _id, slug: _slug, startsAt: _start, createdAt: _created, cancelledAt: _cancelled, views: _views, live: _live, featured: _featured, speakers, ...copy } = model;
+      const { id: _id, slug: _slug, startsAt: _start, createdAt: _created, cancelledAt: _cancelled, views: _views, live: _live, featured: _featured, replayUrl: _replay, replayAddedAt: _replayAt, speakers, ...copy } = model;
       const slug = await freeSlug(`${slugify(model.title).slice(0, 85)}-${isoDay(startsAt)}`);
       const [ev] = await db.insert(events).values({ ...copy, slug, startsAt }).returning({ id: events.id });
       await setSpeakers(ev.id, speakers.map((x) => x.memberId));

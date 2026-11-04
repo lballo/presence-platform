@@ -9,8 +9,9 @@ import { env } from "./env";
  */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
-export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "message" | "eventImage" | "avatar" | "courseImage" | "courseVideo" | "courseFile" | "testFile", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
+export const BUCKETS: Record<"talk" | "eventReplay" | "forum" | "forumImage" | "forumFile" | "message" | "eventImage" | "avatar" | "courseImage" | "courseVideo" | "courseFile" | "testFile", { bucket: string; maxMb: number; types?: "video" | string[]; public: boolean }> = {
   talk: { bucket: "talks", maxMb: 500, types: "video", public: true },
+  eventReplay: { bucket: "talks", maxMb: 500, types: "video", public: true }, // l'enregistrement d'un événement en ligne
   forum: { bucket: "forum", maxMb: 500, types: "video", public: true },
   forumImage: { bucket: "forum-images", maxMb: 10, types: IMAGE_TYPES, public: true },
   forumFile: { bucket: "forum-fichiers", maxMb: 50, public: false },
@@ -27,7 +28,10 @@ export const BUCKETS: Record<"talk" | "forum" | "forumImage" | "forumFile" | "me
 export type UploadKind = keyof typeof BUCKETS;
 
 /** Une image chargée dans ce bucket public de notre stockage, jamais une image externe. */
-export const isOurImage = (kind: "eventImage" | "avatar" | "forumImage" | "courseImage", url: string) => url.startsWith(`${env.supabaseUrl}/storage/v1/object/public/${BUCKETS[kind].bucket}/`) && !url.includes("..");
+export const isOurImage = (kind: "eventImage" | "avatar" | "forumImage" | "courseImage", url: string) => isOurFile(kind, url);
+
+/** Un fichier de ce bucket public de notre stockage (une vidéo YouTube, par exemple, n'en est pas un). */
+export const isOurFile = (kind: UploadKind, url: string | null | undefined) => !!url && url.startsWith(`${env.supabaseUrl}/storage/v1/object/public/${BUCKETS[kind].bucket}/`) && !url.includes("..");
 
 export const storageReady = () => !!(env.supabaseUrl && env.supabaseServiceKey);
 

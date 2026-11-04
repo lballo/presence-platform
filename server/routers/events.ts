@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, asc, desc, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { eq, and, asc, desc, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { assertCan, createRouter, procFor, publicProc } from "../middleware";
 import { accountBlock, can, type HiveRole } from "../lib/permissions";
@@ -10,7 +10,7 @@ import { publicMember } from "../lib/format";
 import { canViewEvent, eventAccess, eventDenial, SLUG_PATTERN } from "../lib/eventAccess";
 import { freeSlug, laterDates, setSpeakers, startSeries } from "../lib/eventSeries";
 import { REPEAT_LABEL, REPEATS } from "../lib/recurrence";
-import { isOurImage } from "../lib/storage";
+import { isOurFile, isOurImage, removePublicFile } from "../lib/storage";
 import { notify } from "../lib/notify";
 import { award, revoke } from "../lib/honey";
 import { logIfOnBehalf } from "../lib/adminLog";
@@ -230,6 +230,8 @@ export const eventsRouter = createRouter({
         registered: !!mine && !mine.waitlist, waitlisted: !!mine && mine.waitlist,
         canRegister: !!member && e.status === "published" && !e.cancelledAt && !past,
         canManage: manager,
+        // Le replay : pour les membres connectés qui voient l'événement, jamais pour un visiteur
+        replay: member && e.replayUrl && !e.cancelledAt ? e.replayUrl : null,
         ...eventAccess(e, insider),
       },
     };
@@ -347,6 +349,47 @@ export const eventsRouter = createRouter({
       registrants: registrations.map((r) => ({ memberId: r.memberId, ...person(r.member), city: r.member.city, waitlist: r.waitlist, attended: !!r.attendedAt, at: r.createdAt })),
       stats: { views: e.views, registered: registrations.filter((r) => !r.waitlist).length, waitlist: registrations.filter((r) => r.waitlist).length, attended: registrations.filter((r) => r.attendedAt).length },
     };
+  }),
+
+  /**
+   * Ajouter, remplacer ou retirer le replay d'un événement en ligne : un lien (YouTube, Vimeo, Google Drive, Loom…)
+   * ou une vidéo envoyée sur Présence. Le premier ajout prévient les inscrits ; un fichier remplacé quitte le stockage.
+   */
+  setReplay: readProc.input(z.object({ id: z.number().int(), url: z.string().trim().max(1000).nullable() })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const e = await db.query.events.findFirst({ where: eq(events.id, input.id), with: { registrations: true } });
+    if (!e) throw new TRPCError({ code: "NOT_FOUND", message: "Événement introuvable" });
+    assertCan(ctx.member, "event.edit", await eventResource(ctx.member, e), "Seuls ses organisateurs ajoutent le replay.");
+    if (e.kind === "onsite") throw badRequest("Le replay est réservé aux événements en ligne.");
+    const url = input.url || null;
+    if (url && !isOurFile("eventReplay", url) && !/^https:\/\/[^\s]+\.[^\s]+$/i.test(url)) throw badRequest("Collez l’adresse complète de la vidéo, qui commence par https://");
+    if (url === e.replayUrl) return { ok: true, notified: 0 };
+    const first = !!url && !e.replayAddedAt;
+    await db.update(events).set({ replayUrl: url, replayAddedAt: url ? (e.replayAddedAt ?? new Date()) : null }).where(eq(events.id, e.id));
+    if (e.replayUrl) await removePublicFile("eventReplay", e.replayUrl).catch(() => false);
+    let notified = 0;
+    if (first && e.status === "published" && !e.cancelledAt) {
+      const ids = e.registrations.filter((r) => !r.waitlist && r.memberId !== ctx.memberId).map((r) => r.memberId);
+      await notify(ids, { title: `Le replay est disponible : ${e.title}`, body: "Revoyez l’événement quand vous le souhaitez.", href: `/e/${e.slug}#replay` }, "evenements");
+      notified = ids.length;
+    }
+    await logIfOnBehalf(ctx.member, e.hostId, { action: !url ? "Replay retiré" : e.replayUrl ? "Replay remplacé" : "Replay ajouté", targetType: "evenement", targetId: e.id, label: e.title });
+    return { ok: true, notified };
+  }),
+
+  /** Les replays : les événements passés dont l'enregistrement est en ligne, pour les membres qui peuvent les voir. */
+  replays: readProc.query(async ({ ctx }) => {
+    const db = getDb();
+    const myHives = (await db.select({ hiveId: hiveMembers.hiveId, role: hiveMembers.role }).from(hiveMembers).where(eq(hiveMembers.memberId, ctx.memberId))).filter((m) => m.role !== "pending").map((m) => m.hiveId);
+    const list = await db.query.events.findMany({
+      where: and(eq(events.status, "published"), isNull(events.cancelledAt), isNotNull(events.replayUrl), lt(events.startsAt, new Date()), or(isNull(events.hiveId), inArray(events.hiveId, myHives.length ? myHives : [-1]))),
+      with: { host: true, hive: true },
+      orderBy: [desc(events.startsAt)],
+    });
+    return list.map((e) => ({
+      id: e.id, slug: e.slug, title: e.title, tagline: e.tagline, startsAt: e.startsAt, durationMin: e.durationMin, kind: e.kind, type: e.type,
+      photoUrl: e.photoUrl, photoPosition: e.photoPosition, cover: e.cover, host: person(e.host), hiveName: e.hive?.name ?? null, replayAddedAt: e.replayAddedAt,
+    }));
   }),
 
   /** Cocher les présents. */

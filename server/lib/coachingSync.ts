@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { coachingEngagements, coachingMeetings, coachingOffers, coachingSyncRuns, members, type CoachingEngagement } from "../../db/schema";
 import { env } from "./env";
-import { listPages, notionMessage, updatePage, type NotionPage, type NotionProperty } from "./notion";
+import { listPages, NotionError, notionMessage, updatePage, type NotionPage, type NotionProperty } from "./notion";
 import { richTextToPlain } from "./notionBlocks";
 import { open, seal } from "./privateBox";
 
@@ -65,7 +65,11 @@ async function run(): Promise<{ ok: boolean; detail: string }> {
       await listPages(env.notionCoachingEnrollments), await listPages(env.notionCoachingSessions),
     ];
   } catch (e) {
-    return finish(false, `${notionMessage(e)} Dans Notion, ajoutez la connexion de l’intégration Présence aux bases Offres Accompagnements, CRM People, Inscriptions et Sessions.`);
+    // Une base introuvable : c'est l'accès de l'intégration aux bases du coaching qui manque, pas « Formations Présence »
+    const missing = e instanceof NotionError && e.status === 404;
+    return finish(false, missing
+      ? "Notion ne trouve pas une des bases du coaching. Dans Notion, ajoutez la connexion de l’intégration Présence aux bases Offres Accompagnements, CRM People, Inscriptions et Sessions."
+      : `${notionMessage(e)} Les bases du coaching : Offres Accompagnements, CRM People, Inscriptions et Sessions.`);
   }
 
   // Offres

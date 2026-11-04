@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+import { AddToCalendar, feedOptions } from "@/components/events/AddToCalendar";
 import { trpc } from "@/providers/trpc";
 import { parisHour, parisIso } from "@/lib/format";
 
@@ -15,6 +16,7 @@ export default function Calendrier() {
   const agenda = trpc.events.agenda.useQuery();
   const me = trpc.members.me.useQuery().data;
   const coaching = trpc.coaching.mine.useQuery(undefined, { enabled: !!me?.coachingClient }).data;
+  const links = trpc.account.agendaLinks.useQuery(undefined, { staleTime: Infinity }).data;
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [day, setDay] = useState<string | null>(null);
@@ -47,7 +49,10 @@ export default function Calendrier() {
 
   return (
     <section className="p-panel" aria-label="Mon calendrier">
-      <div className="p-panel-head"><h2 className="p-panel-title">Mon calendrier</h2><span className="text-[13px] p-muted">Les rendez-vous auxquels vous participez.</span></div>
+      <div className="p-panel-head">
+        <h2 className="p-panel-title">Mon calendrier</h2>
+        <span className="flex items-center gap-2"><span className="text-[13px] p-muted">Les rendez-vous auxquels vous participez.</span>{links && <AddToCalendar options={feedOptions(links)} title="Exporter mon calendrier" note="Les rendez-vous auxquels vous participez et ceux que vous organisez, mis à jour d’eux-mêmes. Ce lien est personnel : ne le partagez pas." />}</span>
+      </div>
       <div className="flex flex-wrap gap-8 items-start">
         <div className="flex-[1_1_320px] min-w-0" aria-label="Le mois">
           <div className="flex items-center justify-between mb-4">

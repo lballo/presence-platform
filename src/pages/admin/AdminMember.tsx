@@ -8,6 +8,7 @@ import { parisIso, parisToDate } from "@/lib/format";
 import { InviteForm } from "./AdminMembers";
 import { MemberLearning } from "./MemberLearning";
 import { Badge, ConfirmButton, Select } from "./shared";
+import { DeleteMemberSteps } from "./DeleteMember";
 import { ACCESS_LABEL, ROLE_LABEL, STATE_LABEL, fullDate, stateTone } from "./labels";
 
 type Fiche = RouterOutputs["admin"]["member"];
@@ -103,9 +104,7 @@ function AccountActions({ m }: { m: Fiche }) {
   const utils = trpc.useUtils();
   const refresh = () => { utils.admin.invalidate(); utils.members.invalidate(); };
   const suspend = trpc.admin.setSuspended.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.suspended ? "Compte suspendu" : "Compte réactivé"); }, onError: (e) => toast.error(e.message) });
-  const remove = trpc.admin.deleteMember.useMutation({ onSuccess: () => { refresh(); setStep(0); toast.success("Membre supprimé, ses publications restent en ligne"); }, onError: (e) => toast.error(e.message) });
-  const [step, setStep] = useState(0);
-  const [typed, setTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const blocked = m.state === "suspendu" || m.state === "termine";
   return (
     <section className="p-card p-4 sm:p-5 flex flex-col gap-3" aria-label="Compte">
@@ -113,26 +112,9 @@ function AccountActions({ m }: { m: Fiche }) {
       <span className="flex flex-wrap gap-2">
         {blocked ? <button type="button" className="p-btn-primary p-btn-sm" disabled={suspend.isPending} onClick={() => suspend.mutate({ id: m.id, suspended: false })}>Réactiver le compte</button>
           : <ConfirmButton label="Suspendre le compte" question={`Suspendre ${m.firstName} ? La personne ne pourra plus se connecter tant que le compte n’est pas réactivé.`} confirm="Suspendre" disabled={suspend.isPending} onConfirm={() => suspend.mutate({ id: m.id, suspended: true })} />}
-        {step === 0 && <button type="button" className="p-btn-outline p-btn-sm" style={{ color: "var(--p-accent-text)" }} onClick={() => setStep(1)}>Supprimer ce membre</button>}
+        {!deleting && <button type="button" className="p-btn-outline p-btn-sm" style={{ color: "var(--p-accent-text)" }} onClick={() => setDeleting(true)}>Supprimer ce membre</button>}
       </span>
-      {step === 1 && (
-        <div className="p-3.5 rounded-xl flex flex-col gap-2.5 text-[14.5px]" style={{ background: "var(--p-accent-soft)" }}>
-          <p className="m-0"><b>Première confirmation.</b> Le compte sera désactivé et le profil anonymisé : nom, photo, bio et adresse e-mail disparaissent. Ses publications et ses messages restent, sous le nom « Membre supprimé ». Cette action ne s’annule pas.</p>
-          <span className="flex flex-wrap gap-2">
-            <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setStep(2)}>Continuer</button>
-            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setStep(0)}>Annuler</button>
-          </span>
-        </div>
-      )}
-      {step === 2 && (
-        <form className="p-3.5 rounded-xl flex flex-col gap-2.5 text-[14.5px]" style={{ background: "var(--p-accent-soft)" }} onSubmit={(e) => { e.preventDefault(); if (typed === "SUPPRIMER") remove.mutate({ id: m.id, confirm: typed }); }}>
-          <label className="flex flex-col gap-1.5"><span><b>Dernière confirmation.</b> Écrivez SUPPRIMER pour supprimer {m.name}.</span><input className="p-field" value={typed} autoComplete="off" onChange={(e) => setTyped(e.target.value)} /></label>
-          <span className="flex flex-wrap gap-2">
-            <button type="submit" className="p-btn-primary p-btn-sm" disabled={typed !== "SUPPRIMER" || remove.isPending}>Supprimer définitivement</button>
-            <button type="button" className="p-btn-outline p-btn-sm" onClick={() => { setStep(0); setTyped(""); }}>Annuler</button>
-          </span>
-        </form>
-      )}
+      {deleting && <DeleteMemberSteps id={m.id} name={m.name} onCancel={() => setDeleting(false)} onDeleted={() => setDeleting(false)} />}
     </section>
   );
 }

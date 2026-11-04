@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { parisHour, parisLongDate } from "@/lib/format";
-import { Badge, Chips, ConfirmButton, Rows, type Column } from "./shared";
+import { Badge, Chips, ConfirmButton, Rows, SelectionBar, type Column } from "./shared";
 import AdminTalks from "./AdminTalks";
 
 type Ev = RouterOutputs["admin"]["events"][number];
@@ -43,8 +43,17 @@ function EventsList() {
   const utils = trpc.useUtils();
   const q = trpc.admin.events.useQuery();
   const [filter, setFilter] = useState<"avenir" | "bienvenue" | "passes" | "annules" | "tous">("avenir");
-  const refresh = () => { utils.admin.invalidate(); utils.events.invalidate(); };
+  const [picked, setPicked] = useState<Set<string | number>>(new Set());
+  const refresh = () => { utils.admin.invalidate(); utils.events.invalidate(); utils.dashboard.invalidate(); };
   const setPublic = trpc.admin.setEventPublic.useMutation({ onSuccess: (_r, v) => { refresh(); toast.success(v.public ? "L’événement est désormais public" : "L’événement est réservé aux membres"); }, onError: (e) => toast.error(e.message) });
+  const remove = trpc.admin.deleteEvents.useMutation({
+    onSuccess: (r) => {
+      setPicked(new Set()); refresh();
+      const what = r.deleted > 1 ? `${r.deleted} événements supprimés` : "Événement supprimé";
+      toast.success(r.notified ? `${what}, ${r.notified} personne(s) prévenue(s)` : what);
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const cancel = trpc.events.cancel.useMutation({ onSuccess: (r) => { refresh(); toast.success(r.notified ? `Événement annulé, ${r.notified} personne(s) prévenue(s)` : "Événement annulé"); }, onError: (e) => toast.error(e.message) });
   const rows = useMemo(() => {
     const list = q.data ?? [];
@@ -54,16 +63,25 @@ function EventsList() {
     if (filter === "annules") return list.filter((e) => e.cancelled);
     return list;
   }, [q.data, filter]);
+  const chosen = rows.filter((e) => picked.has(e.id));
+  const upcoming = chosen.filter((e) => !e.past && !e.cancelled && e.status === "published");
+  const people = upcoming.reduce((n, e) => n + e.stats.registered + e.stats.waitlist, 0);
+  const warn = people ? ` Les personnes inscrites ${upcoming.length > 1 ? "aux événements à venir" : "à l’événement à venir"} seront prévenues.` : "";
   return (
     <div className="flex flex-col gap-4">
-      <p className="m-0 text-[14.5px] p-muted">La création se fait dans la page Événements. Pour une réunion de bienvenue régulière, activez « Réunion de bienvenue » et choisissez une répétition dans le formulaire.</p>
-      <Chips label="Filtrer les événements" value={filter} onChange={setFilter} options={[["avenir", "À venir"], ["bienvenue", "Réunions de bienvenue"], ["passes", "Passés"], ["annules", "Annulés"], ["tous", "Tous"]]} />
+      <p className="m-0 text-[14.5px] p-muted">La création se fait dans la page Événements. Pour une réunion de bienvenue régulière, activez « Réunion de bienvenue » et choisissez une répétition dans le formulaire. Cochez des événements pour les supprimer : leur page et leurs inscriptions disparaissent, c’est définitif. Supprimer les dernières dates d’un événement récurrent arrête sa série.</p>
+      <Chips label="Filtrer les événements" value={filter} onChange={(f) => { setFilter(f); setPicked(new Set()); }} options={[["avenir", "À venir"], ["bienvenue", "Réunions de bienvenue"], ["passes", "Passés"], ["annules", "Annulés"], ["tous", "Tous"]]} />
+      <SelectionBar count={chosen.length} total={rows.length} noun={["événement", "événements"]} busy={remove.isPending}
+        onClear={() => setPicked(new Set())} onSelectAll={() => setPicked(new Set(rows.map((e) => e.id)))}
+        question={`${chosen.length === 1 ? `Supprimer « ${chosen[0].title} » ? Sa page et ses inscriptions disparaîtront.` : `Supprimer ces ${chosen.length} événements ? Leurs pages et leurs inscriptions disparaîtront.`}${warn} C’est définitif.`}
+        confirm={chosen.length === 1 ? "Supprimer l’événement" : `Supprimer les ${chosen.length} événements`}
+        onConfirm={() => remove.mutate({ ids: chosen.map((e) => e.id) })} />
       {q.isLoading ? <p className="p-muted text-center py-10 m-0">Chargement…</p> : (
-        <Rows rows={rows} columns={columns} keyOf={(e) => e.id} empty="Aucun événement dans cette liste." actions={(e) => (
+        <Rows rows={rows} columns={columns} keyOf={(e) => e.id} empty="Aucun événement dans cette liste." select={{ selected: picked, onChange: setPicked, labelOf: (e) => e.title }} actions={(e) => (
           <>
             <Link to={`/e/${e.slug}/gerer`} className="p-btn-outline p-btn-sm no-underline">Gérer</Link>
             {!e.hive && !e.cancelled && e.status === "published" && <button type="button" className="p-btn-outline p-btn-sm" disabled={setPublic.isPending} onClick={() => setPublic.mutate({ id: e.id, public: e.visibility !== "public" })}>{e.visibility === "public" ? "Réserver aux membres" : "Passer en public"}</button>}
-            {!e.cancelled && e.status === "published" && !e.past && <ConfirmButton label="Annuler" question={`Annuler « ${e.title} » ? Les personnes inscrites seront prévenues.`} confirm="Annuler l’événement" danger disabled={cancel.isPending} onConfirm={() => cancel.mutate({ id: e.id })} />}
+            {!e.cancelled && e.status === "published" && !e.past && <ConfirmButton label="Annuler" question={`Annuler « ${e.title} » ? Les personnes inscrites seront prévenues.`} confirm="Annuler l’événement" dismiss="Garder" danger disabled={cancel.isPending} onConfirm={() => cancel.mutate({ id: e.id })} />}
           </>
         )} />
       )}

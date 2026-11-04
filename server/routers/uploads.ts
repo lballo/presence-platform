@@ -13,7 +13,7 @@ export const uploadsRouter = createRouter({
 
   /** URL d'envoi signée pour un fichier (vidéo, image ou pièce jointe du forum, pièce jointe d'un message). */
   create: uploadProc
-    .input(z.object({ kind: z.enum(["forum", "forumImage", "forumFile", "eventImage", "avatar", "message"]), filename: z.string().min(1).max(200), contentType: z.string().max(120), size: z.number().int().min(0) }))
+    .input(z.object({ kind: z.enum(["forum", "forumImage", "forumFile", "eventImage", "eventReplay", "avatar", "message"]), filename: z.string().min(1).max(200), contentType: z.string().max(120), size: z.number().int().min(0) }))
     .mutation(({ ctx, input }) => createSignedUpload(input.kind, ctx.memberId, input.filename, input.contentType, input.size)),
 
   /** Médias des formations et fichiers des tests : réservés à l'onglet Construire. */

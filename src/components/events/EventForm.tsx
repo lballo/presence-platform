@@ -146,7 +146,7 @@ export function EventForm({ initial, hive, onDone }: { initial?: Managed | null;
   const previewEvent = (): Ev => {
     const hostId = initial?.hostId ?? me.data?.id;
     return {
-      id: initial?.id ?? 0, slug: f.slug || "apercu", title: f.title, tagline: f.tagline, description: f.description, program: f.program, takeaways: lines(f.takeaways),
+      id: initial?.id ?? 0, slug: f.slug || "apercu", replay: null, title: f.title, tagline: f.tagline, description: f.description, program: f.program, takeaways: lines(f.takeaways),
       faq: f.faq.filter((x) => x.q.trim() && x.a.trim()), photoUrl: f.photoUrl || null, photoPosition: f.photoPosition, cover: f.cover, kind: f.kind,
       series: initial?.series ? { label: initial.series.label, dates: initial.series.dates.filter((d) => !d.cancelled && d.slug !== initial.slug).slice(0, 6) } : f.repeat ? { label: REPEAT_LABEL[f.repeat], dates: nextDates.slice(0, 6).map((d) => ({ slug: d.toISOString(), startsAt: d })) } : null, type: f.type, visibility: hiveId ? "membres" : f.visibility, status: "published",
       startsAt: parisToDate(f.date, f.time), durationMin: f.durationMin, days: initial?.days ?? 1, city: f.kind === "onsite" ? f.city : null, where: f.kind === "onsite" ? f.city || "Présentiel" : "En ligne",

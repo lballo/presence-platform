@@ -60,6 +60,19 @@ app.get("/api/test-html/:id", async (c) => {
   return serveTest(Number(c.req.param("id")), c.req.query("t"));
 });
 
+// Mon calendrier en abonnement (Google Agenda, Apple Calendrier, Outlook) : sans compte, le lien signé suffit.
+app.get("/api/agenda/:file", async (c) => {
+  const { agendaItems, buildIcs, memberFromAgendaFile } = await import("./lib/agenda");
+  const id = memberFromAgendaFile(c.req.param("file"));
+  const items = id ? await agendaItems(id) : null;
+  if (!items) return c.text("Lien de calendrier invalide.", 404);
+  c.header("Content-Type", "text/calendar; charset=utf-8");
+  c.header("Cache-Control", "private, max-age=900");
+  c.header("X-Robots-Tag", "noindex");
+  if (c.req.query("telecharger") !== undefined) c.header("Content-Disposition", 'attachment; filename="presence-mon-calendrier.ics"');
+  return c.body(buildIcs(items));
+});
+
 app.use("/api/trpc/*", async (c) =>
   fetchRequestHandler({ endpoint: "/api/trpc", req: c.req.raw, router: appRouter, createContext })
 );

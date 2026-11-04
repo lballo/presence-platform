@@ -18,6 +18,7 @@ import { isOurImage } from "../lib/storage";
 import { clientView } from "./coaching";
 import { cancelSubscriptionNow, describe, findSubscription, pauseSubscription, portalUrl, resumeSubscription, stripeReady } from "../lib/stripe";
 import { anonymize } from "./admin";
+import { agendaLinks, agendaReady } from "../lib/agenda";
 
 const proc = procFor("profile.use");
 const fullName = (m: { firstName: string; lastName: string }) => `${m.firstName} ${m.lastName}`.trim();
@@ -42,6 +43,11 @@ const stripeError = (e: unknown) => new TRPCError({ code: "BAD_GATEWAY", message
 
 /** Paramètres du compte : cloche, abonnement, données, suppression ; et les sous-onglets privés du profil. */
 export const accountRouter = createRouter({
+  /* ───────────── Mon calendrier dans mon agenda ───────────── */
+
+  /** Les adresses d'abonnement à mon calendrier (Google Agenda, Apple, Outlook) ; aucune sans clé privée. */
+  agendaLinks: proc.query(({ ctx }) => (agendaReady() ? agendaLinks(ctx.memberId) : null)),
+
   /* ───────────── Notifications dans la cloche ───────────── */
 
   bellPrefs: proc.query(async ({ ctx }) => {

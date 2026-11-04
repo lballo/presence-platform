@@ -2,7 +2,7 @@
 // Miracle Routine, candidature organisateur, formulaire du profil.
 import { useState } from "react";
 import { Link } from "react-router";
-import { CalendarPlus, Compass, Play } from "lucide-react";
+import { CalendarPlus, Check, Compass, Lock, Play, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { longDate, hour, addMin, monthAbr, dayNum } from "@/lib/format";
@@ -185,41 +185,47 @@ export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <span className="text-[13.5px] p-muted">Mes valeurs <span className="p-faint">· cinq au maximum</span></span>
-        <div className="flex flex-wrap items-center gap-2">
+      <section className="pf-values flex flex-col gap-3.5" aria-labelledby="pf-values-title">
+        <div className="flex items-baseline justify-between gap-4">
+          <h3 id="pf-values-title" className="pf-h3 text-[17px]" style={{ fontWeight: 600 }}>Mes valeurs</h3>
+          <span className="text-[14px] p-muted">{f.values.length} sur 5</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
           {f.values.map((v) => (
-            <span key={v} className="p-chip h-9 cursor-default">{v}<button type="button" aria-label={`Retirer ${v}`} className="ml-1 p-muted" onClick={() => set({ values: f.values.filter((x) => x !== v) })}>×</button></span>
+            <span key={v} className="pf-tag">{v}<button type="button" className="pf-tag-x" aria-label={`Retirer ${v}`} onClick={() => set({ values: f.values.filter((x) => x !== v) })}><X size={12} strokeWidth={1.8} aria-hidden="true" /></button></span>
           ))}
           {f.values.length < 5 && (
-            <span className="p-chip h-9 border-dashed">
-              <input value={newValue} onChange={(e) => setNewValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addValue(); } }} placeholder="Ajouter une valeur" className="bg-transparent outline-none w-[130px] text-[14px]" />
-              <button type="button" onClick={addValue} className="w-6 h-6 rounded-full text-white text-sm" style={{ background: "var(--p-accent)" }}>+</button>
+            <span className="pf-tag pf-tag-add">
+              <input className="pf-add-input" value={newValue} aria-label="Nouvelle valeur" onChange={(e) => setNewValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addValue(); } }} placeholder="Ajouter une valeur" maxLength={40} />
+              <button type="button" className="pf-add-btn" aria-label="Ajouter la valeur" onClick={addValue}><Plus size={14} strokeWidth={1.9} aria-hidden="true" /></button>
             </span>
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="p-soft p-4 flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-[15px] font-semibold">Ce que je cherche ou propose</span>
-          <span className="text-[12.5px]" style={{ color: full ? "var(--p-accent-text)" : "var(--p-ink-3)" }}>{full ? "3 sur 3 · retirez-en un pour changer" : `${f.intents.length} sur 3 au maximum`}</span>
+      <section className="flex flex-col gap-5" aria-labelledby="pf-intents-title">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col gap-1.5 max-w-[520px]">
+            <h3 id="pf-intents-title" className="pf-h3 text-[22px]" style={{ fontWeight: 700 }}>Ce que je cherche ou propose</h3>
+            <p className="m-0 text-[15px] leading-normal p-muted">Ces choix apparaissent dans l’annuaire et règlent les profils que vous propose le Matching.</p>
+          </div>
+          <div className="flex flex-col items-start sm:items-end gap-2">
+            <span className="flex gap-1.5" aria-hidden="true">{[0, 1, 2].map((i) => <span key={i} className={`pf-bar ${i < f.intents.length ? "pf-bar-on" : ""}`} />)}</span>
+            <span className="text-[14px] font-medium" style={{ color: "var(--p-accent-text)" }} aria-live="polite">{full ? "3 sur 3 · retirez-en un pour changer" : `${f.intents.length} sur 3 · encore ${3 - f.intents.length} choix possible${3 - f.intents.length > 1 ? "s" : ""}`}</span>
+          </div>
         </div>
-        <span className="text-[13px] p-muted -mt-1">Ces choix apparaissent dans l’annuaire et règlent les profils que vous propose le Matching.</span>
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(230px, 100%), 1fr))" }}>
+        <div className="pf-intents">
           {me.intentGroups.map((g) => (
-            <div key={g.key} className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--p-gold)" }}>{g.label}</span>
-              <div className="flex flex-wrap gap-1.5">
+            <div key={g.key} className="pf-intent-row" role="group" aria-label={g.label}>
+              <span className="pf-intent-label">{g.label}</span>
+              <div className="flex flex-wrap gap-2.5">
                 {g.options.map(([code, label]) => {
                   const on = f.intents.includes(code);
                   const dis = !on && full;
                   return (
-                    <button key={code} type="button" disabled={dis} aria-pressed={on}
-                      className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-full border text-[13px] font-medium disabled:opacity-40"
-                      style={on ? { background: "var(--p-accent-soft)", color: "var(--p-accent-text)", borderColor: "var(--p-accent)" } : { background: "var(--p-surface)", borderColor: "var(--p-line-2)" }}
+                    <button key={code} type="button" disabled={dis} aria-pressed={on} className={`pf-chip ${on ? "pf-chip-on" : dis ? "pf-chip-off" : ""}`}
                       onClick={() => set({ intents: on ? f.intents.filter((x) => x !== code) : [...f.intents, code] })}>
-                      {on && "✓ "}{label}
+                      {on && <Check size={14} strokeWidth={2} aria-hidden="true" />}{label}
                     </button>
                   );
                 })}
@@ -227,23 +233,29 @@ export function ProfileEditor({ me, onDone }: { me: Me; onDone: () => void }) {
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="p-4 rounded-2xl border border-dashed flex flex-col gap-2.5" style={{ borderColor: "var(--p-line-2)" }}>
-        <label className="flex items-start gap-2.5 cursor-pointer">
-          <input type="checkbox" checked={f.rencontreEnabled} onChange={(e) => set({ rencontreEnabled: e.target.checked })} className="mt-1 w-[18px] h-[18px]" style={{ accentColor: "var(--p-accent)" }} />
-          <span className="flex flex-col gap-0.5">
-            <span className="font-semibold">Activer l’espace Rencontre</span>
-            <span className="text-[13px] p-muted leading-relaxed">Pour faire aussi une rencontre amoureuse, dans un espace séparé du Matching. Ce choix n’apparaît jamais dans l’annuaire ni sur votre profil, et vous ne voyez que les membres qui l’ont aussi activé.</span>
+      <section className="pf-rencontre" aria-labelledby="pf-renc-title">
+        <div className="pf-renc-head">
+          <button type="button" role="switch" aria-checked={f.rencontreEnabled} aria-labelledby="pf-renc-title" className={`pf-switch ${f.rencontreEnabled ? "pf-switch-on" : ""}`} onClick={() => set({ rencontreEnabled: !f.rencontreEnabled })}><span className="pf-knob" /></button>
+          <div className="pf-renc-title flex flex-wrap items-center gap-2.5">
+            <h3 id="pf-renc-title" className="pf-h3 text-[18px]" style={{ fontWeight: 700, color: "inherit" }}>Espace Rencontre</h3>
+            <span className="pf-private"><Lock size={12} strokeWidth={1.6} aria-hidden="true" />Privé</span>
+          </div>
+          <p className="pf-renc-text m-0 text-[15px] leading-[1.55]" style={{ color: "#D6CBC2" }}>Pour faire aussi une rencontre amoureuse, dans un espace séparé du Matching. Ce choix n’apparaît jamais dans l’annuaire ni sur votre profil, et vous ne voyez que les membres qui l’ont aussi activé.</p>
+          <span aria-hidden="true" className="pf-heart hidden sm:flex">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M15 30.5C9 26 4.5 21.6 4.5 16.4 4.5 13 7.1 10.5 10.3 10.5c2 0 3.7 1 4.7 2.6 1-1.6 2.7-2.6 4.7-2.6 3.2 0 5.8 2.5 5.8 5.9 0 5.2-4.5 9.6-10.5 14.1z" /><path d="M26.4 13.2c.9-.9 2.1-1.4 3.4-1.4 2.9 0 5.2 2.3 5.2 5.3 0 4.7-4.1 8.6-9.5 12.7-1.2-.9-2.3-1.8-3.4-2.7" stroke="#E0D3BD" /></svg>
           </span>
-        </label>
+        </div>
         {f.rencontreEnabled && (
-          <div className="flex flex-wrap items-center gap-2 pl-7">
-            <span className="text-[13px] p-muted">Je souhaite rencontrer</span>
-            {PREFS.map(([v, l]) => <button key={v} type="button" className={`p-chip h-[34px] ${f.rencontrePref === v ? "p-chip-on" : ""}`} onClick={() => set({ rencontrePref: v as "f" | "m" | "all" })}>{l}</button>)}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 sm:pl-[70px]">
+            <span id="pf-who" className="text-[15px]" style={{ color: "#E0D3BD" }}>Je souhaite rencontrer</span>
+            <div role="radiogroup" aria-labelledby="pf-who" className="pf-seg-group">
+              {PREFS.map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={f.rencontrePref === v} className={`pf-seg ${f.rencontrePref === v ? "pf-seg-on" : ""}`} onClick={() => set({ rencontrePref: v as "f" | "m" | "all" })}>{l}</button>)}
+            </div>
           </div>
         )}
-      </div>
+      </section>
 
       <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Langues</span><input className="p-field" value={f.langs} onChange={(e) => set({ langs: e.target.value })} /></label>
       <label className="flex items-center gap-2.5 cursor-pointer"><input type="checkbox" checked={f.visibleInDirectory} onChange={(e) => set({ visibleInDirectory: e.target.checked })} className="w-[18px] h-[18px]" style={{ accentColor: "var(--p-accent)" }} /><span>Apparaître dans l’annuaire des membres</span></label>

@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { parisToDate } from "@/lib/format";
-import { Badge, Rows, Select, type Column } from "./shared";
+import { Badge, ConfirmButton, Rows, Select, type Column } from "./shared";
+import { DeleteMemberSteps } from "./DeleteMember";
 import { ACCESS_LABEL, ROLE_LABEL, STATE_LABEL, fullDate, stateTone, type MemberState } from "./labels";
 
 type Row = RouterOutputs["admin"]["members"][number];
@@ -41,6 +42,10 @@ export default function AdminMembers() {
   const [onboarding, setOnboarding] = useState<"" | "fait" | "non">("");
   const [welcome, setWelcome] = useState<"" | "present" | "inscrit" | "non">("");
   const [inviting, setInviting] = useState(false);
+  const me = trpc.members.me.useQuery().data;
+  const utils = trpc.useUtils();
+  const suspend = trpc.admin.setSuspended.useMutation({ onSuccess: (_r, v) => { utils.admin.invalidate(); utils.members.invalidate(); toast.success(v.suspended ? "Compte suspendu" : "Compte réactivé"); }, onError: (e) => toast.error(e.message) });
+  const [deleting, setDeleting] = useState<Row | null>(null);
 
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -82,7 +87,18 @@ export default function AdminMembers() {
         <Select label="Parcours d’accueil" value={onboarding} onChange={setOnboarding} options={[["", "Tous"], ["fait", "Fait"], ["non", "Pas encore"]]} />
         <Select label="Réunion de bienvenue" value={welcome} onChange={setWelcome} options={[["", "Tous"], ["present", "Présent·e"], ["inscrit", "Inscrit·e"], ["non", "Pas inscrit·e"]]} />
       </div>
-      {list.isLoading ? <p className="p-muted text-center py-10 m-0">Chargement…</p> : <Rows rows={rows} columns={columns} keyOf={(m) => m.id} hrefOf={(m) => `/admin/membres/${m.id}`} empty="Aucun membre ne correspond à ces filtres." />}
+      {deleting && <DeleteMemberSteps id={deleting.id} name={deleting.name} scroll onCancel={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}
+      {list.isLoading ? <p className="p-muted text-center py-10 m-0">Chargement…</p> : (
+        <Rows rows={rows} columns={columns} keyOf={(m) => m.id} hrefOf={(m) => `/admin/membres/${m.id}`} empty="Aucun membre ne correspond à ces filtres."
+          actions={(m) => (m.state === "supprime" || m.id === me?.id ? null : (
+            <>
+              {m.state === "suspendu" || m.state === "termine"
+                ? <button type="button" className="p-btn-outline p-btn-sm" disabled={suspend.isPending} onClick={() => suspend.mutate({ id: m.id, suspended: false })}>Réactiver</button>
+                : <ConfirmButton label="Suspendre" question={`Suspendre ${m.name} ? La personne ne pourra plus se connecter tant que le compte n’est pas réactivé.`} confirm="Suspendre" dismiss="Garder" disabled={suspend.isPending} onConfirm={() => suspend.mutate({ id: m.id, suspended: true })} />}
+              <button type="button" className="p-btn-outline p-btn-sm" style={{ color: "var(--p-accent-text)" }} aria-label={`Supprimer ${m.name}`} onClick={() => setDeleting(m)}>Supprimer</button>
+            </>
+          ))} />
+      )}
     </div>
   );
 }

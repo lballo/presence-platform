@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
 
-type MemberKind = "forum" | "forumImage" | "forumFile" | "eventImage" | "avatar" | "message";
+type MemberKind = "forum" | "forumImage" | "forumFile" | "eventImage" | "eventReplay" | "avatar" | "message";
 type CourseKind = "courseImage" | "courseVideo" | "courseFile" | "testFile";
 type Kind = MemberKind | CourseKind;
 const isCourseKind = (k: Kind): k is CourseKind => k.startsWith("course") || k === "testFile";

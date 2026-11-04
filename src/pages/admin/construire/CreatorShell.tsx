@@ -60,6 +60,8 @@ export function CreatorShell({ aside, crumbs, actions, children, wide }: { aside
         <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 min-h-[68px] px-4 lg:px-10 py-3 border-b" style={{ background: "var(--p-surface)", borderColor: "var(--p-line)" }}>
           <div className="flex items-center gap-2 min-w-0 flex-[1_1_200px]">
             <button type="button" aria-label="Ouvrir le menu" aria-expanded={drawer} className="cr-icon lg:hidden flex-none" onClick={() => setDrawer(true)}><Menu size={18} /></button>
+            {/* Sur téléphone, le bandeau est replié : l'initiale du logo ramène à l'accueil */}
+            <Link to="/" title="Retour à l’accueil" aria-label="Présence, retour à l’accueil" className="lg:hidden flex-none w-8 h-8 flex items-center justify-center no-underline font-['Newsreader'] text-[24px] leading-none" style={{ color: "var(--p-accent)" }}>P</Link>
             <nav aria-label="Fil d’Ariane" className="flex items-center gap-2 text-[12px] p-muted min-w-0">
               <BookOpen size={16} className="flex-none hidden sm:block" />
               {crumbs.map((c, i) => (
@@ -86,7 +88,7 @@ function CreatorNav() {
   const colors = ({ isActive }: { isActive: boolean }) => (isActive ? { background: "var(--p-accent-soft)", color: "var(--p-accent)" } : { color: "var(--p-ink-2)" });
   return (
     <div className="flex flex-col flex-1 px-5 py-7">
-      <Link to="/admin/createur" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
+      <Link to="/" title="Retour à l’accueil" aria-label="Présence, retour à l’accueil" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
       <p className="m-0 mt-10 text-[10px] font-semibold tracking-[0.16em] p-muted">ESPACE CRÉATEUR</p>
       <nav aria-label="Espace créateur" className="mt-4 flex flex-col gap-1">
         <NavLink to="/admin/createur" end className={item} style={colors}><BookOpen size={16} /> Mes formations{!!list.data?.length && <span className="ml-auto text-[12px]">{String(list.data.length).padStart(2, "0")}</span>}</NavLink>

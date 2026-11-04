@@ -213,14 +213,14 @@ export default function Layout() {
     <div className="min-h-screen lg:flex">
       {/* Ordinateur : barre latérale fixe */}
       <aside aria-label="Navigation du réseau" className="hidden lg:flex flex-none flex-col border-r sticky top-0 h-screen overflow-y-auto transition-[width] duration-200" style={{ width: collapsed ? 92 : "var(--p-side-w)", background: "var(--p-menu-bg)", borderColor: "var(--p-menu-line)" }}>
-        <NavLink to="/" className={`pt-7 no-underline ${collapsed ? "px-3.5" : "px-5"}`} style={{ color: "var(--p-ink)" }}><MenuBrand theme={theme} collapsed={collapsed} /></NavLink>
+        <NavLink to="/" end title="Retour à l’accueil" className={`pt-7 no-underline ${collapsed ? "px-3.5" : "px-5"}`} style={{ color: "var(--p-ink)" }}><MenuBrand theme={theme} collapsed={collapsed} /></NavLink>
         <MenuContent dots={dots} live={live} theme={theme} setTheme={setTheme} collapsed={collapsed} onCollapse={toggleCollapsed} />
       </aside>
 
       {/* Mobile : barre du haut compacte */}
       <header className="lg:hidden sticky top-0 z-30 flex items-center gap-2 h-14 px-3 border-b" style={{ background: "var(--p-menu-bg)", borderColor: "var(--p-menu-line)" }}>
         <button type="button" aria-label="Ouvrir le menu" aria-expanded={drawer} className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ color: "var(--p-ink)" }} onClick={() => setDrawer(true)}><Menu size={22} /></button>
-        <NavLink to="/" className="no-underline min-w-0" style={{ color: "var(--p-ink)" }}>{theme === "douceur" ? <img src="/logo-presence.png" alt="Présence" className="h-[30px] w-auto" /> : <Brand compact />}</NavLink>
+        <NavLink to="/" end title="Retour à l’accueil" className="no-underline min-w-0" style={{ color: "var(--p-ink)" }}>{theme === "douceur" ? <img src="/logo-presence.png" alt="Présence" className="h-[30px] w-auto" /> : <Brand compact />}</NavLink>
         <span className="flex-1" />
         <CalendarButton />
         <MessagesBubble unread={unread.data ?? 0} />
@@ -234,7 +234,7 @@ export default function Layout() {
           <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
           <aside className="p-drawer absolute left-0 top-0 bottom-0 w-[min(300px,85vw)] flex flex-col overflow-y-auto shadow-2xl" style={{ background: "var(--p-menu-bg)" }}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--p-menu-line)" }}>
-              <MenuBrand theme={theme} collapsed={false} />
+              <NavLink to="/" end title="Retour à l’accueil" className="no-underline" style={{ color: "var(--p-ink)" }} onClick={() => setDrawer(false)}><MenuBrand theme={theme} collapsed={false} /></NavLink>
               <button type="button" aria-label="Fermer le menu" className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ color: "var(--p-ink)" }} onClick={() => setDrawer(false)}><X size={22} /></button>
             </div>
             <MenuContent dots={dots} live={live} theme={theme} setTheme={setTheme} />

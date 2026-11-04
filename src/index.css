@@ -323,3 +323,61 @@ html.creator-mode .cr-doc-h { margin: 0; font-family: var(--p-doc-head); font-si
 .cr-drop input::placeholder { color: var(--p-ink-2); }
 .cr-add { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 8px; border-radius: 10px; font-size: 15px; color: var(--p-ink-3); text-align: left; cursor: text; }
 .cr-add:hover { color: var(--p-ink-2); }
+
+/* Mon profil, « Lignes alignées » (maquette de Laura) : valeurs, ce que je cherche ou propose, espace Rencontre.
+   Les couleurs suivent le mode choisi ; la carte Rencontre reste sombre dans tous les modes, comme sur la maquette. */
+.pf-h3 { margin: 0; font-family: var(--p-sans); color: var(--p-ink); letter-spacing: 0; line-height: 1.25; }
+.pf-tag { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 8px 0 18px; border-radius: 999px; border: 1px solid var(--p-line-2); font-size: 15px; font-weight: 500; color: var(--p-ink); box-sizing: border-box; }
+.pf-tag-x { width: 28px; height: 28px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--p-ink-2); }
+.pf-tag-x:hover { background: var(--p-hover); color: var(--p-accent-text); }
+.pf-tag-add { border-style: dashed; gap: 8px; padding: 0 6px 0 18px; font-weight: 400; }
+.pf-add-input { font: inherit; font-size: 15px; border: 0; outline: 0; background: transparent; color: var(--p-ink); width: 150px; min-width: 0; }
+.pf-add-input::placeholder { color: var(--p-ink-3); }
+.pf-add-btn { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--p-accent); color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; }
+.pf-bar { width: 28px; height: 6px; border-radius: 3px; background: var(--p-line-2); }
+.pf-bar-on { background: var(--p-accent); }
+.pf-intents { display: flex; flex-direction: column; border: 1px solid var(--p-line); border-radius: 16px; background: var(--p-surface); }
+.pf-intent-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); align-items: center; column-gap: 24px; padding: 14px 24px; }
+.pf-intent-row + .pf-intent-row { border-top: 1px solid var(--p-line); }
+.pf-intent-label { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--p-gold); }
+html.douceur .pf-intent-label { color: #7A5C2E; } /* le brun doré de la maquette ; ailleurs en douceur, l'or tire vers le rouge */
+.pf-chip { font: inherit; font-size: 15px; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--p-line-2); background: var(--p-surface); color: var(--p-ink); text-align: left; transition: background .15s, border-color .15s, color .15s; }
+.pf-chip:hover { border-color: var(--p-accent); }
+.pf-chip-on { background: var(--p-accent-soft); border-color: var(--p-accent); color: var(--p-accent-text); font-weight: 600; }
+.pf-chip-off { border-style: dashed; color: var(--p-ink-3); background: transparent; cursor: not-allowed; }
+.pf-chip-off:hover { border-color: var(--p-line-2); }
+.pf-rencontre { background: #2B2420; color: #F3ECE8; border-radius: 24px; padding: 28px 32px; display: flex; flex-direction: column; gap: 18px; }
+html.dark .pf-rencontre { box-shadow: inset 0 0 0 1px rgba(243, 236, 232, .09); }
+/* L'interrupteur à gauche du titre et du texte ; sur téléphone, le texte prend toute la largeur sous le titre */
+.pf-renc-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 18px; row-gap: 6px; align-items: start; }
+.pf-renc-head > .pf-switch { grid-column: 1; grid-row: 1 / span 2; }
+.pf-renc-title { grid-column: 2; grid-row: 1; min-height: 30px; }
+.pf-renc-text { grid-column: 2; grid-row: 2; }
+.pf-heart { grid-column: 3; grid-row: 1 / span 2; }
+.pf-private { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #3D3128; font-size: 12px; font-weight: 600; color: #E0D3BD; }
+.pf-heart { flex: none; width: 72px; height: 72px; border-radius: 50%; background: #3D3128; color: #C4A574; align-items: center; justify-content: center; }
+.pf-switch { position: relative; flex: none; width: 52px; height: 30px; border-radius: 999px; background: #5A4E46; padding: 0; transition: background .15s; }
+.pf-switch-on { background: #C4A574; }
+.pf-knob { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: left .15s; }
+.pf-switch-on .pf-knob { left: 25px; }
+.pf-seg-group { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: #3D3128; }
+.pf-seg { font: inherit; font-size: 15px; min-height: 44px; padding: 0 20px; background: transparent; color: #F3ECE8; border-radius: 999px; }
+.pf-seg-on { background: #F3ECE8; color: #2B2420; font-weight: 600; }
+.pf-tag-x:focus-visible, .pf-add-btn:focus-visible, .pf-chip:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 2px; }
+.pf-seg:focus-visible, .pf-switch:focus-visible { outline: 2px solid #E0D3BD; outline-offset: 2px; }
+/* Sur téléphone : la catégorie passe au-dessus de ses choix, la carte Rencontre se resserre */
+@media (max-width: 639px) {
+  .pf-intent-row { grid-template-columns: minmax(0, 1fr); row-gap: 10px; padding: 14px 16px; }
+  .pf-rencontre { padding: 22px 18px; }
+  .pf-renc-head { grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; row-gap: 12px; }
+  .pf-renc-head > .pf-switch { grid-row: 1; }
+  .pf-renc-text { grid-column: 1 / -1; }
+  .pf-seg-group { display: flex; flex-wrap: wrap; border-radius: 24px; width: 100%; }
+  .pf-seg { flex: 1 1 auto; padding: 0 12px; font-size: 14px; }
+}
+
+/* Listes déroulantes : notre flèche, à 16 px du bord droit (celle du navigateur collait à la bordure), dans la couleur du mode */
+select.p-field { appearance: none; -webkit-appearance: none; padding-right: 44px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none' stroke='%235C5856' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; background-size: 14px 14px; cursor: pointer; }
+html.dark select.p-field { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none' stroke='%23A8A29E' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5'/%3E%3C/svg%3E"); }
+html.douceur select.p-field { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none' stroke='%236E6557' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5'/%3E%3C/svg%3E"); }
+select.p-field::-ms-expand { display: none; }

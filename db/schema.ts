@@ -457,6 +457,8 @@ export const events = pgTable(
     cover: varchar("cover", { length: 20 }).notNull().default(""), // couleur d'un événement sans photo ; vide, elle suit le format
     photoPosition: varchar("photo_position", { length: 20 }).notNull().default("50% 50%"), // cadrage de la photo
     seriesId: integer("series_id"), // une date d'un événement récurrent
+    replayUrl: text("replay_url"), // l'enregistrement d'un événement en ligne, pour les membres (lien ou fichier sur Présence)
+    replayAddedAt: timestamp("replay_added_at", { withTimezone: true }),
     withLine: text("with_line").notNull().default(""),
     inAgenda: boolean("in_agenda").notNull().default(true), // aussi dans l'agenda du cercle
     live: boolean("live").notNull().default(false),

@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Ban, Copy, ExternalLink, Eye, Pencil, UserCheck, Users } from "lucide-react";
+import { ArrowLeft, Ban, Copy, ExternalLink, Eye, Pencil, PlayCircle, Upload, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { Avatar } from "@/components/Avatar";
 import { EventForm } from "@/components/events/EventForm";
 import { parisHour, parisLongDate, plural } from "@/lib/format";
+import { useUpload } from "@/lib/upload";
+import { VideoEmbed } from "@/components/VideoEmbed";
+import { ConfirmButton } from "@/pages/admin/shared";
 
 /** Gérer un événement : réservé à celui qui l'a créé et aux administrateurs. */
 export default function EventManage() {
@@ -65,6 +68,8 @@ export default function EventManage() {
         ))}
       </div>
 
+      {e.kind !== "onsite" && <ReplayCard id={e.id} title={e.title} url={e.replayUrl} />}
+
       {!!e.series?.dates.length && (
         <section className="flex flex-col gap-2.5 mb-7" aria-label="Les dates de la série">
           <h2 className="m-0 text-[28px]">Les dates à venir</h2>
@@ -101,5 +106,48 @@ export default function EventManage() {
         </section>
       )}
     </>
+  );
+}
+
+/**
+ * Le replay d'un événement en ligne : un lien (YouTube, Vimeo, Google Drive, Loom) ou une vidéo envoyée sur Présence.
+ * Les membres le retrouvent sur la page de l'événement et dans Événements › Replays ; le premier ajout prévient les inscrits.
+ */
+function ReplayCard({ id, title, url }: { id: number; title: string; url: string | null }) {
+  const utils = trpc.useUtils();
+  const [link, setLink] = useState("");
+  const video = useUpload("eventReplay");
+  const save = trpc.events.setReplay.useMutation({
+    onSuccess: (r, v) => { utils.events.invalidate(); setLink(""); toast.success(!v.url ? "Replay retiré" : r.notified ? `Replay en ligne : ${plural(r.notified, "personne prévenue", "personnes prévenues")}` : "Replay en ligne"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const send = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 500 * 1048576) return void toast.error("La vidéo dépasse 500 Mo. Déposez-la plutôt sur YouTube ou Vimeo et collez son lien.");
+    try { save.mutate({ id, url: (await video.upload(file)).publicUrl }); } catch (err) { toast.error(err instanceof Error ? err.message : "Envoi impossible"); }
+  };
+  return (
+    <section className="p-card p-5 sm:p-6 flex flex-col gap-3.5 mb-7" aria-labelledby="replay-titre">
+      <h2 id="replay-titre" className="m-0 text-[28px] flex items-center gap-2"><PlayCircle size={24} style={{ color: "var(--p-accent)" }} /> Replay</h2>
+      <p className="m-0 text-[14.5px] p-muted">{url ? "Les membres le retrouvent sur la page de l’événement et dans Événements › Replays." : "Après l’événement, ajoutez son enregistrement : les membres le retrouvent dans Événements › Replays, et les personnes inscrites sont prévenues."}</p>
+      {url && (
+        <>
+          <VideoEmbed url={url} title={`Replay : ${title}`} />
+          <span className="flex flex-wrap gap-2"><ConfirmButton label="Retirer le replay" question="Retirer le replay ? Les membres ne pourront plus le revoir, et une vidéo envoyée sur Présence sera effacée." confirm="Retirer le replay" dismiss="Garder" danger disabled={save.isPending} onConfirm={() => save.mutate({ id, url: null })} /></span>
+        </>
+      )}
+      <form className="flex flex-col gap-2.5" onSubmit={(ev) => { ev.preventDefault(); if (link.trim()) save.mutate({ id, url: link.trim() }); }}>
+        <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>{url ? "Remplacer par un autre lien" : "Lien de l’enregistrement"}</span><input className="p-field" type="url" inputMode="url" value={link} onChange={(ev) => setLink(ev.target.value)} placeholder="https://www.youtube.com/watch?v=…" /></label>
+        <span className="flex flex-wrap items-center gap-2">
+          <button type="submit" className="p-btn-primary p-btn-sm" disabled={!link.trim() || save.isPending || video.busy}>{url ? "Remplacer" : "Publier le replay"}</button>
+          <span className="text-[13px] p-muted">ou</span>
+          <label className={`p-btn-outline p-btn-sm ${video.busy ? "pointer-events-none opacity-60" : "cursor-pointer"}`}>
+            <input type="file" accept="video/mp4,video/quicktime,video/webm,video/*" className="sr-only" aria-label="Envoyer la vidéo du replay" disabled={video.busy} onChange={(ev) => { void send(ev.target.files?.[0]); ev.target.value = ""; }} />
+            <Upload size={15} /> {video.busy ? `Envoi… ${video.progress ?? 0} %` : "Envoyer la vidéo"}
+          </label>
+        </span>
+        <span className="text-[12.5px] p-muted">YouTube en « non répertorié », Vimeo, Google Drive ou Loom ; ou un fichier vidéo de 500 Mo au plus.</span>
+      </form>
+    </section>
   );
 }

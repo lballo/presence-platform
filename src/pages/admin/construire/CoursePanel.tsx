@@ -23,7 +23,7 @@ export function CoursePanel({ c, currentLesson, currentSection, onHide }: { c: C
   return (
     <div className="flex flex-col flex-1 px-5 pt-7 pb-6">
       <div className="flex items-center justify-between gap-2">
-        <Link to="/admin/createur" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
+        <Link to="/" title="Retour à l’accueil" aria-label="Présence, retour à l’accueil" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
         {onHide && <button type="button" aria-label="Masquer le parcours" title="Masquer le parcours" className="cr-icon hidden lg:inline-flex" style={{ color: "var(--p-ink-2)" }} onClick={onHide}><PanelLeftClose size={17} /></button>}
       </div>
       <Link to="/admin/createur" className="mt-7 inline-flex items-center gap-1.5 text-[12px] font-medium no-underline" style={{ color: "var(--p-accent)" }}><ArrowLeft size={14} /> Mes formations</Link>

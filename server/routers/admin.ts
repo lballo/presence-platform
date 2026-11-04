@@ -5,7 +5,7 @@ import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import {
   adminLog, coachMemory, coachMessages, coachSettings, courseAssignments, courseEnrollments, emailPreferences, emailSends, eventRegistrations, events, forumDrafts, forumPosts, forumReplies, hiveMembers, hivePosts, hives,
-  honeyLedger, invitations, journalEntries, lessonProgress, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, profileThemeShares, reports, sectionProgress, swipes, talks, testResults, workflowRuns, type Member,
+  eventSeries, honeyLedger, invitations, journalEntries, lessonProgress, memberActivity, memberTagLinks, members, messages, moduleProgress, notifications, profileThemeShares, reports, sectionProgress, swipes, talks, testResults, workflowRuns, type Member,
   coachingEngagements, coachingJournal,
 } from "../../db/schema";
 import { logAdmin } from "../lib/adminLog";
@@ -15,7 +15,7 @@ import { notify } from "../lib/notify";
 import { publicMember } from "../lib/format";
 import { unregisterMember } from "./events";
 import { deleteForumPosts } from "./forum";
-import { removePublicFile } from "../lib/storage";
+import { isOurFile, isOurImage, removePublicFile } from "../lib/storage";
 
 const adminProc = procFor("admin.panel");
 const badRequest = (message: string) => new TRPCError({ code: "BAD_REQUEST", message });
@@ -447,24 +447,83 @@ export const adminRouter = createRouter({
     return { ok: true };
   }),
 
+  /**
+   * Supprimer un ou plusieurs événements, avec leurs inscriptions. Les inscrits d'un événement à venir sont prévenus
+   * (une seule notification par personne). Si les dernières dates d'une série partent, la série s'arrête :
+   * sinon elle les recréerait. La photo quitte le stockage quand plus aucun événement ne l'utilise.
+   */
+  deleteEvents: adminProc.input(z.object({ ids: z.array(z.number().int()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+    const db = getDb();
+    const list = await db.query.events.findMany({ where: inArray(events.id, [...new Set(input.ids)]), with: { registrations: true } });
+    if (!list.length) throw new TRPCError({ code: "NOT_FOUND", message: input.ids.length > 1 ? "Ces événements n’existent plus." : "Cet événement n’existe plus." });
+    const ids = list.map((e) => e.id);
+    const now = new Date();
+    const told = new Map<number, string[]>();
+    const toldFor = new Map<number, number>(); // pour le journal : combien de personnes prévenues par événement
+    for (const e of list) {
+      if (e.cancelledAt || e.status !== "published" || e.startsAt <= now) continue;
+      const others = e.registrations.filter((r) => r.memberId !== ctx.memberId);
+      for (const r of others) told.set(r.memberId, [...(told.get(r.memberId) ?? []), e.title]);
+      toldFor.set(e.id, others.length);
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(eventRegistrations).where(inArray(eventRegistrations.eventId, ids));
+      await tx.delete(events).where(inArray(events.id, ids));
+    });
+    // Une série dont on retire les dernières dates s'arrête, pour ne pas les voir revenir.
+    let seriesStopped = 0;
+    for (const seriesId of new Set(list.map((e) => e.seriesId).filter((x): x is number => x != null))) {
+      const [s] = await db.select().from(eventSeries).where(eq(eventSeries.id, seriesId));
+      if (!s || s.stoppedAt) continue;
+      const [kept] = await db.select({ last: sql<Date | null>`max(${events.startsAt})` }).from(events).where(eq(events.seriesId, seriesId));
+      const lastGone = Math.max(...list.filter((e) => e.seriesId === seriesId).map((e) => e.startsAt.getTime()));
+      if (!kept?.last || new Date(kept.last).getTime() < lastGone) {
+        await db.update(eventSeries).set({ stoppedAt: now }).where(eq(eventSeries.id, seriesId));
+        seriesStopped++;
+      }
+    }
+    for (const e of list) if (isOurFile("eventReplay", e.replayUrl)) await removePublicFile("eventReplay", e.replayUrl).catch(() => false);
+    for (const url of new Set(list.map((e) => e.photoUrl).filter((u): u is string => !!u && isOurImage("eventImage", u)))) {
+      const [still] = await db.select({ id: events.id }).from(events).where(eq(events.photoUrl, url)).limit(1);
+      if (!still) await removePublicFile("eventImage", url).catch(() => false);
+    }
+    for (const [memberId, titles] of told) {
+      await notify([memberId], titles.length === 1
+        ? { title: `Événement annulé : ${titles[0]}`, body: "L’équipe Présence a retiré cet événement. Votre inscription est levée.", href: "/evenements" }
+        : { title: `${titles.length} événements annulés`, body: `L’équipe Présence a retiré : ${titles.join(", ")}. Vos inscriptions sont levées.`.slice(0, 1000), href: "/evenements" }, "evenements");
+    }
+    for (const e of list) {
+      const n = toldFor.get(e.id) ?? 0;
+      await logAdmin(ctx.member, { action: "Événement supprimé", targetType: "evenement", targetId: e.id, label: e.title, detail: n ? `${n} personne(s) prévenue(s)` : "" });
+    }
+    return { ok: true, deleted: list.length, notified: told.size, seriesStopped };
+  }),
+
   /* ───────────── Talk shows ───────────── */
 
   /** Tous les talk shows, publiés, en attente ou refusés, du plus récent au plus ancien. */
   talks: adminProc.query(async () => {
     const list = await getDb().query.talks.findMany({ with: { speaker: true }, orderBy: [desc(talks.submittedAt)] });
     return list.map((t) => ({
-      id: t.id, title: t.title, status: t.status, views: t.views, durationMin: t.durationMin, videoUrl: t.videoUrl, submittedAt: t.submittedAt, publishedAt: t.publishedAt,
+      id: t.id, title: t.title, status: t.status, views: t.views, durationMin: t.durationMin, videoUrl: t.videoUrl, videoStored: isOurFile("talk", t.videoUrl), submittedAt: t.submittedAt, publishedAt: t.publishedAt,
       speaker: t.speaker ? { id: t.speaker.id, name: `${t.speaker.firstName} ${t.speaker.lastName}`.trim() } : null,
     }));
   }),
 
-  /** Supprimer un talk show : il disparaît du Talk Show et du profil de son auteur, et sa vidéo quitte le stockage si elle y est. */
-  deleteTalk: adminProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
-    const [t] = await getDb().delete(talks).where(eq(talks.id, input.id)).returning();
-    if (!t) throw new TRPCError({ code: "NOT_FOUND", message: "Ce talk show n’existe plus." });
-    const videoRemoved = await removePublicFile("talk", t.videoUrl).catch(() => false);
-    await logAdmin(ctx.member, { action: "Talk supprimé", targetType: "talk", targetId: t.id, label: t.title, detail: videoRemoved ? "Vidéo retirée du stockage." : "" });
-    return { ok: true, videoRemoved };
+  /**
+   * Supprimer un ou plusieurs talk shows : ils disparaissent du Talk Show et du profil de leur auteur,
+   * et leur vidéo quitte le stockage si elle y est. Chaque suppression est notée au journal.
+   */
+  deleteTalks: adminProc.input(z.object({ ids: z.array(z.number().int()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+    const gone = await getDb().delete(talks).where(inArray(talks.id, [...new Set(input.ids)])).returning();
+    if (!gone.length) throw new TRPCError({ code: "NOT_FOUND", message: input.ids.length > 1 ? "Ces talk shows n’existent plus." : "Ce talk show n’existe plus." });
+    let videosRemoved = 0;
+    for (const t of gone) {
+      const removed = await removePublicFile("talk", t.videoUrl).catch(() => false);
+      if (removed) videosRemoved++;
+      await logAdmin(ctx.member, { action: "Talk supprimé", targetType: "talk", targetId: t.id, label: t.title, detail: removed ? "Vidéo retirée du stockage." : "" });
+    }
+    return { ok: true, deleted: gone.length, videosRemoved };
   }),
 
   /* ───────────── Annonces ───────────── */

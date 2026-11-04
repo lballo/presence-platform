@@ -30,7 +30,7 @@ export function CoachingNav() {
   const clients = [...(q.data?.clients ?? [])].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
   return (
     <div className="flex flex-col flex-1 px-5 py-7">
-      <Link to="/admin/coaching" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
+      <Link to="/" title="Retour à l’accueil" aria-label="Présence, retour à l’accueil" className="no-underline" style={{ color: "var(--p-ink)" }}><Brand compact /></Link>
       <p className="m-0 mt-10 text-[10px] font-semibold tracking-[0.16em] p-muted">SUIVI COACHING</p>
       <nav aria-label="Accompagnements" className="mt-4 flex flex-col gap-1">
         <NavLink to="/admin/coaching" end className={item} style={colors}><Users size={16} /> Tous les clients</NavLink>
