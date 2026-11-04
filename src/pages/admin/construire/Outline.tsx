@@ -253,7 +253,7 @@ export function Outline({ c }: { c: Course }) {
           <li key={s.id} data-section={i} className="relative">
             {sectionMark(i) && <DropMarker edge="top" offset={14} />}
             {i === sections.length - 1 && sectionMark(i + 1) && <DropMarker edge="bottom" offset={14} />}
-            <div className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--p-line)", ...held("section", s.id), ...(goal?.section?.id === s.id ? { outline: "2px solid var(--p-accent)" } : {}) }}>
+            <div className="overflow-hidden rounded-2xl border" style={{ background: "var(--p-surface)", borderColor: "var(--p-line)", ...held("section", s.id), ...(goal?.section?.id === s.id ? { outline: "2px solid var(--p-accent)" } : {}) }}>
             <div data-section-head onPointerDown={press({ kind: "section", id: s.id }, s.title)} className="p-3 sm:p-4 flex flex-wrap items-center gap-x-2 gap-y-2 lg:cursor-grab lg:select-none" style={{ background: landed === `s${s.id}` ? "var(--p-line-2)" : "var(--p-surface-2)", borderBottom: open ? "1px solid var(--p-line)" : undefined }}>
               <span aria-hidden="true" title="Glisser pour déplacer" className="hidden lg:flex w-7 justify-center p-muted"><GripVertical size={16} /></span>
               <span className="w-[30px] h-[30px] rounded-[5px] flex items-center justify-center flex-none font-semibold text-[11px]" style={{ background: "var(--p-line)" }}>{String(s.position).padStart(2, "0")}</span>
