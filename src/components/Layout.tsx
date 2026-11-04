@@ -109,11 +109,12 @@ function Gestion({ collapsed }: { collapsed: boolean }) {
   const o = trpc.admin.overview.useQuery(undefined, { enabled: !!p?.adminPanel }).data;
   if (!p || !(p.adminPanel || p.buildCourses || p.publishEventsDirectly)) return null;
   const pending = o ? o.pending.total + o.openReports : 0;
+  const toDiscuss = o?.coachingToDiscuss ?? 0;
   return (
     <nav aria-label="Gestion" className={`flex flex-col gap-1 pt-3 pb-3 border-t ${collapsed ? "px-2" : "px-3.5"}`} style={{ borderColor: "var(--p-menu-line)" }}>
       {!collapsed && <span className="px-3.5 pb-1 text-[11.5px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--p-menu-ink)" }}>Gestion</span>}
       {p.adminPanel && <Item to="/admin" label="Administration" icon={ShieldCheck} collapsed={collapsed} badge={pending ? (collapsed ? <span className="p-dot" /> : <UnreadBadge n={pending} />) : null} />}
-      {p.adminPanel && <Item to="/admin/coaching" label="Suivi coaching" icon={Handshake} collapsed={collapsed} />}
+      {p.adminPanel && <Item to="/admin/coaching" label="Suivi coaching" icon={Handshake} collapsed={collapsed} badge={toDiscuss ? (collapsed ? <span className="p-dot" /> : <UnreadBadge n={toDiscuss} />) : null} />}
       {p.buildCourses && <Item to="/admin/createur" label="Espace créateur" icon={PenLine} collapsed={collapsed} />}
       {p.publishEventsDirectly && <Item to="/gestion/evenements" label="Mes événements" icon={CalendarCog} collapsed={collapsed} />}
     </nav>

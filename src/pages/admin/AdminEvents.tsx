@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, NavLink } from "react-router";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { parisHour, parisLongDate } from "@/lib/format";
 import { Badge, Chips, ConfirmButton, Rows, type Column } from "./shared";
+import AdminTalks from "./AdminTalks";
 
 type Ev = RouterOutputs["admin"]["events"][number];
 const when = (e: Ev) => `${parisLongDate(new Date(e.startsAt))} · ${parisHour(new Date(e.startsAt))}`;
@@ -20,7 +21,25 @@ const columns: Column<Ev>[] = [
   { key: "attended", label: "Présents", align: "right", cell: (e) => e.stats.attended },
 ];
 
-export default function AdminEvents() {
+/** Événements de l'administration, en deux sous-pages : les événements et les talk shows. */
+export default function AdminEvents({ section = "evenements" }: { section?: "evenements" | "talks" }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="m-0 text-[30px]">Événements</h2>
+        {section === "evenements" && <Link to="/evenements" className="p-btn-primary p-btn-sm no-underline"><Plus size={15} /> Créer un événement</Link>}
+      </div>
+      <nav aria-label="Rubriques des événements" className="flex flex-wrap gap-1.5">
+        {([["/admin/evenements", "Événements"], ["/admin/evenements/talk-shows", "Talk shows"]] as const).map(([to, label]) => (
+          <NavLink key={to} to={to} end className={({ isActive }) => `p-chip no-underline ${isActive ? "p-chip-on" : ""}`}>{label}</NavLink>
+        ))}
+      </nav>
+      {section === "talks" ? <AdminTalks /> : <EventsList />}
+    </div>
+  );
+}
+
+function EventsList() {
   const utils = trpc.useUtils();
   const q = trpc.admin.events.useQuery();
   const [filter, setFilter] = useState<"avenir" | "bienvenue" | "passes" | "annules" | "tous">("avenir");
@@ -37,10 +56,6 @@ export default function AdminEvents() {
   }, [q.data, filter]);
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="m-0 text-[30px]">Événements</h2>
-        <Link to="/evenements" className="p-btn-primary p-btn-sm no-underline"><Plus size={15} /> Créer un événement</Link>
-      </div>
       <p className="m-0 text-[14.5px] p-muted">La création se fait dans la page Événements. Pour une réunion de bienvenue régulière, activez « Réunion de bienvenue » et choisissez une répétition dans le formulaire.</p>
       <Chips label="Filtrer les événements" value={filter} onChange={setFilter} options={[["avenir", "À venir"], ["bienvenue", "Réunions de bienvenue"], ["passes", "Passés"], ["annules", "Annulés"], ["tous", "Tous"]]} />
       {q.isLoading ? <p className="p-muted text-center py-10 m-0">Chargement…</p> : (

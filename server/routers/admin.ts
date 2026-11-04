@@ -15,6 +15,7 @@ import { notify } from "../lib/notify";
 import { publicMember } from "../lib/format";
 import { unregisterMember } from "./events";
 import { deleteForumPosts } from "./forum";
+import { removePublicFile } from "../lib/storage";
 
 const adminProc = procFor("admin.panel");
 const badRequest = (message: string) => new TRPCError({ code: "BAD_REQUEST", message });
@@ -444,6 +445,26 @@ export const adminRouter = createRouter({
     }
     await logAdmin(ctx.member, { action: input.public ? "Événement passé en public" : "Événement réservé aux membres", targetType: "evenement", targetId: e.id, label: e.title });
     return { ok: true };
+  }),
+
+  /* ───────────── Talk shows ───────────── */
+
+  /** Tous les talk shows, publiés, en attente ou refusés, du plus récent au plus ancien. */
+  talks: adminProc.query(async () => {
+    const list = await getDb().query.talks.findMany({ with: { speaker: true }, orderBy: [desc(talks.submittedAt)] });
+    return list.map((t) => ({
+      id: t.id, title: t.title, status: t.status, views: t.views, durationMin: t.durationMin, videoUrl: t.videoUrl, submittedAt: t.submittedAt, publishedAt: t.publishedAt,
+      speaker: t.speaker ? { id: t.speaker.id, name: `${t.speaker.firstName} ${t.speaker.lastName}`.trim() } : null,
+    }));
+  }),
+
+  /** Supprimer un talk show : il disparaît du Talk Show et du profil de son auteur, et sa vidéo quitte le stockage si elle y est. */
+  deleteTalk: adminProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+    const [t] = await getDb().delete(talks).where(eq(talks.id, input.id)).returning();
+    if (!t) throw new TRPCError({ code: "NOT_FOUND", message: "Ce talk show n’existe plus." });
+    const videoRemoved = await removePublicFile("talk", t.videoUrl).catch(() => false);
+    await logAdmin(ctx.member, { action: "Talk supprimé", targetType: "talk", targetId: t.id, label: t.title, detail: videoRemoved ? "Vidéo retirée du stockage." : "" });
+    return { ok: true, videoRemoved };
   }),
 
   /* ───────────── Annonces ───────────── */

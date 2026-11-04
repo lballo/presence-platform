@@ -146,6 +146,7 @@ export default function App() {
           <Route path="moderation" element={<AdminModeration />} />
           <Route path="ruches" element={<AdminHives />} />
           <Route path="evenements" element={<AdminEvents />} />
+          <Route path="evenements/talk-shows" element={<AdminEvents section="talks" />} />
           <Route path="forum" element={<AdminForum />} />
           <Route path="journal" element={<AdminLog />} />
         </Route>

@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { PageHeader } from "@/components/Layout";
 
+// Suivi coaching et Espace créateur ont leur propre entrée dans le menu principal (Gestion), pas d'onglet ici.
 const TABS = [
   { to: "/admin", label: "Accueil", end: true },
   { to: "/admin/membres", label: "Membres" },
@@ -10,9 +11,7 @@ const TABS = [
   { to: "/admin/ruches", label: "Ruches" },
   { to: "/admin/evenements", label: "Événements" },
   { to: "/admin/forum", label: "Forum et annonces" },
-  { to: "/admin/coaching", label: "Suivi coaching", count: "coaching" }, // s'ouvre en pleine page
   { to: "/admin/journal", label: "Journal" },
-  { to: "/admin/createur", label: "Espace créateur" }, // s'ouvre en pleine page
 ] as const;
 
 /** Panneau d'administration : réservé aux administrateurs. Le serveur refuse de toute façon chaque appel. */
@@ -22,7 +21,7 @@ export default function AdminLayout() {
   const overview = trpc.admin.overview.useQuery(undefined, { enabled: allowed });
   if (!me.data) return <p className="p-muted py-20 text-center">Chargement…</p>;
   if (!allowed) return <div className="py-20 text-center p-muted">Cette page est réservée aux administrateurs.</div>;
-  const counts = { pending: overview.data?.pending.total ?? 0, reports: overview.data?.openReports ?? 0, coaching: overview.data?.coachingToDiscuss ?? 0 };
+  const counts = { pending: overview.data?.pending.total ?? 0, reports: overview.data?.openReports ?? 0 };
   return (
     <>
       <PageHeader eyebrow="Présence" title="Administration" />

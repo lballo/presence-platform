@@ -53,6 +53,20 @@ export async function createSignedUpload(kind: UploadKind, memberId: number, fil
   };
 }
 
+/**
+ * Retire un fichier d'un bucket public d'après son adresse publique.
+ * Ne touche qu'aux fichiers de ce bucket chez nous : une adresse extérieure (YouTube…) renvoie false sans rien faire.
+ */
+export async function removePublicFile(kind: UploadKind, url: string | null): Promise<boolean> {
+  if (!url || !storageReady()) return false;
+  const { bucket } = BUCKETS[kind];
+  const prefix = `${env.supabaseUrl}/storage/v1/object/public/${bucket}/`;
+  const path = url.split("?")[0].slice(prefix.length);
+  if (!url.startsWith(prefix) || !path || path.includes("..")) return false;
+  const res = await fetch(`${env.supabaseUrl}/storage/v1/object/${bucket}/${path}`, { method: "DELETE", headers: headers() });
+  return res.ok;
+}
+
 /** Enregistre un fichier côté serveur (recopie depuis Notion) et renvoie son adresse publique. */
 export async function uploadBuffer(kind: UploadKind, path: string, data: Buffer, contentType: string): Promise<string> {
   const { bucket } = BUCKETS[kind];
