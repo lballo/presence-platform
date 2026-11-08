@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { createRouter, procFor, publicProc } from "../middleware";
+import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { coachingEngagements, coachingGoals, coachingJournal, coachingMeetings, coachingNotes, coachingOffers, courseLessons, courseSections, journalEntries, members, workflows, type CoachingEngagement, type CoachingMeeting } from "../../db/schema";
 import { publicMember } from "../lib/format";
@@ -10,7 +10,7 @@ import { env } from "../lib/env";
 import { notionMessage } from "../lib/notion";
 import { counted, engagementsOf, hide, lastCoachingSync, reveal, saveReport, syncCoaching } from "../lib/coachingSync";
 import { MIDPOINT, runCoachingMidpoint } from "../lib/coachingMidpoint";
-import { satisfactionFor, satisfactionForm, satisfactionUrl, submitSatisfaction } from "../lib/coachingSatisfaction";
+import { satisfactionFor, satisfactionUrl } from "../lib/coachingSatisfaction";
 
 const adminProc = procFor("admin.panel");
 const memberProc = procFor("profile.use");
@@ -69,7 +69,7 @@ export async function clientView(memberId: number) {
   const [meetings, goals, journal, [member]] = await Promise.all([
     meetingsOf(e.id), goalsOf(e.id),
     getDb().select().from(coachingJournal).where(and(eq(coachingJournal.engagementId, e.id), eq(coachingJournal.memberId, memberId))).orderBy(desc(coachingJournal.createdAt)),
-    getDb().select({ accessEndsAt: members.accessEndsAt }).from(members).where(eq(members.id, memberId)),
+    getDb().select({ accessEndsAt: members.accessEndsAt, firstName: members.firstName }).from(members).where(eq(members.id, memberId)),
   ]);
   return {
     ...summary(e, meetings),
@@ -83,7 +83,7 @@ export async function clientView(memberId: number) {
     exercise: reveal(e.id, e.exerciseEnc),
     journal: journal.map((j) => ({ id: j.id, text: reveal(e.id, j.textEnc), createdAt: j.createdAt, updatedAt: j.updatedAt })),
     // Le questionnaire de satisfaction, proposé une fois l'accompagnement terminé
-    satisfactionUrl: e.status === "Terminé" ? satisfactionUrl(e.id) : null,
+    satisfactionUrl: e.status === "Terminé" ? satisfactionUrl(e, member?.firstName) : null,
   };
 }
 
@@ -94,8 +94,6 @@ async function myEngagement(memberId: number) {
 }
 
 const text = z.string().trim().max(8000);
-const note = z.number().int().min(1).max(5);
-const token = z.string().max(80).optional();
 
 export const coachingRouter = createRouter({
   /* ───────────── Le client ───────────── */
@@ -117,24 +115,6 @@ export const coachingRouter = createRouter({
   removeJournal: memberProc.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
     await getDb().delete(coachingJournal).where(and(eq(coachingJournal.id, input.id), eq(coachingJournal.memberId, ctx.memberId)));
     return { ok: true };
-  }),
-
-  /* ───────────── Le questionnaire de satisfaction (sans connexion, par lien personnel) ───────────── */
-
-  satisfactionForm: publicProc.input(z.object({ token })).query(({ input }) => satisfactionForm(input.token)),
-
-  submitSatisfaction: publicProc.input(z.object({
-    token,
-    satisfaction: note, besoin: note, professionnalisme: note, disponibilite: note,
-    remarques: z.string().max(8000).default(""),
-    prenom: z.string().max(120).default(""), programme: z.string().max(200).default(""),
-  })).mutation(async ({ input }) => {
-    try {
-      return await submitSatisfaction(input.token, input, { prenom: input.prenom, programme: input.programme });
-    } catch (e) {
-      console.error("Satisfaction coaching :", e);
-      throw new TRPCError({ code: "BAD_GATEWAY", message: "Votre réponse n’a pas pu être enregistrée. Réessayez dans un instant, ou écrivez à contact@lauraballo.com." });
-    }
   }),
 
   /* ───────────── L'outil de suivi de Laura ───────────── */

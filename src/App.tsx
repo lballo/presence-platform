@@ -67,7 +67,6 @@ import ChoisirMotDePasse from "@/pages/auth/ChoisirMotDePasse";
 import Invitation from "@/pages/auth/Invitation";
 import AccesTermine from "@/pages/auth/AccesTermine";
 import Desinscription from "@/pages/auth/Desinscription";
-import Satisfaction from "@/pages/auth/Satisfaction";
 
 /** Une ancienne adresse : on garde la suite du chemin et les paramètres, pour ne casser aucun lien. */
 function Moved({ from, to }: { from: string; to: string }) {
@@ -86,8 +85,6 @@ export default function App() {
       <Route path="/invitation/:token" element={<Invitation />} />
       <Route path="/acces-termine" element={<AccesTermine />} />
       <Route path="/desinscription" element={<Desinscription />} />
-      <Route path="/satisfaction" element={<Satisfaction />} />
-      <Route path="/satisfaction/:token" element={<Satisfaction />} />
       <Route path="/documents/:doc" element={<DocumentPage />} />
       <Route path="/compte-supprime" element={<CompteSupprime />} />
       <Route element={<OnboardingGate />}>

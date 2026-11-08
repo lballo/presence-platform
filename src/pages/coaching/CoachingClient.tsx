@@ -248,11 +248,9 @@ function Satisfaction({ f }: { f: Fiche }) {
   return (
     <section className="flex flex-col gap-4 max-w-[760px]" aria-label="Satisfaction">
       <div className="p-card p-5 flex flex-col gap-3">
-        <p className="m-0 text-[13.5px] p-muted">Le lien personnel du questionnaire, à envoyer à la fin de l’accompagnement (mail de J+7). Le client répond sans se connecter ; sa réponse arrive dans Notion, reliée à cette inscription. Quand l’inscription passe à « Terminé », le lien apparaît aussi dans son espace Coaching.</p>
+        <p className="m-0 text-[13.5px] p-muted">Le lien du questionnaire sur lauraballo.com, à envoyer à la fin de l’accompagnement (mail de J+7). Le client répond sans se connecter ; sa réponse arrive dans Notion, reliée à cette inscription. Quand l’inscription passe à « Terminé », le lien apparaît aussi dans son espace Coaching.</p>
         {q.isLoading && <span className="p-muted text-[14px]">Chargement…</span>}
-        {s && (s.url
-          ? <div className="flex flex-wrap items-center gap-2"><input className="p-field flex-[1_1_320px]" readOnly value={s.url} onFocus={(e) => e.target.select()} aria-label="Lien du questionnaire" /><button type="button" className="cr-btn cr-btn-primary" onClick={() => copy(s.url!)}>Copier le lien</button></div>
-          : <span className="text-[14px]" style={{ color: "var(--p-accent-text)" }}>La clé PRIVATE_DATA_KEY manque sur le serveur : le lien ne peut pas être signé.</span>)}
+        {s && <div className="flex flex-wrap items-center gap-2"><input className="p-field flex-[1_1_320px]" readOnly value={s.url} onFocus={(e) => e.target.select()} aria-label="Lien du questionnaire" /><button type="button" className="cr-btn cr-btn-primary" onClick={() => copy(s.url)}>Copier le lien</button></div>}
       </div>
       {s?.error && <div className="p-soft p-4 text-[14px]" style={{ color: "var(--p-accent-text)" }}>{s.error}</div>}
       {s?.responses.map((r) => (
