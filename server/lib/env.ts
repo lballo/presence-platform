@@ -44,6 +44,8 @@ export const env = {
   notionCoachingClients: process.env.NOTION_COACHING_CLIENTS_SOURCE ?? "127075e1-27d2-817d-bcf2-000bb2a66e96",
   notionCoachingEnrollments: process.env.NOTION_COACHING_ENROLLMENTS_SOURCE ?? "b1eeb59c-bfbf-4133-a667-1655124d594c",
   notionCoachingSessions: process.env.NOTION_COACHING_SESSIONS_SOURCE ?? "b0d80298-177a-4cf3-a12b-2f25fab354e3",
+  // Réponses aux questionnaires de satisfaction du coaching (pas ceux des stagiaires, qui restent dans l'outil Qualiopi)
+  notionCoachingSatisfaction: process.env.NOTION_COACHING_SATISFACTION_SOURCE ?? "2d2825d0-c3f7-405b-aeb1-391f9cc4a71c",
   // Abonnements : clé secrète Stripe (sk_live_… ou rk_live_…). Absente, la rubrique Abonnement l'indique.
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripeApiBase: (process.env.STRIPE_API_BASE ?? "https://api.stripe.com").replace(/\/$/, ""),

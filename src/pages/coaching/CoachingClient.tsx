@@ -11,7 +11,7 @@ import { CoachingNav } from "./CoachingLayout";
 type Fiche = RouterOutputs["coaching"]["engagement"];
 type Meeting = Fiche["meetings"][number];
 
-const TABS = [["preparer", "Préparer la séance"], ["seances", "Séances et comptes rendus"], ["objectifs", "Objectifs"], ["notes", "Notes privées"], ["client", "Pour le client"], ["carnet", "Carnet du client"]] as const;
+const TABS = [["preparer", "Préparer la séance"], ["seances", "Séances et comptes rendus"], ["objectifs", "Objectifs"], ["notes", "Notes privées"], ["client", "Pour le client"], ["carnet", "Carnet du client"], ["satisfaction", "Satisfaction"]] as const;
 type Tab = (typeof TABS)[number][0];
 const when = (d: Date | string | null) => (d ? `${parisLongDate(new Date(d))} · ${parisHour(new Date(d))}` : "Date à fixer");
 const label = (m: Pick<Meeting, "kind" | "number">) => `${m.kind || "Séance"}${m.number ? ` n° ${m.number}` : ""}`;
@@ -39,6 +39,7 @@ export default function CoachingClient() {
             {tab === "notes" && <Notes f={f} />}
             {tab === "client" && <ForClient f={f} />}
             {tab === "carnet" && <Notebook f={f} />}
+            {tab === "satisfaction" && <Satisfaction f={f} />}
           </>
         )}
       </main>
@@ -233,6 +234,40 @@ function Notebook({ f }: { f: Fiche }) {
       <p className="m-0 text-[13.5px] p-muted">Le carnet d’introspection que le client tient entre les séances, et partage avec vous.</p>
       {f.journal.map((j) => <article key={j.id} className="p-soft p-4 flex flex-col gap-1.5"><span className="text-[12.5px] p-muted">{ago(new Date(j.createdAt))}</span><p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{j.text}</p></article>)}
       {!f.journal.length && <div className="p-soft p-7 text-center p-muted">Le client n’a encore rien écrit dans son carnet.</div>}
+    </section>
+  );
+}
+
+const NOTES = [["satisfaction", "Satisfaction générale"], ["besoin", "Réponse au besoin initial"], ["professionnalisme", "Professionnalisme"], ["disponibilite", "Disponibilité"]] as const;
+
+/** Le questionnaire de satisfaction : le lien personnel à envoyer, et les réponses reçues dans Notion. */
+function Satisfaction({ f }: { f: Fiche }) {
+  const q = trpc.coaching.satisfaction.useQuery({ id: f.id }, { retry: false });
+  const s = q.data;
+  const copy = async (url: string) => { try { await navigator.clipboard.writeText(url); toast.success("Lien copié"); } catch { toast.error("Copie impossible : sélectionnez le lien."); } };
+  return (
+    <section className="flex flex-col gap-4 max-w-[760px]" aria-label="Satisfaction">
+      <div className="p-card p-5 flex flex-col gap-3">
+        <p className="m-0 text-[13.5px] p-muted">Le lien personnel du questionnaire, à envoyer à la fin de l’accompagnement (mail de J+7). Le client répond sans se connecter ; sa réponse arrive dans Notion, reliée à cette inscription. Quand l’inscription passe à « Terminé », le lien apparaît aussi dans son espace Coaching.</p>
+        {q.isLoading && <span className="p-muted text-[14px]">Chargement…</span>}
+        {s && (s.url
+          ? <div className="flex flex-wrap items-center gap-2"><input className="p-field flex-[1_1_320px]" readOnly value={s.url} onFocus={(e) => e.target.select()} aria-label="Lien du questionnaire" /><button type="button" className="cr-btn cr-btn-primary" onClick={() => copy(s.url!)}>Copier le lien</button></div>
+          : <span className="text-[14px]" style={{ color: "var(--p-accent-text)" }}>La clé PRIVATE_DATA_KEY manque sur le serveur : le lien ne peut pas être signé.</span>)}
+      </div>
+      {s?.error && <div className="p-soft p-4 text-[14px]" style={{ color: "var(--p-accent-text)" }}>{s.error}</div>}
+      {s?.responses.map((r) => (
+        <article key={r.id} className="p-card p-5 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] p-muted">{r.at ? `Reçue ${ago(new Date(r.at))}` : "Réponse"}</span>
+            <span className="flex items-center gap-2">{r.status && <span className="p-pill">{r.status}</span>}<a href={r.notionUrl} target="_blank" rel="noopener" className="p-link text-[13px] flex items-center gap-1"><ExternalLink size={13} /> Notion</a></span>
+          </div>
+          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))" }}>
+            {NOTES.map(([k, l]) => <Fact key={k} title={l} value={r[k] !== null ? `${r[k]} / 5` : "—"} />)}
+          </div>
+          {r.remarques && <p className="m-0 text-[14.5px] leading-relaxed whitespace-pre-line">{r.remarques}</p>}
+        </article>
+      ))}
+      {s && !s.error && !s.responses.length && <div className="p-soft p-7 text-center p-muted">Pas encore de réponse pour cet accompagnement.</div>}
     </section>
   );
 }

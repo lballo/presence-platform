@@ -92,6 +92,8 @@ export type NotionProperty = {
 
 export type NotionPage = {
   id: string;
+  created_time?: string;
+  url?: string;
   last_edited_time: string;
   last_edited_by?: { id: string };
   in_trash?: boolean;
@@ -111,6 +113,18 @@ export async function listPages(dataSourceId: string): Promise<NotionPage[]> {
   let cursor: string | undefined;
   do {
     const r = await call<List<NotionPage>>("POST", `/data_sources/${dataSourceId}/query`, { page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) });
+    out.push(...r.results);
+    cursor = r.has_more ? (r.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+  return out;
+}
+
+/** Les pages d'une base qui répondent à un filtre Notion (même forme que l'API). */
+export async function queryPages(dataSourceId: string, filter: unknown): Promise<NotionPage[]> {
+  const out: NotionPage[] = [];
+  let cursor: string | undefined;
+  do {
+    const r = await call<List<NotionPage>>("POST", `/data_sources/${dataSourceId}/query`, { page_size: 100, filter, ...(cursor ? { start_cursor: cursor } : {}) });
     out.push(...r.results);
     cursor = r.has_more ? (r.next_cursor ?? undefined) : undefined;
   } while (cursor);

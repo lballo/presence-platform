@@ -36,6 +36,12 @@ export default function Coaching() {
               </span>
             )}
           </section>
+          {c.satisfactionUrl && (
+            <section className="p-card p-5 mb-7 flex flex-wrap items-center gap-4" aria-label="Votre avis">
+              <span className="flex-[1_1_260px] flex flex-col gap-1"><span className="font-semibold">Votre accompagnement est terminé</span><span className="text-[14px] p-muted">Quelques minutes pour dire comment vous l’avez vécu : votre avis aide Laura à faire progresser ses accompagnements.</span></span>
+              <a href={c.satisfactionUrl} className="p-btn-primary no-underline">Donner mon avis</a>
+            </section>
+          )}
           {c.accessEndsAt && <p className="m-0 mb-7 p-4 rounded-xl text-[14.5px]" style={{ background: "var(--p-surface-2)" }}>Votre accès au réseau Présence court jusqu’au <strong>{parisDateYear(new Date(c.accessEndsAt))}</strong>.</p>}
           <section className="flex flex-col gap-2.5" aria-label="Mes séances">
             <h2 className="m-0 text-[28px]">Mes séances</h2>

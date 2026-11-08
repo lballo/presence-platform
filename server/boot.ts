@@ -54,6 +54,25 @@ app.post("/api/email/desinscription", async (c) => {
   return ok ? c.text("Désinscription enregistrée.") : c.text("Lien invalide.", 400);
 });
 
+// Le Word du programme de coaching, pré-rempli pour n8n (workflow « Coaching · Inscription et programme »).
+// Si PROGRAMME_WORD_TOKEN existe, l'en-tête x-programme-token doit la reprendre.
+app.post("/api/programme-word", async (c) => {
+  const secret = process.env.PROGRAMME_WORD_TOKEN;
+  if (secret && c.req.header("x-programme-token") !== secret) return c.json({ error: "Non autorisé" }, 401);
+  const { fillProgramme, isNotionFile } = await import("./lib/programmeWord");
+  const body = (await c.req.json().catch(() => ({}))) as { templateUrl?: string; variables?: Record<string, unknown>; filename?: string };
+  if (!body.templateUrl || !isNotionFile(body.templateUrl)) return c.json({ error: "Le modèle doit être un fichier Word hébergé par Notion" }, 400);
+  try {
+    const out = await fillProgramme(body.templateUrl, body.variables ?? {});
+    const name = String(body.filename ?? "Programme.docx").replace(/[^\w.\- ]+/g, "_").slice(0, 120) || "Programme.docx";
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    c.header("Content-Disposition", `attachment; filename="${name}"`);
+    return c.body(new Uint8Array(out));
+  } catch (e) {
+    return c.json({ error: (e instanceof Error ? e.message : String(e)).slice(0, 300) }, 502);
+  }
+});
+
 // Les tests HTML : ce chemin ne sert qu'eux, chacun isolé par ses en-têtes (voir testHost.ts).
 app.get("/api/test-html/:id", async (c) => {
   const { serveTest } = await import("./lib/testHost");
