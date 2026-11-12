@@ -47,7 +47,7 @@ export default function JournalPage() {
   return (
     <>
       <PageHeader eyebrow="Mon parcours" title="Mon journal personnel" intro="Ce que vous écrivez dans vos leçons se range ici. C’est à vous." />
-      <p className="m-0 mb-6 flex items-start gap-2 text-[14px] p-muted max-w-[760px]"><Lock size={15} className="flex-none mt-0.5" /><span>Personne d’autre ne lit ce journal, ni les autres membres, ni Laura, sauf les réponses que vous marquez « À travailler en coaching avec Laura ». Si vous l’avez accepté, vos réponses nourrissent aussi <Link to="/parcours/coach" className="p-link">la mémoire du coach IA</Link>.</span></p>
+      <p className="m-0 mb-6 flex items-start gap-2 text-[14px] p-muted max-w-[760px]"><Lock size={15} className="flex-none mt-0.5" /><span>Personne d’autre ne lit ce journal, ni les autres membres, ni Laura, sauf les réponses que vous marquez « À travailler en coaching avec Laura ». Si vous l’avez accepté, vos réponses nourrissent aussi <Link to="/parametres/confidentialite/memoire" className="p-link">la mémoire du coach IA</Link>.</span></p>
       {q.isLoading && <p className="p-muted text-center py-10 m-0">Chargement…</p>}
       {d && d.entries.length === 0 && <div className="p-soft p-9 text-center p-muted">Votre journal est encore vide. Vos réponses aux exercices viendront s’y ranger.</div>}
       {d && d.entries.length > 0 && (

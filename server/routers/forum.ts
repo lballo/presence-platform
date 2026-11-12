@@ -7,16 +7,25 @@ import { audiencesOf, canReadPost, feedFilter, hiveFilter, isLive, postState, sp
 import { cleanHtml, htmlToText, isForumImage } from "../lib/richText";
 import { signedDownloadUrl } from "../lib/storage";
 import { getDb } from "../queries/connection";
-import { forumDrafts, forumLikes, forumPostHashtags, forumPostInterests, forumPostReads, forumPosts, forumReplies, forumSpaces, hashtags, hiveMembers, hives, type ForumPost, type Member } from "../../db/schema";
+import { forumDrafts, forumLikes, forumPostHashtags, forumPostInterests, forumPostReads, forumPosts, forumReplies, forumSpaces, hashtags, hiveMembers, hives, members, type ForumPost, type Member } from "../../db/schema";
 import { slugify } from "../lib/eventAccess";
 import { publicMember } from "../lib/format";
 import { award } from "../lib/honey";
 import { logAdmin, logIfOnBehalf } from "../lib/adminLog";
+import { notify } from "../lib/notify";
 
 const forumProc = procFor("forum.use");
 const manageProc = procFor("forum.manage");
 
 const OPP_TYPES = ["recrut", "fin", "assoc"] as const;
+
+// Étiquettes affichées sous une publication (colonne facts). Leur jumeau côté écran : src/components/forum/facts.ts.
+// Recrutement : lieu de travail, temps de travail, localisation, rémunération, dans cet ordre.
+const WORK_MODES = ["Sur site", "À distance", "Hybride"];
+const SCHEDULES = ["Temps plein", "Temps partiel"];
+const PAY = /^\d[\d\s]*(,\d{1,2})?\s?€\/(h|mois)$/u;
+// Entraide : on propose ou on demande de l'aide.
+const HELP_FACTS = ["Propose son aide", "Cherche de l’aide"];
 const draftKey = z.string().regex(/^(new|annonce|presentation|hive-\d+|edit-\d+)$/);
 
 const postInput = z.object({
@@ -30,7 +39,7 @@ const postInput = z.object({
   hashtagIds: z.array(z.number().int()).max(5, "Cinq hashtags au plus.").default([]),
   // annonces
   pinned: z.boolean().default(false),
-  audience: z.enum(["tous", "collectif", "accompagnement"]).default("tous"),
+  audience: z.enum(["tous", "collectif", "accompagnement", "moderateurs"]).default("tous"),
   publishAt: z.coerce.date().nullable().default(null),
   endsAt: z.coerce.date().nullable().default(null),
   // opportunités
@@ -164,6 +173,12 @@ async function resolveTarget(member: Member, input: PostInput, existing?: ForumP
   return { hiveId: null, space };
 }
 
+/** Une demande de retour vidéo réservée aux modérateurs : l'équipe est prévenue, sinon personne ne la verrait. */
+async function notifyModerators(author: Member, post: ForumPost) {
+  const team = await getDb().select({ id: members.id }).from(members).where(and(eq(members.role, "administrateur"), eq(members.status, "actif"), isNull(members.deletedAt), ne(members.id, author.id)));
+  await notify(team.map((m) => m.id), { title: `Retour vidéo demandé aux modérateurs : ${author.firstName} ${author.lastName}`, body: post.title, href: `/forum/publication/${post.id}` });
+}
+
 const isPresentations = (target: Awaited<ReturnType<typeof resolveTarget>>) => target.space?.slug === "presentations";
 
 /** Une seule présentation par membre : elle se modifie, elle ne se multiplie pas. */
@@ -194,6 +209,15 @@ function postValues(member: Member, input: PostInput, target: Awaited<ReturnType
   // Le lien de téléchargement est signé à partir de ce chemin : uniquement les fichiers envoyés par ce membre.
   if (input.attachments.some((a) => !new RegExp(`^membre-${member.id}/[\\w-]+\\.\\w+$`).test(a.path))) throw badRequest("Pièce jointe invalide.");
   if (isOpp && !input.oppType) throw badRequest("Choisissez le type d’opportunité.");
+  if (isOpp && input.oppType === "recrut") {
+    const [mode, schedule, place, pay] = input.facts;
+    if (input.facts.length !== 4 || !WORK_MODES.includes(mode) || !SCHEDULES.includes(schedule) || !place || !PAY.test(pay)) {
+      throw badRequest("Indiquez le lieu de travail, le temps de travail, la localisation et la rémunération (par exemple 24 €/h ou 2 000 €/mois).");
+    }
+  }
+  const isHelp = space?.slug === "entraide";
+  if (isHelp && !(input.facts.length === 1 && HELP_FACTS.includes(input.facts[0]))) throw badRequest("Dites si vous proposez ou si vous demandez de l’aide.");
+  if (input.audience === "moderateurs" && space?.kind !== "video") throw badRequest("Seule une demande de retour vidéo peut être réservée aux modérateurs.");
 
   const now = new Date();
   const publishedAt = isAnnouncement && input.publishAt && input.publishAt > now ? input.publishAt : existing && existing.publishedAt <= now ? existing.publishedAt : now;
@@ -214,11 +238,12 @@ function postValues(member: Member, input: PostInput, target: Awaited<ReturnType
     // Les opportunités sont relues par l'équipe avant publication, y compris après une modification.
     status: isOpp && !can(member, "opportunity.validate") ? ("pending" as const) : ("published" as const),
     pinnedAt: isAnnouncement ? (input.pinned ? keptPin ?? now : null) : keptPin,
-    audience: isAnnouncement && space ? input.audience : ("tous" as const),
+    // Annonce : son public visé. Retour vidéo : la communauté ou les seuls modérateurs.
+    audience: (isAnnouncement && space) || (space?.kind === "video" && input.audience === "moderateurs") ? input.audience : ("tous" as const),
     publishedAt,
     endsAt,
     oppType: isOpp ? input.oppType : null,
-    facts: isOpp ? input.facts : [],
+    facts: isOpp || isHelp ? input.facts : [],
   };
 }
 
@@ -347,6 +372,7 @@ export const forumRouter = createRouter({
       return post;
     });
     await awardPresentation(ctx.memberId, target, values.videoUrl);
+    if (row.audience === "moderateurs") await notifyModerators(ctx.member, row);
     return { id: row.id, status: row.status, publishedAt: row.publishedAt };
   }),
 

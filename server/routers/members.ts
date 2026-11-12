@@ -143,7 +143,8 @@ export const membersRouter = createRouter({
     }
     const ids = [...rel.keys()];
     if (!ids.length) return [];
-    const people = await db.select().from(members).where(inArray(members.id, ids));
+    // Un membre supprimé du réseau n'apparaît plus dans mes relations.
+    const people = await db.select().from(members).where(and(inArray(members.id, ids), isNull(members.deletedAt)));
     return people
       .map((m) => {
         const r = rel.get(m.id)!;

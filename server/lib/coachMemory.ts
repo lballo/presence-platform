@@ -12,7 +12,7 @@ export const COACH_CONSENT = {
   paragraphs: [
     "Si vous acceptez, vos formations et vos tests nourrissent la mémoire du coach, au fil de l’eau : vos réponses aux exercices et vos réflexions, vos résultats de tests, ceux des leçons comme ceux de Mes ressources, vos défis réalisés. Il peut ainsi relier vos leçons et vos résultats entre eux, vous proposer une synthèse, remarquer votre évolution et adapter ses questions. Il ne donne ni note ni correction, et ne pose aucun diagnostic.",
     "Ces éléments restent chiffrés chez Présence. Ils sont transmis à Gemini, le service d’intelligence artificielle de Google, seulement quand vous parlez au coach.",
-    "Vous pouvez tout lire, corriger, effacer ou mettre en pause à tout moment sur la page « Ce que le coach retient de moi ». Laura n’y a pas accès, sauf si vous partagez un élément.",
+    "Vous pouvez tout lire, corriger, effacer ou mettre en pause à tout moment dans Paramètres, rubrique Confidentialité. Laura n’y a pas accès, sauf si vous partagez un élément.",
     "Si vous refusez, votre formation reste entièrement accessible : le coach ne gardera simplement rien en mémoire.",
   ],
 };

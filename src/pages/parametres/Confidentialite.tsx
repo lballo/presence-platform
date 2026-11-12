@@ -29,7 +29,7 @@ function CoachConsent() {
       <ConsentDialog open={asking} onDone={() => setAsking(false)} />
       {q.data && <Status s={q.data} onAsk={() => setAsking(true)} />}
       {q.data && q.data.accepted && <Danger s={q.data} />}
-      <Link to="/parcours/coach" className="p-link text-[14.5px] self-start">Lire et corriger ce que le coach retient de moi</Link>
+      {q.data && (q.data.accepted || q.data.items.length > 0) && <Link to="/parametres/confidentialite/memoire" className="p-link text-[14.5px] self-start">Lire et corriger ce que le coach retient de moi</Link>}
     </section>
   );
 }

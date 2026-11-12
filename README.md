@@ -184,6 +184,10 @@ Les vidéos (Talk Show, forum), les images et pièces jointes du forum (buckets 
 - **Administration** : `/admin/forum` (annonces, espaces, hashtags, épingles).
 - **Mise en ligne** : appliquer `0009_forum_spaces.sql` et `0011_forum_rls.sql`, déployer, puis passer `0010_forum_ranger_publications.sql` (qui peut être rejoué). Les anciennes tables `opportunities` et `opportunity_interests` sont conservées, mais ne sont plus lues.
 
+## Présence IA : analyse vidéo
+
+Le navigateur envoie la vidéo par morceaux de 8 Mo (`PUT /api/speech/:id/chunk`, `src/lib/videoUpload.ts`) ; le serveur passe chaque morceau à l’API Files de Gemini sans jamais garder la vidéo entière (`server/lib/videoUpload.ts`). Rien n’est stocké chez Présence : Gemini efface le fichier après l’analyse. Limites : 2 Go et une heure ; au-delà de 20 minutes, la vidéo est lue en basse définition. L’analyse tourne en arrière-plan, la page vient voir où elle en est. `GEMINI_API_BASE` permet de viser un faux Gemini pour les essais.
+
 ## Connexion et droits
 
 - **Connexion** : Supabase Auth, e-mail et mot de passe, réseau sur invitation. Réglages et e-mails : [docs/auth-setup.md](docs/auth-setup.md).
@@ -194,5 +198,4 @@ Les vidéos (Talk Show, forum), les images et pièces jointes du forum (buckets 
 
 ## Prochaine session (feuille de route)
 
-- **Analyse vidéo des longues vidéos** : aujourd’hui la vidéo est envoyée au serveur en un seul bloc (héritage PresenceAI), ce qui limite la taille. Prévu : envoi direct du navigateur vers Supabase Storage (comme pour le Talk Show), puis traitement asynchrone côté serveur avec l’API Files de Gemini (statut « en cours » → « terminé »).
 - Ensuite : réponses aux discussions des ruches, notifications par e-mail ou push.

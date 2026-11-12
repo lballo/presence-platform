@@ -73,3 +73,16 @@ describe("annonces de ruche", () => {
     expect(canReadPost(person("membre"), later, { hiveRole: "founder", hiveOpen: false })).toBe(true);
   });
 });
+
+describe("retour vidéo réservé aux modérateurs", () => {
+  const prive = post({ audience: "moderateurs" });
+  it("n'est lu que par son auteur et l'équipe", () => {
+    for (const a of ["collectif", "individuel", "les_deux"] as const) expect(canReadPost(person("membre", a), prive)).toBe(false);
+    expect(canReadPost(person("organisateur", "les_deux"), prive)).toBe(false);
+    expect(canReadPost(person("membre", "collectif", 99), prive)).toBe(true);
+    expect(canReadPost(person("administrateur"), prive)).toBe(true);
+  });
+  it("n'entre dans le public d'aucun accompagnement", () => {
+    for (const a of ["collectif", "individuel", "les_deux"] as const) expect(audiencesOf(a)).not.toContain("moderateurs");
+  });
+});

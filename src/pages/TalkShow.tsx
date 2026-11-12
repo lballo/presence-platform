@@ -21,7 +21,7 @@ export default function TalkShow() {
 
   return (
     <>
-      <PageHeader eyebrow="Talk Show" title="Des membres, des idées qui transforment" intro="Chaque mois, des leaders du cercle racontent l’idée qui a changé leur façon de diriger. En vidéo, puis en direct."
+      <PageHeader eyebrow="Talk Show" title="Partagez des idées qui inspirent" intro="Chaque mois, des leaders du cercle racontent l’idée qui a changé leur façon de diriger. En vidéo, puis en direct."
         action={<button type="button" className="p-btn-primary" onClick={openForm}><Film size={17} /> Proposer mon talk</button>} />
 
       <AdminPendingLink kind="talk" one="talk" many="talks" />

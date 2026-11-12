@@ -10,6 +10,7 @@ import { hour } from "@/lib/format";
 import { EditorToolbar, IMAGE_ACCEPT, ToolButton, useRichEditor, type ToolPanel } from "./RichEditor";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { AUDIENCES, OPP, SPACE_GROUPS, TagLabel, type OppType, type Post, type Space } from "./shared";
+import { HELP, PAY_UNITS, SCHEDULES, WORK_MODES, jobFacts, parseJobFacts, type HelpKind, type Job, type PayUnit } from "./facts";
 import { VIDEO_TIPS } from "@/content/accueil";
 
 export type ComposerTarget =
@@ -27,11 +28,16 @@ type Form = {
   hashtagIds: number[];
   pinned: boolean;
   audience: keyof typeof AUDIENCES;
+  videoAudience: "tous" | "moderateurs"; // retour vidéo : la communauté ou les seuls modérateurs
   publishAt: string; // saisie locale « 2026-11-02T09:00 »
   endsAt: string;
   oppType: OppType;
   facts: string;
+  job: Job; // recrutement
+  help: HelpKind | ""; // entraide
 };
+
+const EMPTY_JOB: Job = { workMode: "", schedule: "", location: "", payAmount: "", payUnit: "mois" };
 
 const MAX_HASHTAGS = 5;
 const toLocalInput = (d: Date) => {
@@ -57,7 +63,7 @@ function presetSpace(target: Extract<ComposerTarget, { mode: "new" }>, spaces: S
 }
 
 function baseForm(target: ComposerTarget, spaces: Space[]): Form {
-  const empty: Form = { spaceId: null, title: "", html: "", coverUrl: "", videoUrl: "", attachments: [], hashtagIds: [], pinned: false, audience: "tous", publishAt: "", endsAt: "", oppType: "recrut", facts: "" };
+  const empty: Form = { spaceId: null, title: "", html: "", coverUrl: "", videoUrl: "", attachments: [], hashtagIds: [], pinned: false, audience: "tous", videoAudience: "tous", publishAt: "", endsAt: "", oppType: "recrut", facts: "", job: EMPTY_JOB, help: "" };
   if (target.mode === "new") return { ...empty, spaceId: presetSpace(target, spaces), ...(target.prefill ?? {}) };
   const p = target.post;
   return {
@@ -69,11 +75,15 @@ function baseForm(target: ComposerTarget, spaces: Space[]): Form {
     attachments: p.attachments.map(({ path, name, type, size }) => ({ path, name, type, size })),
     hashtagIds: p.hashtags.map((t) => t.id),
     pinned: p.pinned,
-    audience: p.audience,
+    audience: p.audience === "moderateurs" ? "tous" : p.audience,
+    videoAudience: p.audience === "moderateurs" ? "moderateurs" : "tous",
     publishAt: p.state === "scheduled" ? toLocalInput(new Date(p.publishedAt)) : "",
     endsAt: p.endsAt ? toLocalInput(new Date(p.endsAt)) : "",
     oppType: p.oppType ?? "recrut",
-    facts: p.facts.join(", "),
+    // Une ancienne annonce de recrutement au format libre garde ses étiquettes dans le champ libre.
+    facts: p.oppType === "recrut" && parseJobFacts(p.facts) ? "" : p.facts.join(", "),
+    job: (p.oppType === "recrut" && parseJobFacts(p.facts)) || EMPTY_JOB,
+    help: (Object.keys(HELP) as HelpKind[]).find((k) => p.facts[0] === HELP[k]) ?? "",
   };
 }
 
@@ -84,7 +94,7 @@ function startingForm(target: ComposerTarget, spaces: Space[], saved?: Partial<F
   // L'espace ouvert garde la priorité sur celui du brouillon ; depuis le fil, on reprend celui du brouillon.
   const openedSpace = target.mode === "new" && !!(target.spaceSlug || target.announcement);
   const savedSpaceOk = spaces.some((s) => s.canPost && s.id === saved.spaceId);
-  return { ...base, ...saved, spaceId: !openedSpace && savedSpaceOk ? saved.spaceId! : base.spaceId };
+  return { ...base, ...saved, job: { ...EMPTY_JOB, ...saved.job }, spaceId: !openedSpace && savedSpaceOk ? saved.spaceId! : base.spaceId };
 }
 
 function Shell({ onRequestClose, children }: { onRequestClose: () => void; children: ReactNode }) {
@@ -137,6 +147,10 @@ function ComposerForm({ target, draftKey, spaces, canManage, saved, onClose, onS
   const isAnnouncement = !!hive || space?.kind === "annonces";
   const isOpp = space?.kind === "opportunites";
   const needsVideo = space?.kind === "video";
+  const isHelp = space?.slug === "entraide";
+  const isJob = isOpp && form.oppType === "recrut";
+  const job = jobFacts(form.job);
+  const setJob = (patch: Partial<Job>) => setForm((f) => ({ ...f, job: { ...f.job, ...patch } }));
   const canReview = spaces.find((s) => s.kind === "annonces")?.canPost ?? false; // équipe : publie sans relecture
   const scheduled = isAnnouncement && !!form.publishAt && new Date(form.publishAt) > new Date();
 
@@ -200,7 +214,7 @@ function ComposerForm({ target, draftKey, spaces, canManage, saved, onClose, onS
   const create = trpc.forum.createPost.useMutation();
   const update = trpc.forum.updatePost.useMutation();
   const pending = create.isPending || update.isPending;
-  const canSubmit = (form.title.trim() || legacyNoTitle) && (form.html || form.videoUrl || form.attachments.length) && (!needsVideo || form.videoUrl) && (hive || form.spaceId) && !uploading && !pending;
+  const canSubmit = (form.title.trim() || legacyNoTitle) && (form.html || form.videoUrl || form.attachments.length) && (!needsVideo || form.videoUrl) && (!isJob || job) && (!isHelp || form.help) && (hive || form.spaceId) && !uploading && !pending;
   const submit = async () => {
     closing.current = true;
     await saving.current;
@@ -214,18 +228,18 @@ function ComposerForm({ target, draftKey, spaces, canManage, saved, onClose, onS
       attachments: form.attachments,
       hashtagIds: form.hashtagIds,
       pinned: form.pinned,
-      audience: form.audience,
+      audience: isAnnouncement ? form.audience : needsVideo ? form.videoAudience : "tous" as const,
       publishAt: form.publishAt ? new Date(form.publishAt) : null,
       endsAt: form.endsAt ? new Date(form.endsAt) : null,
       oppType: isOpp ? form.oppType : null,
-      facts: isOpp ? form.facts.split(",").map((x) => x.trim()).filter(Boolean) : [],
+      facts: isJob ? job ?? [] : isOpp ? form.facts.split(",").map((x) => x.trim()).filter(Boolean) : isHelp && form.help ? [HELP[form.help]] : [],
       draftKey,
     };
     try {
       const r = editing ? await update.mutateAsync({ ...input, id: target.post.id }) : await create.mutateAsync(input);
       utils.forum.invalidate();
       utils.hashtags.invalidate();
-      toast.success(r.status === "pending" ? "Envoyé à l’équipe pour relecture" : scheduled ? "Annonce programmée" : editing ? "Publication modifiée" : isAnnouncement ? "Annonce publiée" : "Publié dans le cercle");
+      toast.success(r.status === "pending" ? "Envoyé à l’équipe pour relecture" : needsVideo && form.videoAudience === "moderateurs" && !editing ? "Envoyé aux modérateurs" : scheduled ? "Annonce programmée" : editing ? "Publication modifiée" : isAnnouncement ? "Annonce publiée" : "Publié dans le cercle");
       onSaved?.(r.id);
       onClose();
     } catch (e) {
@@ -311,8 +325,27 @@ function ComposerForm({ target, draftKey, spaces, canManage, saved, onClose, onS
           {isOpp && (
             <section className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }} aria-label="Détails de l’opportunité">
               <div className="flex flex-wrap gap-1.5">{(Object.keys(OPP) as OppType[]).map((k) => <button key={k} type="button" aria-pressed={form.oppType === k} className={`p-chip h-8 text-[13px] ${form.oppType === k ? "p-chip-on" : ""}`} onClick={() => set({ oppType: k })}>{OPP[k].label}</button>)}</div>
-              <input className="p-field" value={form.facts} placeholder="Lieu et format, séparés par des virgules · Ex. Lyon, CDI, dès janvier" aria-label="Lieu et format" onChange={(e) => set({ facts: e.target.value })} />
+              {isJob ? <JobFields job={form.job} set={setJob} /> : <input className="p-field" value={form.facts} placeholder="Lieu et format, séparés par des virgules · Ex. Lyon, CDI, dès janvier" aria-label="Lieu et format" onChange={(e) => set({ facts: e.target.value })} />}
               {!canReview && <span className="flex items-start gap-1.5 text-[12.5px] p-muted"><ShieldCheck size={14} className="flex-none mt-0.5" style={{ color: "var(--p-accent-text)" }} /> Les opportunités sont relues par l’équipe Présence avant d’être visibles par tous les membres{editing ? ", y compris après une modification" : ""}.</span>}
+            </section>
+          )}
+
+          {isHelp && (
+            <section className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }} aria-label="Votre demande d’entraide">
+              <span className="text-[13.5px] p-muted">Vous…</span>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Proposer ou demander de l’aide">
+                {(["propose", "demande"] as const).map((k) => <button key={k} type="button" role="radio" aria-checked={form.help === k} className={`p-chip h-9 text-[13.5px] ${form.help === k ? "p-chip-on" : ""}`} onClick={() => set({ help: k })}>{k === "propose" ? "Je propose mon aide" : "Je demande de l’aide"}</button>)}
+              </div>
+            </section>
+          )}
+
+          {needsVideo && (
+            <section className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--p-surface-2)" }} aria-label="À qui demander un retour">
+              <span className="text-[13.5px] p-muted">Demander un retour…</span>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="À qui demander un retour">
+                {(["tous", "moderateurs"] as const).map((k) => <button key={k} type="button" role="radio" aria-checked={form.videoAudience === k} className={`p-chip h-9 text-[13.5px] ${form.videoAudience === k ? "p-chip-on" : ""}`} onClick={() => set({ videoAudience: k })}>{k === "tous" ? "À la communauté" : "Aux modérateurs du réseau"}</button>)}
+              </div>
+              <span className="text-[12.5px] p-muted leading-relaxed">{form.videoAudience === "tous" ? "Votre vidéo et les retours sont visibles de tous les membres." : "Seuls vous et les modérateurs (l’équipe Présence) voyez votre vidéo et les retours. Ils sont prévenus de votre demande."}</span>
             </section>
           )}
 
@@ -420,5 +453,36 @@ function ComposerForm({ target, draftKey, spaces, canManage, saved, onClose, onS
         )}
       </footer>
     </Shell>
+  );
+}
+
+/** Recrutement : quatre champs demandés, qui deviennent les étiquettes de l'annonce. */
+function Choice({ label, values, value, pick }: { label: string; values: readonly string[]; value: string; pick: (v: string) => void }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[13.5px] p-muted">{label}</span>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
+        {values.map((v) => <button key={v} type="button" role="radio" aria-checked={value === v} className={`p-chip h-8 text-[13px] ${value === v ? "p-chip-on" : ""}`} onClick={() => pick(v)}>{v}</button>)}
+      </div>
+    </div>
+  );
+}
+
+function JobFields({ job, set }: { job: Job; set: (patch: Partial<Job>) => void }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <Choice label="Lieu de travail" values={WORK_MODES} value={job.workMode} pick={(workMode) => set({ workMode })} />
+      <Choice label="Temps de travail" values={SCHEDULES} value={job.schedule} pick={(schedule) => set({ schedule })} />
+      <label className="flex flex-col gap-1.5 text-[13.5px] p-muted"><span>Localisation</span><input className="p-field" maxLength={60} value={job.location} placeholder="Ex. Lyon, Genève, Paris et alentours" onChange={(e) => set({ location: e.target.value })} /></label>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13.5px] p-muted" id="remuneration">Rémunération</span>
+        <div className="flex flex-wrap items-center gap-2" aria-labelledby="remuneration">
+          <input className="p-field w-[150px] flex-none" inputMode="decimal" maxLength={12} value={job.payAmount} placeholder={job.payUnit === "h" ? "Ex. 24" : "Ex. 2 000"} aria-label="Montant en euros" onChange={(e) => set({ payAmount: e.target.value })} />
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Rémunération horaire ou mensuelle">
+            {(Object.keys(PAY_UNITS) as PayUnit[]).map((u) => <button key={u} type="button" role="radio" aria-checked={job.payUnit === u} className={`p-chip h-8 text-[13px] ${job.payUnit === u ? "p-chip-on" : ""}`} onClick={() => set({ payUnit: u })}>{u === "h" ? "€ de l’heure" : "€ par mois"}</button>)}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

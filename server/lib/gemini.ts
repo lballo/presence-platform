@@ -1,6 +1,5 @@
 import { env } from "./env";
 
-const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 const MODEL = "gemini-2.5-flash";
 
 export interface GeminiAnalysisResult {
@@ -56,120 +55,92 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans texte avant o
 Fournis 3 à 5 conseils actionnables, classés par priorité (high en premier).
 Sois encourageant, précis et bienveillant. L'objectif est d'aider la personne à progresser.`;
 
-export async function uploadVideoToGemini(
-  videoBase64: string,
-  mimeType: string
-): Promise<string> {
-  const apiKey = env.geminiApiKey;
+/** Gemini garde un fichier 48 heures et en accepte jusqu'à 2 Go. */
+export const GEMINI_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
-  // Decode base64 to get binary size
-  const binaryStr = atob(videoBase64);
-  const totalBytes = binaryStr.length;
+const base = () => env.geminiApiBase;
 
-  // Initiate resumable upload
-  const initResp = await fetch(
-    `${GEMINI_API_BASE}/upload/v1beta/files?uploadType=resumable&key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "X-Goog-Upload-Protocol": "resumable",
-        "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": String(totalBytes),
-        "X-Goog-Upload-Header-Content-Type": mimeType,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ file: { display_name: "speech_video" } }),
-    }
-  );
-
-  if (!initResp.ok) {
-    const err = await initResp.text();
-    throw new Error(`Gemini File API init failed: ${err}`);
-  }
-
-  const uploadUrl = initResp.headers.get("x-goog-upload-url");
-  if (!uploadUrl) throw new Error("No upload URL returned from Gemini");
-
-  // Convert base64 to Uint8Array
-  const bytes = new Uint8Array(totalBytes);
-  for (let i = 0; i < totalBytes; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-
-  // Upload the file
-  const uploadResp = await fetch(uploadUrl, {
+/**
+ * Ouvre un envoi en plusieurs morceaux vers l'API Files de Gemini.
+ * L'adresse renvoyée porte la session : elle reste côté serveur, jamais dans le navigateur.
+ */
+export async function startGeminiUpload(totalBytes: number, mimeType: string, displayName: string) {
+  const res = await fetch(`${base()}/upload/v1beta/files?key=${env.geminiApiKey}`, {
     method: "POST",
     headers: {
-      "X-Goog-Upload-Command": "upload, finalize",
-      "X-Goog-Upload-Offset": "0",
-      "Content-Type": mimeType,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(totalBytes),
+      "X-Goog-Upload-Header-Content-Type": mimeType,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({ file: { display_name: displayName.slice(0, 120) } }),
+  });
+  if (!res.ok) throw new Error(`Gemini refuse l’envoi (${res.status}) : ${(await res.text()).slice(0, 200)}`);
+  const uploadUrl = res.headers.get("x-goog-upload-url");
+  if (!uploadUrl) throw new Error("Gemini n’a pas renvoyé d’adresse d’envoi.");
+  // Chaque morceau, sauf le dernier, doit être un multiple de cette taille.
+  const granularity = Number(res.headers.get("x-goog-upload-chunk-granularity")) || 256 * 1024;
+  return { uploadUrl, granularity };
+}
+
+export type GeminiFile = { uri: string; name: string; mimeType: string; state: string };
+
+/** Envoie un morceau ; le dernier clôt l'envoi et renvoie le fichier créé. */
+export async function sendGeminiChunk(uploadUrl: string, offset: number, bytes: Uint8Array<ArrayBuffer>, last: boolean): Promise<GeminiFile | null> {
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "X-Goog-Upload-Command": last ? "upload, finalize" : "upload", "X-Goog-Upload-Offset": String(offset), "Content-Length": String(bytes.byteLength) },
     body: bytes,
   });
-
-  if (!uploadResp.ok) {
-    const err = await uploadResp.text();
-    throw new Error(`Gemini file upload failed: ${err}`);
-  }
-
-  const fileData = (await uploadResp.json()) as { file: { uri: string; state: string } };
-  const fileUri = fileData.file?.uri;
-  if (!fileUri) throw new Error("No file URI returned from Gemini");
-
-  // Wait for file to be ACTIVE
-  await waitForFileActive(fileUri, apiKey);
-
-  return fileUri;
+  if (!res.ok) throw new Error(`Gemini n’a pas reçu le morceau (${res.status}) : ${(await res.text()).slice(0, 200)}`);
+  if (!last) return null;
+  const data = (await res.json()) as { file?: GeminiFile };
+  if (!data.file?.uri) throw new Error("Gemini n’a pas renvoyé le fichier.");
+  return data.file;
 }
 
-async function waitForFileActive(fileUri: string, apiKey: string): Promise<void> {
+/** Combien d'octets Gemini a vraiment reçus, pour reprendre après un morceau perdu. */
+export async function queryGeminiUpload(uploadUrl: string): Promise<number | null> {
+  const res = await fetch(uploadUrl, { method: "POST", headers: { "X-Goog-Upload-Command": "query" } }).catch(() => null);
+  const received = res?.headers.get("x-goog-upload-size-received");
+  return received ? Number(received) : null;
+}
+
+/** Gemini prépare la vidéo avant de pouvoir l'analyser : d'autant plus longtemps qu'elle est lourde. */
+export async function waitForFileActive(fileUri: string, sizeBytes: number): Promise<void> {
   const fileName = fileUri.split("/").pop();
-  const maxRetries = 20;
-  const delay = 3000;
-
-  for (let i = 0; i < maxRetries; i++) {
-    const resp = await fetch(
-      `${GEMINI_API_BASE}/v1beta/files/${fileName}?key=${apiKey}`
-    );
-    if (!resp.ok) throw new Error("Failed to check file status");
-
+  const deadline = Date.now() + Math.min(25, 2 + Math.ceil(sizeBytes / (100 * 1024 * 1024))) * 60_000;
+  while (Date.now() < deadline) {
+    const resp = await fetch(`${base()}/v1beta/files/${fileName}?key=${env.geminiApiKey}`);
+    if (!resp.ok) throw new Error("Impossible de suivre la préparation de la vidéo chez Gemini.");
     const data = (await resp.json()) as { state: string };
     if (data.state === "ACTIVE") return;
-    if (data.state === "FAILED") throw new Error("Gemini file processing failed");
-
-    await new Promise((r) => setTimeout(r, delay));
+    if (data.state === "FAILED") throw new Error("Gemini n’a pas pu lire cette vidéo.");
+    await new Promise((r) => setTimeout(r, 5000));
   }
-  throw new Error("Gemini file did not become ACTIVE in time");
+  throw new Error("Gemini a mis trop longtemps à préparer la vidéo.");
 }
 
-export async function analyzeVideoWithGemini(
-  fileUri: string
-): Promise<GeminiAnalysisResult> {
-  const apiKey = env.geminiApiKey;
-
-  const resp = await fetch(
-    `${GEMINI_API_BASE}/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { file_data: { mime_type: "video/mp4", file_uri: fileUri } },
-              { text: ANALYSIS_PROMPT },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 4096,
-          responseMimeType: "application/json",
-        },
-      }),
-    }
-  );
+/**
+ * L'analyse elle-même. Au-delà de 20 minutes, la vidéo est lue en basse définition :
+ * trois fois moins de jetons, ce qui laisse passer une heure de prise de parole.
+ */
+export async function analyzeVideoWithGemini(file: { uri: string; mimeType: string }, opts: { lowResolution: boolean }): Promise<GeminiAnalysisResult> {
+  const resp = await fetch(`${base()}/v1beta/models/${MODEL}:generateContent?key=${env.geminiApiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ file_data: { mime_type: file.mimeType, file_uri: file.uri } }, { text: ANALYSIS_PROMPT }] }],
+      generationConfig: {
+        temperature: 0.4,
+        // La réflexion du modèle compte dans cette limite : trop basse, la réponse était coupée sur les longues vidéos.
+        maxOutputTokens: 16384,
+        responseMimeType: "application/json",
+        ...(opts.lowResolution ? { mediaResolution: "MEDIA_RESOLUTION_LOW" } : {}),
+      },
+    }),
+  });
 
   if (!resp.ok) {
     const err = await resp.text();
@@ -180,9 +151,9 @@ export async function analyzeVideoWithGemini(
     candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
   };
 
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-const clean = jsonMatch ? jsonMatch[0] : rawText.replace(/```json|```/g, "").trim();
+  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  const clean = jsonMatch ? jsonMatch[0] : rawText.replace(/```json|```/g, "").trim();
 
   try {
     return JSON.parse(clean) as GeminiAnalysisResult;
@@ -192,9 +163,8 @@ const clean = jsonMatch ? jsonMatch[0] : rawText.replace(/```json|```/g, "").tri
 }
 
 export async function deleteGeminiFile(fileUri: string): Promise<void> {
-  const apiKey = env.geminiApiKey;
   const fileName = fileUri.split("/").pop();
-  await fetch(`${GEMINI_API_BASE}/v1beta/files/${fileName}?key=${apiKey}`, {
+  await fetch(`${base()}/v1beta/files/${fileName}?key=${env.geminiApiKey}`, {
     method: "DELETE",
   });
 }

@@ -167,6 +167,8 @@
   h1, h2, h3, .serif { font-family: var(--p-serif); font-weight: 500; }
   .douceur h1, .douceur h2, .douceur h3, .douceur .serif { font-weight: 400; }
   .douceur h1 { color: var(--p-ink-warm); }
+  /* Sur un fond de couleur (en-tête de ruche…), le titre garde le blanc du bloc */
+  .douceur .text-white h1, .douceur h1.text-white { color: #fff; }
   .douceur h1.p-greeting { font-weight: var(--p-greet-weight); color: var(--p-greet-ink); }
 }
 

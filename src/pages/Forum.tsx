@@ -45,8 +45,10 @@ export default function Forum() {
                 <p className="m-0 text-[15.5px] leading-relaxed p-muted">{slug ? space?.description : tagName ? "Toutes les publications qui portent ce hashtag." : FEED_INTRO}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setComposer({ mode: "new", spaceSlug: slug })}><PenLine size={15} /> Nouvelle publication</button>
-                {data?.canAnnounce && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setComposer({ mode: "new", announcement: true })}><Megaphone size={15} /> Créer une annonce</button>}
+                {/* « Créer une annonce » n'a de sens que dans l'espace Annonces, qui n'accueille rien d'autre */}
+                {space?.kind === "annonces"
+                  ? data?.canAnnounce && <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setComposer({ mode: "new", announcement: true })}><Megaphone size={15} /> Créer une annonce</button>
+                  : <button type="button" className="p-btn-primary p-btn-sm" onClick={() => setComposer({ mode: "new", spaceSlug: slug })}><PenLine size={15} /> Nouvelle publication</button>}
                 {data?.canManage && space && <button type="button" className="p-btn-outline p-btn-sm" onClick={() => setEditing(true)}><Pencil size={15} /> Modifier cet espace</button>}
               </div>
             </header>

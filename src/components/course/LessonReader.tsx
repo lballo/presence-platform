@@ -192,7 +192,7 @@ function Finish({ m }: { m: Live }) {
       {done
         ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="flex items-center gap-2 font-semibold"><Check size={18} style={{ color: "var(--p-accent-text)" }} /> Leçon terminée</span><button type="button" className="p-btn-ghost" disabled={complete.isPending} onClick={() => complete.mutate({ lessonId: m.id, done: false })}>Marquer comme non terminée</button></div>
         : <button type="button" className="p-btn-primary self-center" disabled={complete.isPending} onClick={() => complete.mutate({ lessonId: m.id, done: true })}><Check size={18} /> J’ai terminé cette leçon</button>}
-      {memory.data?.active && <p className="m-0 text-[14px] p-muted text-center">Le coach garde le fil de votre chemin. <Link to="/parcours/coach" className="p-link">Voir ce qu’il retient de vous</Link></p>}
+      {memory.data?.active && <p className="m-0 text-[14px] p-muted text-center">Le coach garde le fil de votre chemin. <Link to="/parametres/confidentialite/memoire" className="p-link">Voir ce qu’il retient de vous</Link></p>}
       <nav className="flex flex-wrap items-stretch justify-between gap-3" aria-label="Leçons voisines">
         {m.prev
           ? <Link to={`/parcours/${m.course.id}/lecon/${m.prev.id}`} className="no-underline flex items-center gap-2 min-w-0 flex-[1_1_220px]" style={{ color: "var(--p-ink)" }}><ArrowLeft size={16} className="flex-none" /><span className="flex flex-col min-w-0"><span className="text-[12.5px] p-muted">Leçon précédente</span><span className="font-medium leading-snug">{m.prev.title}</span></span></Link>

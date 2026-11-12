@@ -73,6 +73,25 @@ app.get("/api/agenda/:file", async (c) => {
   return c.body(buildIcs(items));
 });
 
+// Présence IA : un morceau de vidéo, transmis aussitôt à Gemini (voir server/lib/videoUpload.ts).
+app.put("/api/speech/:id/chunk", bodyLimit({ maxSize: 32 * 1024 * 1024 }), async (c) => {
+  const { memberFromRequest } = await import("./context");
+  const { can } = await import("./lib/permissions");
+  const { UploadError, receiveChunk } = await import("./lib/videoUpload");
+  const member = await memberFromRequest(c.req.raw);
+  if (!member) return c.json({ error: "Connectez-vous pour accéder à Présence." }, 401);
+  if (!can(member, "speech.use")) return c.json({ error: "Vous n’avez pas accès à Présence IA." }, 403);
+  const id = Number(c.req.param("id"));
+  const offset = Number(c.req.header("x-upload-offset"));
+  if (!Number.isInteger(id) || !Number.isInteger(offset) || offset < 0) return c.json({ error: "Morceau invalide." }, 400);
+  try {
+    return c.json(await receiveChunk(member.id, id, offset, new Uint8Array(await c.req.arrayBuffer())));
+  } catch (e) {
+    if (e instanceof UploadError) return c.json({ error: e.message, received: e.received ?? null }, e.status);
+    throw e;
+  }
+});
+
 app.use("/api/trpc/*", async (c) =>
   fetchRequestHandler({ endpoint: "/api/trpc", req: c.req.raw, router: appRouter, createContext })
 );

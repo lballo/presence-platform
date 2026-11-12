@@ -8,7 +8,8 @@ import { Avatar } from "@/components/Avatar";
 import { VideoEmbed } from "@/components/VideoEmbed";
 import { ago, hour, longDate, plural } from "@/lib/format";
 import { fileSize } from "@/lib/upload";
-import { AUDIENCES, HashtagChip, OPP, UnreadDot, type Post } from "./shared";
+import { HashtagChip, OPP, UnreadDot, type Post } from "./shared";
+import { AUDIENCE_LABELS } from "./facts";
 
 const isVoice = (a: { type: string }) => a.type.startsWith("audio/");
 const when = (d: Date) => `${longDate(d).toLowerCase()} à ${hour(d)}`;
@@ -88,7 +89,7 @@ export function PostCard({ p, showOrigin, openReplies, onEdit }: { p: Post; show
           {p.state === "scheduled" && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted"><CalendarClock size={13} /> Programmée : {when(new Date(p.publishedAt))}</span>}
           {p.state === "ended" && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted">Affichage terminé</span>}
           {p.state === "live" && p.endsAt && p.readCount !== null && <span className="p-chip h-7 text-[12.5px] border-dashed cursor-default p-muted">Jusqu’au {when(new Date(p.endsAt))}</span>}
-          {p.audience !== "tous" && <span className="p-chip h-7 text-[12.5px] cursor-default p-muted"><Users size={13} /> {AUDIENCES[p.audience]}</span>}
+          {p.audience !== "tous" && <span className="p-chip h-7 text-[12.5px] cursor-default p-muted"><Users size={13} /> {AUDIENCE_LABELS[p.audience]}</span>}
         </div>
 
         {p.title && <Link to={`/forum/publication/${p.id}`} className="no-underline" style={{ color: "var(--p-ink)" }}><h3 className="m-0 text-[26px] leading-tight">{p.title}</h3></Link>}

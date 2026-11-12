@@ -121,14 +121,14 @@ export default function App() {
           <Route index element={<Parcours />} />
           <Route path="ressources" element={<Ressources />} />
           <Route path="journal" element={<JournalPage />} />
-          <Route path="coach" element={<CoachMemoryPage />} />
           <Route path="presence-ia" element={<PresenceIA />} />
           <Route path="accompagnement" element={<AccompagnementPage />} />
         </Route>
         <Route path="/parcours/presence-ia/analyse/:id" element={<Analysis />} />
         <Route path="/parcours/formations" element={<Navigate to="/parcours" replace />} />
         <Route path="/parcours/tests" element={<Navigate to="/parcours/ressources" replace />} />
-        <Route path="/parcours/memoire" element={<Navigate to="/parcours/coach" replace />} />
+        <Route path="/parcours/coach" element={<Navigate to="/parametres/confidentialite/memoire" replace />} />
+        <Route path="/parcours/memoire" element={<Navigate to="/parametres/confidentialite/memoire" replace />} />
         <Route path="/parcours/ressources/test/:id" element={<TestPage />} />
         <Route path="/parcours/:courseId" element={<CoursePage />} />
         <Route path="/parcours/:courseId/lecon/:lessonId" element={<LessonPage />} />
@@ -163,6 +163,7 @@ export default function App() {
           <Route path="notifications" element={<Notifications />} />
           <Route path="abonnement" element={<Abonnement />} />
           <Route path="confidentialite" element={<Confidentialite />} />
+          <Route path="confidentialite/memoire" element={<CoachMemoryPage />} />
           <Route path="documents" element={<Documents />} />
         </Route>
         <Route path="/ruches" element={<Ruches />} />

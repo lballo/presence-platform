@@ -98,9 +98,11 @@ export const matchingRouter = createRouter({
       if (theirs.some((t) => t.fromId === s.toId && t.goal === s.goal)) out.push({ memberId: s.toId, goal: s.goal, at: s.createdAt });
     }
     const ids = [...new Set(out.map((o) => o.memberId))];
-    const people = ids.length ? await db.query.members.findMany({ where: (m, { inArray }) => inArray(m.id, ids) }) : [];
+    // Comme dans Mes relations : un membre supprimé du réseau disparaît de mes matchs.
+    const people = ids.length ? await db.query.members.findMany({ where: (m, { and, inArray, isNull }) => and(inArray(m.id, ids), isNull(m.deletedAt)) }) : [];
     const GOALS: Record<string, string> = { mentorat: "Mentorat", pairs: "Pairs", associe: "Associé", invest: "Investissement", recrut: "Recrutement", amitie: "Amitié", parole: "Prise de parole", amour: "Espace Rencontre" };
     return out
+      .filter((o) => people.some((x) => x.id === o.memberId))
       .sort((a, b) => +b.at - +a.at)
       .map((o) => { const p = people.find((x) => x.id === o.memberId)!; return { ...publicMember(p), goal: o.goal, goalLabel: GOALS[o.goal] ?? o.goal, at: o.at, rencontreEnabled: undefined, rencontreBlurb: undefined }; });
   }),

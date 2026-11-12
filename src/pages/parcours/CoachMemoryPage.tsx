@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Pause, Pencil, Play, Share2, Sparkles, Trash2 } from "lucide-react";
+import { Link } from "react-router";
+import { ArrowLeft, Pause, Pencil, Play, Share2, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader } from "@/components/Layout";
+import { SettingsTitle } from "@/pages/parametres/ParametresLayout";
 import { CoachMascot } from "@/components/CoachMascot";
-import { ConsentDialog } from "@/components/course/ConsentDialog";
 import { trpc, type RouterOutputs } from "@/providers/trpc";
 import { ago } from "@/lib/format";
 import { ConfirmButton } from "@/pages/admin/shared";
@@ -12,25 +12,25 @@ type State = RouterOutputs["coachMemory"]["state"];
 const RETRACE = "Retrace mon chemin depuis le début de ma formation.";
 const SOURCE = { exercice: "Réponse à un exercice", reflexion: "Réflexion", module: "Ce que vous avez écrit", test: "Résultat de test", defi: "Défi" } as Record<string, string>;
 
-/** « Ce que le coach retient de moi » : tout lire, corriger, effacer ou mettre en pause. L'administration n'y a pas accès. */
+/**
+ * « Ce que le coach retient de moi », ouvert depuis Paramètres › Confidentialité : tout lire, corriger, effacer, partager.
+ * L'activation, la pause et le retrait de l'accord restent dans Confidentialité. L'administration n'y a pas accès.
+ */
 export default function CoachMemoryPage() {
   const q = trpc.coachMemory.state.useQuery();
-  const [asking, setAsking] = useState(false);
   const s = q.data;
   return (
     <>
-      <PageHeader eyebrow="Mon parcours" title="Ce que le coach retient de moi" intro="Tout est ici : lisez, corrigez, effacez, ou mettez en pause. Laura n’y a pas accès, sauf si vous partagez un élément." />
-      <ConsentDialog open={asking} onDone={() => setAsking(false)} />
+      <Link to="/parametres/confidentialite" className="p-link text-[14px] self-start flex items-center gap-1.5"><ArrowLeft size={15} /> Confidentialité</Link>
+      <SettingsTitle title="Ce que le coach retient de moi" intro="Lisez, corrigez ou effacez chaque élément. Laura n’y a pas accès, sauf si vous partagez un élément." />
       {q.isLoading && <p className="p-muted text-center py-10 m-0">Chargement…</p>}
       {s && (
-        <div className="flex flex-col gap-5 max-w-[800px]">
-          <Status s={s} onAsk={() => setAsking(true)} />
+        <div className="flex flex-col gap-5">
           {s.active && <Retrace />}
-          {s.items.length === 0 && (s.accepted || s.paused) && <div className="p-soft p-7 text-center p-muted">Le coach n’a encore rien retenu. Vos réponses, vos tests et vos défis viendront s’y ranger au fil de l’eau.</div>}
+          {s.items.length === 0 && <div className="p-soft p-7 text-center p-muted">{s.accepted ? "Le coach n’a encore rien retenu. Vos réponses, vos tests et vos défis viendront s’y ranger au fil de l’eau." : "Le coach ne garde rien de votre parcours."}</div>}
           <ul className="list-none m-0 p-0 flex flex-col gap-3">
             {s.items.map((i) => <Item key={i.id} i={i} />)}
           </ul>
-          {(s.items.length > 0 || s.accepted) && <Danger s={s} />}
           <p className="m-0 text-[13.5px] p-muted leading-relaxed">Effacer un élément ne retire pas ce qui figure déjà dans une conversation passée avec le coach. Pour cela, démarrez une <ResetChat />.</p>
         </div>
       )}

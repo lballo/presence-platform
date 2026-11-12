@@ -7,7 +7,8 @@ import { can, type Actor, type HiveRole } from "./permissions";
  * l'auteur voit toujours la sienne ; l'équipe voit aussi ce qui est programmé ou terminé ;
  * les autres voient ce qui est en ligne et les concerne. La RLS (0011_forum_rls.sql) en est le second rempart.
  */
-export type Audience = "tous" | "collectif" | "accompagnement";
+// « moderateurs » (retour vidéo) n'entre dans aucun audiencesOf : seuls son auteur et l'équipe la lisent.
+export type Audience = "tous" | "collectif" | "accompagnement" | "moderateurs";
 export type AccessType = "collectif" | "individuel" | "les_deux";
 export type PostState = "live" | "scheduled" | "ended" | "pending" | "rejected" | "hidden";
 

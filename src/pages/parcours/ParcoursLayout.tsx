@@ -1,14 +1,12 @@
 import { Outlet } from "react-router";
 import { BookOpen, GraduationCap, Layers, MessageSquareHeart, Sparkles } from "lucide-react";
 import { trpc } from "@/providers/trpc";
-import { CoachMascot } from "@/components/CoachMascot";
 import { SubNav, type SubPage } from "@/components/SubNav";
 
 const PAGES: SubPage[] = [
   { to: "/parcours", label: "Mes formations", end: true, icon: <GraduationCap size={16} className="flex-none" /> },
   { to: "/parcours/ressources", label: "Mes ressources", icon: <Layers size={16} className="flex-none" /> },
   { to: "/parcours/journal", label: "Mon journal personnel", icon: <BookOpen size={16} className="flex-none" /> },
-  { to: "/parcours/coach", label: "Ce que le coach retient de moi", icon: <span className="flex-none"><CoachMascot size={18} /></span> },
   { to: "/parcours/presence-ia", label: "Présence IA", icon: <Sparkles size={16} className="flex-none" /> },
 ];
 

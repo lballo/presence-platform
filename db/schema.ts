@@ -186,7 +186,8 @@ export const coachingSessions = pgTable("coaching_sessions", {
 export const forumKindEnum = pgEnum("forum_kind", ["victoire", "video", "question"]);
 export const forumSpaceKindEnum = pgEnum("forum_space_kind", ["libre", "annonces", "video", "opportunites"]);
 export const forumPostStatusEnum = pgEnum("forum_post_status", ["published", "pending", "rejected"]);
-export const forumAudienceEnum = pgEnum("forum_audience", ["tous", "collectif", "accompagnement"]);
+// « moderateurs » : demande de retour vidéo visible de son auteur et de l'équipe seulement
+export const forumAudienceEnum = pgEnum("forum_audience", ["tous", "collectif", "accompagnement", "moderateurs"]);
 export const opportunityTypeEnum = pgEnum("opportunity_type", ["recrut", "fin", "assoc"]);
 
 // Le slug reste stable (il sert d'adresse) ; nom, emoji et ordre sont modifiables par l'administratrice.

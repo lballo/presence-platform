@@ -11,11 +11,15 @@ export type TrpcContext = {
 };
 
 export async function createContext(opts: FetchCreateContextFnOptions): Promise<TrpcContext> {
-  const base = { req: opts.req, resHeaders: opts.resHeaders };
-  const token = opts.req.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
-  if (!token) return { ...base, member: null };
+  return { req: opts.req, resHeaders: opts.resHeaders, member: await memberFromRequest(opts.req) };
+}
+
+/** La fiche liée au jeton de session de la requête, aussi pour les routes hors tRPC. */
+export async function memberFromRequest(req: Request): Promise<Member | null> {
+  const token = req.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
+  if (!token) return null;
   const userId = await verifyAccessToken(token);
-  if (!userId) return { ...base, member: null };
+  if (!userId) return null;
   const [member] = await getDb().select().from(members).where(eq(members.authUserId, userId)).limit(1);
-  return { ...base, member: member ?? null };
+  return member ?? null;
 }

@@ -1,5 +1,6 @@
 /**
  * Analyse vidéo — repris de PresenceAI (lballo/presenceai), rattaché au membre courant.
+ * L'envoi et l'analyse sont dans server/lib/videoUpload.ts.
  */
 import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
@@ -7,13 +8,7 @@ import { TRPCError } from "@trpc/server";
 import { createRouter, procFor } from "../middleware";
 import { getDb } from "../queries/connection";
 import { speeches, speechScores, advice } from "../../db/schema";
-import { uploadVideoToGemini, analyzeVideoWithGemini, deleteGeminiFile } from "../lib/gemini";
-
-function parseDataUrl(dataUrl: string): { base64: string; mimeType: string } {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) throw new Error("Format de vidéo invalide");
-  return { mimeType: match[1], base64: match[2] };
-}
+import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS, UploadError, markStaleSpeeches, startVideoUpload } from "../lib/videoUpload";
 
 async function findSpeech(id: number, memberId: number) {
   const db = getDb();
@@ -26,17 +21,28 @@ const speechProc = procFor("speech.use");
 
 export const speechRouter = createRouter({
   list: speechProc.query(async ({ ctx }) => {
+    await markStaleSpeeches(ctx.memberId);
     const db = getDb();
     return db.query.speeches.findMany({ where: eq(speeches.memberId, ctx.memberId), with: { scores: true }, orderBy: [desc(speeches.createdAt)] });
   }),
 
-  getById: speechProc.input(z.object({ id: z.number() })).query(({ ctx, input }) => findSpeech(input.id, ctx.memberId)),
-
-  create: speechProc.input(z.object({ title: z.string().min(1), duration: z.number().optional() })).mutation(async ({ ctx, input }) => {
-    const db = getDb();
-    const [row] = await db.insert(speeches).values({ title: input.title, duration: input.duration, videoUrl: "pending_gemini_upload", memberId: ctx.memberId }).returning({ id: speeches.id });
-    return row;
+  getById: speechProc.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    await markStaleSpeeches(ctx.memberId);
+    return findSpeech(input.id, ctx.memberId);
   }),
+
+  /** Ouvre l'envoi d'une vidéo : les morceaux arrivent ensuite par PUT /api/speech/:id/chunk. */
+  startUpload: speechProc
+    .input(z.object({ title: z.string().trim().min(1).max(200), size: z.number().int().positive().max(MAX_VIDEO_BYTES), type: z.string().max(100), durationSec: z.number().positive().max(MAX_VIDEO_SECONDS + 30).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await startVideoUpload(ctx.memberId, input);
+      } catch (e) {
+        if (e instanceof UploadError) throw new TRPCError({ code: "BAD_REQUEST", message: e.message });
+        console.error("[speech] ouverture de l’envoi :", e);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Gemini n’est pas joignable pour le moment. Réessayez dans quelques minutes." });
+      }
+    }),
 
   delete: speechProc.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
@@ -45,31 +51,5 @@ export const speechRouter = createRouter({
     await db.delete(speechScores).where(eq(speechScores.speechId, input.id));
     await db.delete(speeches).where(eq(speeches.id, input.id));
     return { ok: true };
-  }),
-
-  generateAnalysis: speechProc.input(z.object({ id: z.number(), videoDataUrl: z.string().min(1) })).mutation(async ({ ctx, input }) => {
-    const db = getDb();
-    await findSpeech(input.id, ctx.memberId);
-    await db.update(speeches).set({ status: "processing", updatedAt: new Date() }).where(eq(speeches.id, input.id));
-    let fileUri: string | null = null;
-    try {
-      const { base64, mimeType } = parseDataUrl(input.videoDataUrl);
-      fileUri = await uploadVideoToGemini(base64, mimeType);
-      const analysis = await analyzeVideoWithGemini(fileUri);
-      await db.update(speeches).set({ overallScore: analysis.overallScore, summary: analysis.summary, keyInsight: analysis.keyInsight, status: "completed", updatedAt: new Date() }).where(eq(speeches.id, input.id));
-      for (const [category, data] of Object.entries(analysis.scores)) {
-        await db.insert(speechScores).values({ speechId: input.id, category: category as "voice" | "bodyLanguage" | "structure" | "impact", score: data.score, insight: data.insight });
-      }
-      for (const a of analysis.advice) {
-        await db.insert(advice).values({ speechId: input.id, category: a.category, priority: a.priority, title: a.title, description: a.description, actionStep: a.actionStep });
-      }
-      return findSpeech(input.id, ctx.memberId);
-    } catch (error) {
-      console.error("[speech] analyse échouée :", error);
-      await db.update(speeches).set({ status: "failed", updatedAt: new Date() }).where(eq(speeches.id, input.id));
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error instanceof Error ? error.message : "L’analyse a échoué. Réessayez." });
-    } finally {
-      if (fileUri) deleteGeminiFile(fileUri).catch(() => {});
-    }
   }),
 });
